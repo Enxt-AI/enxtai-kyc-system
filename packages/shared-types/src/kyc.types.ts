@@ -54,7 +54,9 @@ export interface UpdateKYCSubmissionDto {
 export interface UploadDocumentResponse {
   success: boolean;
   submissionId: string;
-  documentUrl: string;
+  documentUrl?: string;
+  frontUrl?: string;
+  backUrl?: string;
 }
 
 export interface DocumentUploadError {

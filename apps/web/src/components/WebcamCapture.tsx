@@ -202,8 +202,12 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
       const file = new File([blob], 'live-photo.jpg', { type: 'image/jpeg' });
       const res: UploadDocumentResponse = await uploadLivePhoto(userId, file, (p) => setProgress(p));
       setProgress(100);
-      setSuccessUrl(res.documentUrl);
-      onUploadSuccess(res.documentUrl);
+      const url = res.documentUrl ?? res.frontUrl ?? res.backUrl;
+      if (!url) {
+        throw new Error('Upload succeeded but URL was not returned');
+      }
+      setSuccessUrl(url);
+      onUploadSuccess(url);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Upload failed. Please try again';
       setError(msg);

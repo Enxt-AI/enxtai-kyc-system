@@ -1,6 +1,8 @@
 export enum DocumentType {
   PAN_CARD = 'PAN_CARD',
-  AADHAAR_CARD = 'AADHAAR_CARD',
+  AADHAAR_CARD = 'AADHAAR_CARD',        // Keep for legacy
+  AADHAAR_CARD_FRONT = 'AADHAAR_CARD_FRONT',  // NEW
+  AADHAAR_CARD_BACK = 'AADHAAR_CARD_BACK',    // NEW
   LIVE_PHOTO = 'LIVE_PHOTO',
 }
 

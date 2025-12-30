@@ -52,8 +52,8 @@ export default api;
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('userId', userId);
+    formData.append('file', file);
 
     const res = await api.post('/api/kyc/upload/aadhaar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -64,6 +64,46 @@ export default api;
       },
     });
     return res.data as UploadDocumentResponse;
+  }
+
+  export async function uploadAadhaarFront(
+    userId: string,
+    file: File,
+    onUploadProgress?: (progress: number) => void,
+  ): Promise<UploadDocumentResponse> {
+    const formData = new FormData();
+    formData.append('userId', userId);
+    formData.append('front', file);
+
+    const res = await api.post('/api/kyc/upload/aadhaar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!event.total || !onUploadProgress) return;
+        const percent = Math.round((event.loaded * 100) / event.total);
+        onUploadProgress(percent);
+      },
+    });
+    return (res.data as any).front as UploadDocumentResponse;
+  }
+
+  export async function uploadAadhaarBack(
+    userId: string,
+    file: File,
+    onUploadProgress?: (progress: number) => void,
+  ): Promise<UploadDocumentResponse> {
+    const formData = new FormData();
+    formData.append('userId', userId);
+    formData.append('back', file);
+
+    const res = await api.post('/api/kyc/upload/aadhaar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!event.total || !onUploadProgress) return;
+        const percent = Math.round((event.loaded * 100) / event.total);
+        onUploadProgress(percent);
+      },
+    });
+    return (res.data as any).back as UploadDocumentResponse;
   }
 
   export async function uploadLivePhoto(

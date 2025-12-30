@@ -32,7 +32,9 @@ model KYCSubmission {
 
   // Document URLs (MinIO paths - encrypted)
   panDocumentUrl          String?
-  aadhaarDocumentUrl      String?
+  aadhaarDocumentUrl      String?  // Keep for backward compatibility
+  aadhaarFrontUrl         String?  // NEW: Front side with photo
+  aadhaarBackUrl          String?  // NEW: Back side with address
   livePhotoUrl            String?
 
   // Extracted data

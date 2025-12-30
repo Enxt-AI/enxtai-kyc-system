@@ -122,7 +122,7 @@ describe('KycService', () => {
         id: 'sub-1',
         userId: 'user-1',
         panDocumentUrl: 'pan-path',
-        aadhaarDocumentUrl: 'aadhaar-path',
+        aadhaarDocumentUrl: 'aadhaar-front',
         internalStatus: InternalStatus.PENDING,
       } as any);
 

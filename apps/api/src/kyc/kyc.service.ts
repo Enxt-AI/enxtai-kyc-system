@@ -17,10 +17,10 @@ import sharp from 'sharp';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
 const IMAGE_ONLY_MIME_TYPES = ['image/jpeg', 'image/png'];
-const MIN_WIDTH = 800;
-const MIN_HEIGHT = 600;
-const MAX_WIDTH = 4096;
-const MAX_HEIGHT = 4096;
+const MIN_WIDTH = 300;  // More realistic minimum
+const MIN_HEIGHT = 300; // More realistic minimum
+const MAX_WIDTH = 8192;  // Support high-res scans
+const MAX_HEIGHT = 8192; // Support high-res scans
 
 @Injectable()
 export class KycService {
@@ -31,12 +31,47 @@ export class KycService {
     private readonly faceRecognitionService: FaceRecognitionService,
   ) {}
 
-  async createSubmission(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  // Helper: Get or create user
+  private async getOrCreateUser(userId: string) {
+    let user = await this.prisma.user.findUnique({ where: { id: userId } });
+
     if (!user) {
-      throw new NotFoundException('User not found');
+      // Auto-create user with generated email/phone
+      const timestamp = Date.now();
+      user = await this.prisma.user.create({
+        data: {
+          id: userId,
+          email: `user-${userId.substring(0, 8)}@kyc-temp.local`,
+          phone: `999${timestamp.toString().substring(0, 7)}`, // Generate unique phone
+        },
+      });
     }
 
+    return user;
+  }
+
+  // Helper: Get or create submission
+  private async getOrCreateSubmission(userId: string) {
+    let submission = await this.prisma.kYCSubmission.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!submission) {
+      submission = await this.prisma.kYCSubmission.create({
+        data: {
+          userId,
+          documentSource: DocumentSource.MANUAL_UPLOAD,
+          internalStatus: InternalStatus.PENDING,
+        },
+      });
+    }
+
+    return submission;
+  }
+
+  async createSubmission(userId: string) {
+    const user = await this.getOrCreateUser(userId);
     return this.prisma.kYCSubmission.create({
       data: {
         userId,
@@ -73,10 +108,15 @@ export class KycService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
+    
+    // Auto-create user if not exists
+    const user = await this.getOrCreateUser(userId);
+
+    // Auto-create submission if not exists
+    const submission = await this.getOrCreateSubmission(user.id);
+
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
-
-    const submission = (await this.getSubmissionByUserId(userId)) ?? (await this.createSubmission(userId));
 
     const uploadDto: UploadDocumentDto = {
       buffer,
@@ -86,7 +126,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.PAN_CARD,
-      userId,
+      user.id,
       uploadDto,
     );
 
@@ -100,7 +140,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId,
+        userId: user.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: { type: 'PAN', objectPath },
       },
@@ -113,10 +153,15 @@ export class KycService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
+    
+    // Auto-create user if not exists
+    const user = await this.getOrCreateUser(userId);
+
+    // Auto-create submission if not exists
+    const submission = await this.getOrCreateSubmission(user.id);
+
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
-
-    const submission = (await this.getSubmissionByUserId(userId)) ?? (await this.createSubmission(userId));
 
     const uploadDto: UploadDocumentDto = {
       buffer,
@@ -126,7 +171,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD,
-      userId,
+      user.id,
       uploadDto,
     );
 
@@ -140,9 +185,96 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId,
+        userId: user.id,
         action: 'KYC_DOCUMENT_UPLOAD',
-        metadata: { type: 'AADHAAR', objectPath },
+        metadata: {
+          type: 'AADHAAR',
+          objectPath,
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  async uploadAadhaarFront(userId: string, file: MultipartFile) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const user = await this.getOrCreateUser(userId);
+    const submission = await this.getOrCreateSubmission(user.id);
+
+    const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
+    await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
+
+    const uploadDto: UploadDocumentDto = {
+      buffer,
+      filename: file.filename,
+      mimetype: file.mimetype,
+    };
+
+    const objectPath = await this.storageService.uploadDocument(
+      DocumentType.AADHAAR_CARD_FRONT,
+      user.id,
+      uploadDto,
+    );
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        aadhaarFrontUrl: objectPath,
+        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'KYC_DOCUMENT_UPLOAD',
+        metadata: { type: 'AADHAAR_FRONT', objectPath },
+      },
+    });
+
+    return updated;
+  }
+
+  async uploadAadhaarBack(userId: string, file: MultipartFile) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const user = await this.getOrCreateUser(userId);
+    const submission = await this.getOrCreateSubmission(user.id);
+
+    const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
+    await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
+
+    const uploadDto: UploadDocumentDto = {
+      buffer,
+      filename: file.filename,
+      mimetype: file.mimetype,
+    };
+
+    const objectPath = await this.storageService.uploadDocument(
+      DocumentType.AADHAAR_CARD_BACK,
+      user.id,
+      uploadDto,
+    );
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        aadhaarBackUrl: objectPath,
+        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'KYC_DOCUMENT_UPLOAD',
+        metadata: { type: 'AADHAAR_BACK', objectPath },
       },
     });
 
@@ -153,10 +285,15 @@ export class KycService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
+    
+    // Auto-create user if not exists
+    const user = await this.getOrCreateUser(userId);
+
+    // Auto-create submission if not exists
+    const submission = await this.getOrCreateSubmission(user.id);
+
     const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
-
-    const submission = (await this.getSubmissionByUserId(userId)) ?? (await this.createSubmission(userId));
 
     const uploadDto: UploadDocumentDto = {
       buffer,
@@ -166,13 +303,12 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.LIVE_PHOTO,
-      userId,
+        user.id,
       uploadDto,
     );
 
-    const shouldMarkUploaded = Boolean(
-      submission.panDocumentUrl && submission.aadhaarDocumentUrl,
-    );
+    const hasAadhaar = submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl;
+    const shouldMarkUploaded = Boolean(submission.panDocumentUrl && hasAadhaar);
 
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
@@ -186,7 +322,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId,
+          userId: user.id,
         action: 'KYC_LIVE_PHOTO_UPLOAD',
         metadata: { type: 'LIVE_PHOTO', objectPath },
       },
@@ -200,14 +336,14 @@ export class KycService {
     if (!submission) {
       throw new NotFoundException('Submission not found');
     }
-    if (!submission.panDocumentUrl || !submission.aadhaarDocumentUrl || !submission.livePhotoUrl) {
+    const aadhaarUrl = submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl;
+    if (!submission.panDocumentUrl || !aadhaarUrl || !submission.livePhotoUrl) {
       throw new BadRequestException('Required documents not uploaded');
     }
 
     const { bucket: panBucket, objectName: panObject } = this.parseObjectPath(submission.panDocumentUrl);
-    const { bucket: aadhaarBucket, objectName: aadhaarObject } = this.parseObjectPath(
-      submission.aadhaarDocumentUrl,
-    );
+    const aadhaarPathForFace = submission.aadhaarFrontUrl || submission.aadhaarDocumentUrl || submission.aadhaarBackUrl;
+    const { bucket: aadhaarBucket, objectName: aadhaarObject } = this.parseObjectPath(aadhaarPathForFace as string);
     const { bucket: liveBucket, objectName: liveObject } = this.parseObjectPath(submission.livePhotoUrl);
 
     const [panDownload, aadhaarDownload, liveDownload] = await Promise.all([
@@ -371,7 +507,7 @@ export class KycService {
       width > MAX_WIDTH ||
       height > MAX_HEIGHT
     ) {
-      throw new BadRequestException('Image dimensions must be between 800x600 and 4096x4096');
+      throw new BadRequestException(`Image dimensions must be between ${MIN_WIDTH}x${MIN_HEIGHT} and ${MAX_WIDTH}x${MAX_HEIGHT}`);
     }
   }
 

@@ -9,13 +9,14 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
-  app.register(multipart as any, {
+
+  // Register multipart for file uploads
+  await app.register(multipart, {
     limits: {
-      fileSize: 5 * 1024 * 1024,
-      files: 1,
+      fileSize: 10 * 1024 * 1024, // 10MB
     },
-    attachFieldsToBody: true,
   });
+
   app.enableCors();
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
@@ -27,9 +28,7 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT) || 3001;
   await app.listen(port, '0.0.0.0');
-  const url = await app.getUrl();
-  // Log startup so container health checks are easier to debug.
-  console.log(`KYC API is running on ${url}`);
+  console.log(`KYC API is running on http://localhost:${port}`);
 }
 
 bootstrap();

@@ -2,23 +2,22 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDropzone, FileRejection } from 'react-dropzone';
-import {
-  uploadAadhaarDocument,
-  uploadPanDocument,
-} from '@/lib/api-client';
+import { uploadAadhaarBack, uploadAadhaarDocument, uploadAadhaarFront, uploadPanDocument } from '@/lib/api-client';
 
 const MAX_SIZE = 5 * 1024 * 1024;
 
-export type DocumentUploadType = 'PAN' | 'AADHAAR';
+export type DocumentUploadType = 'PAN' | 'AADHAAR' | 'AADHAAR_FRONT' | 'AADHAAR_BACK';
 
 interface Props {
   documentType: DocumentUploadType;
   userId: string;
+  submissionId?: string | null;
   onUploadSuccess: (url: string) => void;
   onUploadError: (error: string) => void;
+  onSubmissionCreated?: (id: string) => void;
 }
 
-export function DocumentUpload({ documentType, userId, onUploadSuccess, onUploadError }: Props) {
+export function DocumentUpload({ documentType, userId, submissionId, onUploadSuccess, onUploadError, onSubmissionCreated }: Props) {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -54,10 +53,29 @@ export function DocumentUpload({ documentType, userId, onUploadSuccess, onUpload
       setError(null);
       setProgress(0);
       try {
-        const uploader = documentType === 'PAN' ? uploadPanDocument : uploadAadhaarDocument;
+        let uploader: (userId: string, file: File, onProgress?: (p: number) => void) => Promise<any>;
+
+        if (documentType === 'PAN') {
+          uploader = uploadPanDocument;
+        } else if (documentType === 'AADHAAR_FRONT') {
+          uploader = uploadAadhaarFront;
+        } else if (documentType === 'AADHAAR_BACK') {
+          uploader = uploadAadhaarBack;
+        } else {
+          uploader = uploadAadhaarDocument; // Legacy fallback
+        }
+
         const res = await uploader(userId, file, (p) => setProgress(p));
         setProgress(100);
-        onUploadSuccess(res.documentUrl);
+        const url = res.documentUrl;
+        if (!url) {
+          throw new Error('Upload succeeded but URL was not returned');
+        }
+        const responseSubmissionId = res.submissionId ?? submissionId;
+        if (responseSubmissionId && onSubmissionCreated) {
+          onSubmissionCreated(responseSubmissionId);
+        }
+        onUploadSuccess(url);
       } catch (err: any) {
         const message = err?.response?.data?.message || err?.message || 'Upload failed. Please try again';
         setError(message);
@@ -66,7 +84,7 @@ export function DocumentUpload({ documentType, userId, onUploadSuccess, onUpload
         setUploading(false);
       }
     },
-    [documentType, onUploadSuccess, onUploadError, userId],
+    [documentType, onUploadError, onSubmissionCreated, onUploadSuccess, submissionId, userId],
   );
 
   const onDrop = useCallback(

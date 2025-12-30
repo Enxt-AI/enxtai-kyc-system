@@ -85,13 +85,14 @@ export class StorageService implements OnModuleInit {
     documentType: DocumentType,
     userId: string,
     file: UploadDocumentDto,
+    suffix?: string,
   ): Promise<string> {
     const bucket = this.getBucketForDocumentType(documentType);
     if (file.buffer.byteLength > MAX_FILE_SIZE) {
       throw new StorageUploadException('File size exceeds limit', bucket);
     }
     const metadata = file.metadata ?? {};
-    const objectName = this.buildObjectName(userId, file.filename);
+    const objectName = this.buildObjectName(userId, documentType, file.filename, suffix);
     try {
       await this.minio.putObject(
         bucket,
@@ -148,6 +149,10 @@ export class StorageService implements OnModuleInit {
         return this.panBucket;
       case DocumentType.AADHAAR_CARD:
         return this.aadhaarBucket;
+      case DocumentType.AADHAAR_CARD_FRONT:
+        return this.aadhaarBucket;
+      case DocumentType.AADHAAR_CARD_BACK:
+        return this.aadhaarBucket;
       case DocumentType.LIVE_PHOTO:
         return this.livePhotosBucket;
       default:
@@ -155,9 +160,19 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  private buildObjectName(userId: string, filename: string): string {
+  private buildObjectName(userId: string, documentType: DocumentType, filename: string, suffix?: string): string {
     const sanitized = this.sanitizeFilename(filename);
-    return `${userId}/${Date.now()}-${sanitized}`;
+    const ext = this.getExtension(sanitized);
+    const baseName = suffix ? `${documentType}_${suffix}` : documentType;
+    return `${userId}/${baseName}_${Date.now()}${ext}`;
+  }
+
+  private getExtension(filename: string): string {
+    const lastDot = filename.lastIndexOf('.');
+    if (lastDot === -1) {
+      return '';
+    }
+    return filename.slice(lastDot);
   }
 
   private sanitizeFilename(filename: string): string {

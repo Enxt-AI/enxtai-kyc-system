@@ -123,7 +123,20 @@ export class OcrService {
       throw new OcrException('Aadhaar document not uploaded', OcrErrorCode.DATA_EXTRACTION_FAILED);
     }
 
-    const { bucket, objectName } = this.parseObjectPath(submission.aadhaarDocumentUrl);
+    const data = await this.extractFromAadhaarDocument(submission.aadhaarDocumentUrl, submissionId);
+
+    if (!data.aadhaarNumber) {
+      throw new OcrException('Aadhaar number not detected', OcrErrorCode.DATA_EXTRACTION_FAILED);
+    }
+
+    return data;
+  }
+
+  private async extractFromAadhaarDocument(
+    documentUrl: string,
+    submissionId: string,
+  ): Promise<AadhaarOcrResult> {
+    const { bucket, objectName } = this.parseObjectPath(documentUrl);
     this.ensureNotPdf(objectName, 'AADHAAR');
     const { stream } = await this.storageService.downloadDocument(bucket, objectName);
     const buffer = await this.streamToBuffer(stream as unknown as NodeJS.ReadableStream);
@@ -142,22 +155,19 @@ export class OcrService {
 
     this.ensureConfidence(confidence, submissionId, 'AADHAAR');
     const lines = this.normalizeLines(ocrText);
+
     const aadhaarMatch = this.findFirstMatch(lines, AADHAAR_REGEX);
-    if (!aadhaarMatch) {
+    const aadhaarNumber = aadhaarMatch
+      ? this.maskAadhaarNumber(aadhaarMatch.replace(/\s+/g, ''))
+      : undefined;
+    if (!aadhaarNumber) {
       throw new OcrException('Aadhaar number not detected', OcrErrorCode.DATA_EXTRACTION_FAILED);
     }
-
-    const aadhaarNumber = aadhaarMatch.replace(/\s+/g, '');
-    if (aadhaarNumber.length !== 12) {
-      throw new OcrException('Aadhaar number validation failed', OcrErrorCode.VALIDATION_FAILED);
-    }
-
-    const maskedAadhaar = this.maskAadhaarNumber(aadhaarNumber);
     const fullName = this.deriveNameFromLines(lines);
     const address = this.extractAddressFromLines(lines);
 
     return {
-      aadhaarNumber: maskedAadhaar,
+      aadhaarNumber,
       fullName,
       address,
       rawText: ocrText.trim(),
