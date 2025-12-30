@@ -50,3 +50,53 @@ export interface UpdateKYCSubmissionDto {
   finalStatus?: FinalStatus;
   rejectionReason?: string;
 }
+
+export interface UploadDocumentResponse {
+  success: boolean;
+  submissionId: string;
+  documentUrl: string;
+}
+
+export interface DocumentUploadError {
+  code: string;
+  message: string;
+  field?: string;
+}
+
+export interface OcrExtractedData {
+  panNumber?: string;
+  aadhaarNumber?: string;
+  fullName?: string;
+  dateOfBirth?: Date;
+  address?: Record<string, any> | string;
+}
+
+export interface ExtractPanResponse {
+  success: boolean;
+  submissionId: string;
+  extractedData: {
+    panNumber?: string | null;
+    fullName?: string | null;
+    dateOfBirth?: Date | null;
+  };
+}
+
+export interface ExtractAadhaarResponse {
+  success: boolean;
+  submissionId: string;
+  extractedData: {
+    aadhaarNumber?: string | null;
+    fullName?: string | null;
+    address?: Record<string, any> | string | null;
+  };
+}
+
+export interface FaceVerificationResponse {
+  success: boolean;
+  submissionId: string;
+  verificationResults: {
+    faceMatchScore: number;
+    livenessScore: number;
+    internalStatus: string;
+  };
+}

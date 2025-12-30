@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 
 export default function HomePage() {
   return (
@@ -6,12 +7,12 @@ export default function HomePage() {
       <div className="space-y-4">
         <h1 className="text-4xl font-bold">KYC System</h1>
         <p className="text-gray-600">Start the KYC flow from here.</p>
-        <a
-          href="#"
+        <Link
+          href="/kyc/upload"
           className="inline-block rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
         >
           Begin KYC
-        </a>
+        </Link>
       </div>
     </main>
   );

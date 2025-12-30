@@ -6,6 +6,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { StorageModule } from './storage/storage.module';
+import { OcrModule } from './ocr/ocr.module';
+import { KycModule } from './kyc/kyc.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -14,6 +18,10 @@ import { PrismaModule } from './prisma/prisma.module';
     HttpModule,
     HealthModule,
     PrismaModule,
+    StorageModule,
+    OcrModule,
+    KycModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

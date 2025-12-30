@@ -18,3 +18,5 @@ declare module 'next' {
     icons?: any;
   };
 }
+
+declare module 'picojs';

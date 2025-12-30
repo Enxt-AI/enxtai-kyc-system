@@ -10,3 +10,6 @@ __pycache__/
 venv/
 .docker/
 .turbo/
+postgres-data/
+redis-data/
+minio-data/

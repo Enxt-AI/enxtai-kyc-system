@@ -14,10 +14,12 @@
     "react-webcam": "^7.2.0",
     "react-dropzone": "^14.2.0",
     "react-hook-form": "^7.48.0",
+    "clsx": "^2.1.0",
     "zod": "^3.22.0",
     "@tanstack/react-query": "^5.0.0",
     "axios": "^1.6.0",
-    "@enxtai/shared-types": "workspace:*"
+    "@enxtai/shared-types": "workspace:*",
+    "picojs": "^1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

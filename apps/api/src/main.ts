@@ -1,10 +1,21 @@
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter } from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
+import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, new FastifyAdapter());
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(),
+  );
+  app.register(multipart as any, {
+    limits: {
+      fileSize: 5 * 1024 * 1024,
+      files: 1,
+    },
+    attachFieldsToBody: true,
+  });
   app.enableCors();
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
