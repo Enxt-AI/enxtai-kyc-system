@@ -6,7 +6,14 @@ import { KycService } from './kyc.service';
 import { DocumentType } from '../storage/storage.types';
 import { InternalStatus } from '@enxtai/shared-types';
 import { OcrService } from '../ocr/ocr.service';
-import { MlClientService } from '../ml-client/ml-client.service';
+import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
+
+jest.mock('../face-recognition/face-recognition.service', () => {
+  const verifyFaceWorkflow = jest.fn();
+  return {
+    FaceRecognitionService: jest.fn().mockImplementation(() => ({ verifyFaceWorkflow })),
+  };
+});
 
 const metadataMock = jest.fn().mockResolvedValue({ width: 1200, height: 800 });
 jest.mock('sharp', () => {
@@ -18,7 +25,7 @@ describe('KycService', () => {
   let prisma: jest.Mocked<PrismaService>;
   let storage: jest.Mocked<StorageService>;
   let ocr: jest.Mocked<OcrService>;
-  let ml: jest.Mocked<MlClientService>;
+  let faceRecognition: jest.Mocked<FaceRecognitionService>;
 
   const mockFile = (mimetype = 'image/jpeg', size = 1024 * 1024) => ({
     filename: 'test.jpg',
@@ -52,7 +59,7 @@ describe('KycService', () => {
       extractAadhaarData: jest.fn(),
     } as any;
 
-    ml = {
+    faceRecognition = {
       verifyFaceWorkflow: jest.fn(),
     } as any;
 
@@ -62,7 +69,7 @@ describe('KycService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: StorageService, useValue: storage },
         { provide: OcrService, useValue: ocr },
-        { provide: MlClientService, useValue: ml },
+        { provide: FaceRecognitionService, useValue: faceRecognition },
       ],
     }).compile();
 

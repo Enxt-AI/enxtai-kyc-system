@@ -11,7 +11,7 @@ import { StorageService } from '../storage/storage.service';
 import { MAX_FILE_SIZE } from '../storage/storage.constants';
 import { DocumentType, UploadDocumentDto } from '../storage/storage.types';
 import { OcrService } from '../ocr/ocr.service';
-import { MlClientService } from '../ml-client/ml-client.service';
+import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
 import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
@@ -28,7 +28,7 @@ export class KycService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly ocrService: OcrService,
-    private readonly mlClientService: MlClientService,
+    private readonly faceRecognitionService: FaceRecognitionService,
   ) {}
 
   async createSubmission(userId: string) {
@@ -222,7 +222,7 @@ export class KycService {
       this.streamToBuffer(liveDownload.stream as NodeJS.ReadableStream),
     ]);
 
-    const workflowResult = await this.mlClientService.verifyFaceWorkflow(
+    const workflowResult = await this.faceRecognitionService.verifyFaceWorkflow(
       liveBuffer,
       panBuffer,
       aadhaarBuffer,

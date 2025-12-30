@@ -31,6 +31,7 @@ describe('StorageService', () => {
                 MINIO_USE_SSL: 'false',
                 MINIO_ACCESS_KEY: 'access',
                 MINIO_SECRET_KEY: 'secret',
+                MINIO_ENABLE_SSE: 'true',
               };
               return map[key] ?? defaultValue;
             }),

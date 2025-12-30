@@ -1,6 +1,15 @@
 # ---------- base ----------
 FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat \
+RUN apk add --no-cache \
+	libc6-compat \
+	python3 \
+	make \
+	g++ \
+	cairo-dev \
+	jpeg-dev \
+	pango-dev \
+	giflib-dev \
+	pixman-dev \
  && corepack enable pnpm
 WORKDIR /app
 
@@ -25,6 +34,10 @@ WORKDIR /app
 # copy full repo
 COPY . .
 
+# ensure face-api models are available in repo path (and cache layer)
+RUN mkdir -p apps/api/models \
+ && cp -r node_modules/@vladmandic/face-api/model/* apps/api/models/ || true
+
 # reuse pnpm store for speed
 COPY --from=deps /root/.local/share/pnpm /root/.local/share/pnpm
 
@@ -39,7 +52,7 @@ RUN pnpm --filter @enxtai/api exec nest build
 
 
 # ---------- runtime ----------
-FROM node:20-alpine AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
