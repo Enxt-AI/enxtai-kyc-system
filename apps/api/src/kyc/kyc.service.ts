@@ -15,13 +15,40 @@ import { FaceRecognitionService } from '../face-recognition/face-recognition.ser
 import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
+/** Allowed MIME types for document uploads (JPEG/PNG only) */
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
 const IMAGE_ONLY_MIME_TYPES = ['image/jpeg', 'image/png'];
-const MIN_WIDTH = 300;  // More realistic minimum
-const MIN_HEIGHT = 300; // More realistic minimum
-const MAX_WIDTH = 8192;  // Support high-res scans
-const MAX_HEIGHT = 8192; // Support high-res scans
 
+/** Minimum image dimensions - lowered from 800x600 to support phone photos */
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 300;
+
+/** Maximum image dimensions - increased from 4096x4096 to support high-res scans */
+const MAX_WIDTH = 8192;
+const MAX_HEIGHT = 8192;
+
+/**
+ * KYC Service
+ * 
+ * Core business logic service for KYC (Know Your Customer) verification workflow.
+ * Orchestrates document uploads, OCR text extraction, face recognition, and status management.
+ * 
+ * **Workflow**:
+ * 1. Document Upload: PAN, Aadhaar (front/back), Live Photo → MinIO storage
+ * 2. OCR Extraction: Tesseract.js extracts text from PAN/Aadhaar
+ * 3. Face Verification: face-api.js matches live photo against ID documents
+ * 4. Status Progression: PENDING → DOCUMENTS_UPLOADED → OCR_COMPLETED → FACE_VERIFIED
+ * 5. Admin Review: If confidence <80%, manual approval required
+ * 
+ * **Auto-Creation Strategy (MVP)**:
+ * - Users and submissions are auto-created if they don't exist during uploads
+ * - Simplifies frontend logic by eliminating pre-creation API calls
+ * - Generated emails/phones are placeholders (e.g., user-xxx@kyc-temp.local)
+ * 
+ * @see {@link StorageService} for MinIO S3 operations
+ * @see {@link OcrService} for Tesseract.js OCR integration
+ * @see {@link FaceRecognitionService} for face-api.js verification
+ */
 @Injectable()
 export class KycService {
   constructor(
@@ -31,7 +58,20 @@ export class KycService {
     private readonly faceRecognitionService: FaceRecognitionService,
   ) {}
 
-  // Helper: Get or create user
+  /**
+   * Get or Create User (Helper)
+   * 
+   * Auto-creates user if they don't exist in the database. This MVP convenience feature
+   * allows the frontend to start document uploads without pre-creating user accounts.
+   * 
+   * **Generated Fields**:
+   * - Email: user-{first8CharsOfUuid}@kyc-temp.local
+   * - Phone: 999{timestamp7Digits} (ensures uniqueness)
+   * 
+   * @param userId - UUID v4 string
+   * @returns User object (existing or newly created)
+   * @private
+   */
   private async getOrCreateUser(userId: string) {
     let user = await this.prisma.user.findUnique({ where: { id: userId } });
 
