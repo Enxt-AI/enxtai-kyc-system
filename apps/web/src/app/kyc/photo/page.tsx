@@ -32,15 +32,24 @@ export default function KycPhotoPage() {
   }, [userId]);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header className="flex items-center justify-between">
+    <main className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-50 p-6 sm:p-10">
+      <div className="mx-auto max-w-5xl space-y-8">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-gray-500">Submission ID: {submissionId ?? '...'}</p>
             <h1 className="text-3xl font-semibold text-gray-900">Capture Live Photo</h1>
-            <p className="text-gray-600">Position your face in the frame and capture a clear photo.</p>
+            <div className="text-gray-700 space-y-1 text-sm">
+              <p>Follow the guide below. We need a clear, centered, single face photo.</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Single person only; keep your face fully inside the circle.</li>
+                <li>Good lighting: no strong backlight; keep your face evenly lit.</li>
+                <li>Look at the camera and hold still for a few seconds until marked ready.</li>
+                <li>Wait for the dashed ring to turn solid green before capturing.</li>
+                <li>The crosshair helps you center your face precisely.</li>
+              </ul>
+            </div>
           </div>
-          <Link href="/kyc/upload" className="text-blue-600 hover:underline text-sm">
+          <Link href="/kyc/upload" className="text-blue-600 hover:underline text-sm font-semibold">
             Back to Documents
           </Link>
         </header>
@@ -54,22 +63,32 @@ export default function KycPhotoPage() {
           onUploadError={(msg) => setError(msg)}
         />
 
-        <div className="flex items-center justify-between rounded-lg border bg-white px-4 py-3 shadow-sm">
-          <div>
-            <p className="text-sm text-gray-700">Live photo status</p>
-            <p className="text-xl font-semibold text-gray-900">
-              {uploaded ? 'Uploaded' : 'Pending capture'}
-            </p>
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-gray-700">Live photo status</p>
+              <p className="text-xl font-semibold text-gray-900">
+                {uploaded ? 'Uploaded' : 'Pending capture'}
+              </p>
+              {!uploaded && (
+                <p className="text-xs text-gray-500">
+                  Align your face with the guide circle and wait for the green indicator, then capture and upload to proceed.
+                </p>
+              )}
+              {uploaded && (
+                <p className="text-xs text-green-700">Looks good. You can continue to the next step.</p>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={!uploaded}
+              className={`rounded-full px-5 py-2 text-sm font-semibold text-white shadow transition ${
+                uploaded ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Continue
+            </button>
           </div>
-          <button
-            type="button"
-            disabled={!uploaded}
-            className={`rounded px-4 py-2 text-sm font-semibold text-white shadow ${
-              uploaded ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
-            }`}
-          >
-            Continue
-          </button>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
