@@ -15,6 +15,7 @@ import { KycService } from './kyc.service';
 import { CreateKYCSubmissionDto } from './dto/create-kyc-submission.dto';
 import { ExtractAadhaarDto, ExtractPanDto } from '../ocr/dto/extract-document.dto';
 import { VerifyFaceDto } from './dto/verify-face.dto';
+import { DeleteDocumentDto } from './dto/delete-document.dto';
 
 /**
  * KYC Controller
@@ -271,6 +272,24 @@ export class KycController {
       if (err instanceof HttpException) throw err;
       throw new HttpException(err?.message ?? 'Upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  @Post('delete/pan')
+  async deletePan(@Body() dto: DeleteDocumentDto) {
+    const submission = await this.kycService.deletePanDocument(dto.userId, dto.submissionId);
+    return { success: true, submissionId: submission.id };
+  }
+
+  @Post('delete/aadhaar/front')
+  async deleteAadhaarFront(@Body() dto: DeleteDocumentDto) {
+    const submission = await this.kycService.deleteAadhaarFront(dto.userId, dto.submissionId);
+    return { success: true, submissionId: submission.id };
+  }
+
+  @Post('delete/aadhaar/back')
+  async deleteAadhaarBack(@Body() dto: DeleteDocumentDto) {
+    const submission = await this.kycService.deleteAadhaarBack(dto.userId, dto.submissionId);
+    return { success: true, submissionId: submission.id };
   }
 
   /**

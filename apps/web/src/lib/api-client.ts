@@ -126,6 +126,21 @@ export default api;
     return res.data as UploadDocumentResponse;
   }
 
+  export async function deletePanDocument(userId: string, submissionId?: string) {
+    const res = await api.post('/api/kyc/delete/pan', { userId, submissionId });
+    return res.data;
+  }
+
+  export async function deleteAadhaarFront(userId: string, submissionId?: string) {
+    const res = await api.post('/api/kyc/delete/aadhaar/front', { userId, submissionId });
+    return res.data;
+  }
+
+  export async function deleteAadhaarBack(userId: string, submissionId?: string) {
+    const res = await api.post('/api/kyc/delete/aadhaar/back', { userId, submissionId });
+    return res.data;
+  }
+
   export async function verifyFace(submissionId: string) {
     const res = await api.post('/api/kyc/verify/face', { submissionId });
     return res.data as {

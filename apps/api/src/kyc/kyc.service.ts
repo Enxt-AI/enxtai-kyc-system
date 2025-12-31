@@ -110,6 +110,27 @@ export class KycService {
     return submission;
   }
 
+  private async getSubmissionForUser(userId: string, submissionId?: string) {
+    if (submissionId) {
+      const submission = await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } });
+      if (!submission || submission.userId !== userId) {
+        throw new NotFoundException('Submission not found for user');
+      }
+      return submission;
+    }
+
+    const submission = await this.prisma.kYCSubmission.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found for user');
+    }
+
+    return submission;
+  }
+
   async createSubmission(userId: string) {
     const user = await this.getOrCreateUser(userId);
     return this.prisma.kYCSubmission.create({
@@ -315,6 +336,90 @@ export class KycService {
         userId: user.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: { type: 'AADHAAR_BACK', objectPath },
+      },
+    });
+
+    return updated;
+  }
+
+  async deletePanDocument(userId: string, submissionId?: string) {
+    const submission = await this.getSubmissionForUser(userId, submissionId);
+    if (!submission.panDocumentUrl) {
+      return submission;
+    }
+
+    const { bucket, objectName } = this.parseObjectPath(submission.panDocumentUrl);
+    await this.storageService.deleteDocument(bucket, objectName);
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        panDocumentUrl: null,
+        internalStatus: this.recomputeInternalStatus({ ...submission, panDocumentUrl: null }),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'KYC_DOCUMENT_DELETE',
+        metadata: { type: 'PAN', objectPath: submission.panDocumentUrl },
+      },
+    });
+
+    return updated;
+  }
+
+  async deleteAadhaarFront(userId: string, submissionId?: string) {
+    const submission = await this.getSubmissionForUser(userId, submissionId);
+    if (!submission.aadhaarFrontUrl) {
+      return submission;
+    }
+
+    const { bucket, objectName } = this.parseObjectPath(submission.aadhaarFrontUrl);
+    await this.storageService.deleteDocument(bucket, objectName);
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        aadhaarFrontUrl: null,
+        internalStatus: this.recomputeInternalStatus({ ...submission, aadhaarFrontUrl: null }),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'KYC_DOCUMENT_DELETE',
+        metadata: { type: 'AADHAAR_FRONT', objectPath: submission.aadhaarFrontUrl },
+      },
+    });
+
+    return updated;
+  }
+
+  async deleteAadhaarBack(userId: string, submissionId?: string) {
+    const submission = await this.getSubmissionForUser(userId, submissionId);
+    if (!submission.aadhaarBackUrl) {
+      return submission;
+    }
+
+    const { bucket, objectName } = this.parseObjectPath(submission.aadhaarBackUrl);
+    await this.storageService.deleteDocument(bucket, objectName);
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        aadhaarBackUrl: null,
+        internalStatus: this.recomputeInternalStatus({ ...submission, aadhaarBackUrl: null }),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'KYC_DOCUMENT_DELETE',
+        metadata: { type: 'AADHAAR_BACK', objectPath: submission.aadhaarBackUrl },
       },
     });
 
@@ -601,5 +706,25 @@ export class KycService {
       stream.on('error', (err) => reject(err));
       stream.on('end', () => resolve(Buffer.concat(chunks)));
     });
+  }
+
+  private recomputeInternalStatus(submission: {
+    panDocumentUrl: string | null;
+    aadhaarDocumentUrl: string | null;
+    aadhaarFrontUrl: string | null;
+    aadhaarBackUrl: string | null;
+    livePhotoUrl?: string | null;
+    internalStatus: PrismaInternalStatus | InternalStatus;
+  }): InternalStatus {
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasAadhaar = Boolean(
+      submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl,
+    );
+
+    if (hasPan && hasAadhaar) {
+      return InternalStatus.DOCUMENTS_UPLOADED;
+    }
+
+    return InternalStatus.PENDING;
   }
 }

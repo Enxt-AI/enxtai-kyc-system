@@ -9,7 +9,15 @@ import React, {
   forwardRef,
 } from 'react';
 import { useDropzone, FileRejection } from 'react-dropzone';
-import { uploadAadhaarBack, uploadAadhaarDocument, uploadAadhaarFront, uploadPanDocument } from '@/lib/api-client';
+import {
+  deleteAadhaarBack,
+  deleteAadhaarFront,
+  deletePanDocument,
+  uploadAadhaarBack,
+  uploadAadhaarDocument,
+  uploadAadhaarFront,
+  uploadPanDocument,
+} from '@/lib/api-client';
 
 const MAX_SIZE = 5 * 1024 * 1024;
 
@@ -38,6 +46,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [isUploaded, setIsUploaded] = useState(false); // Track actual upload to MinIO
+    const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 
     const accept = useMemo(
       () => ({
@@ -55,6 +64,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
       setProgress(0);
       setError(null);
       setIsUploaded(false);
+      setUploadedUrl(null);
       onFileSelected?.(false);
     }, [onFileSelected, preview]);
 
@@ -70,6 +80,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
         setError(null);
         setProgress(0);
         setIsUploaded(false);
+        setUploadedUrl(null);
         try {
           let uploader: (userId: string, file: File, onProgress?: (p: number) => void) => Promise<any>;
 
@@ -94,6 +105,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             onSubmissionCreated(responseSubmissionId);
           }
           setIsUploaded(true);
+          setUploadedUrl(url);
           onUploadSuccess(url);
         } catch (err: any) {
           const message = err?.response?.data?.message || err?.message || 'Upload failed. Please try again';
@@ -117,6 +129,28 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
     }, [handleUpload, onUploadError, uploadedFile]);
 
     useImperativeHandle(ref, () => ({ triggerUpload }), [triggerUpload]);
+
+    const handleRemove = useCallback(async () => {
+      if (uploading) return;
+
+      try {
+        if (isUploaded && uploadedUrl) {
+          if (documentType === 'PAN') {
+            await deletePanDocument(userId, submissionId ?? undefined);
+          } else if (documentType === 'AADHAAR_FRONT') {
+            await deleteAadhaarFront(userId, submissionId ?? undefined);
+          } else if (documentType === 'AADHAAR_BACK') {
+            await deleteAadhaarBack(userId, submissionId ?? undefined);
+          }
+        }
+      } catch (err: any) {
+        const message = err?.response?.data?.message || err?.message || 'Failed to remove document';
+        setError(message);
+        onUploadError(message);
+      } finally {
+        clearSelection();
+      }
+    }, [clearSelection, documentType, isUploaded, onUploadError, submissionId, uploadedUrl, uploading, userId]);
 
     const onDrop = useCallback(
       (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
@@ -190,7 +224,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             <div className="flex flex-col items-end gap-2">
               <button
                 type="button"
-                onClick={clearSelection}
+                onClick={() => void handleRemove()}
                 className="text-xs text-red-600 hover:underline"
               >
                 Remove
