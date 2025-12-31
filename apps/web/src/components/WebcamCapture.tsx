@@ -172,13 +172,16 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     };
   }, []);
 
-  // Clear fallback timeout once readiness is sufficient
+  // Clear fallback timeout once readiness is sufficient and clear stale errors when ready
   useEffect(() => {
     if (readiness >= 50 && fallbackTimeoutRef.current) {
       clearTimeout(fallbackTimeoutRef.current);
       fallbackTimeoutRef.current = null;
     }
-  }, [readiness]);
+    if (readyToCapture && !capturedImage && error) {
+      setError(null);
+    }
+  }, [readiness, readyToCapture, capturedImage, error]);
 
   const varianceOfLaplacian = useCallback((gray: Uint8Array, width: number, height: number) => {
     let sum = 0;
@@ -212,32 +215,8 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
 
   // Canvas-based circular rendering avoids Firefox clip-path/video bugs by drawing frames into a clipped canvas
   const renderCircularFrame = useCallback(() => {
-    const video = webcamRef.current?.video as HTMLVideoElement | undefined;
-    if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
-
-    if (!renderCanvasRef.current) {
-      renderCanvasRef.current = document.createElement('canvas');
-    }
-    const canvas = renderCanvasRef.current;
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.save();
-    ctx.translate(width, 0);
-    ctx.scale(-1, 1);
-    const radius = Math.min(width, height) * 0.4;
-    ctx.beginPath();
-    ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(video, 0, 0, width, height);
-    ctx.restore();
-
-    const dataUrl = canvas.toDataURL('image/png');
-    setCanvasDataUrl(dataUrl);
+    // No-op placeholder: rendering handled by visible webcam element to avoid toDataURL cost
+    return;
   }, []);
 
   const detectFace = useCallback(() => {
@@ -433,11 +412,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
 
   useEffect(() => {
     const tick = () => {
-      const renderNow = performance.now();
-      if (renderNow - lastRenderAtRef.current >= 100) {
-        lastRenderAtRef.current = renderNow;
-        renderCircularFrame();
-      }
+      // Rendering handled by visible webcam element; skip toDataURL work
 
       // Pause detection loop until camera and cascade are ready
       // to avoid wasted CPU cycles during initialization
@@ -447,8 +422,8 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
       }
       
       const now = performance.now();
-      // Throttle detection to 500ms (~2fps) to reduce CPU load
-      if (now - lastDetectAtRef.current >= 500) {
+      // Throttle detection to 700ms to reduce CPU load
+      if (now - lastDetectAtRef.current >= 700) {
         lastDetectAtRef.current = now;
         detectFace();
       }
@@ -505,23 +480,48 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
   }, []);
 
   const handleCapture = useCallback(async () => {
+    console.log('Capture clicked, readyToCapture:', readyToCapture);
     if (!readyToCapture) {
       setError('Please align and hold still until the guide shows ready.');
       return;
     }
-    const screenshot = webcamRef.current?.getScreenshot();
-    if (!screenshot) {
-      setError('Unable to capture photo. Please try again.');
-      return;
-    }
     try {
+      const video = webcamRef.current?.video as HTMLVideoElement | undefined;
+      let screenshot: string | null | undefined = null;
+
+      // Prefer drawing directly from the video and upscale to meet the 800x600 guardrail
+      if (video && video.videoWidth && video.videoHeight) {
+        const scale = Math.max(MIN_WIDTH / video.videoWidth, MIN_HEIGHT / video.videoHeight, 1);
+        const targetWidth = Math.round(video.videoWidth * scale);
+        const targetHeight = Math.round(video.videoHeight * scale);
+        const offscreen = document.createElement('canvas');
+        offscreen.width = targetWidth;
+        offscreen.height = targetHeight;
+        const ctx = offscreen.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+          screenshot = offscreen.toDataURL('image/jpeg', 0.95);
+        }
+      }
+
+      if (!screenshot) {
+        screenshot = webcamRef.current?.getScreenshot();
+      }
+
+      console.log('Screenshot obtained:', screenshot ? 'yes' : 'no', 'source: video/canvas or webcam');
+      if (!screenshot) {
+        setError('Unable to capture photo. Please try again.');
+        return;
+      }
       await validateCapturedImage(screenshot);
       setCapturedImage(screenshot);
       setError(null);
+      console.log('Capture successful');
     } catch (e: any) {
+      console.error('Capture failed:', e);
       setError(e?.message ?? 'Image validation failed');
     }
-  }, [faceDetected, validateCapturedImage]);
+  }, [readyToCapture, validateCapturedImage]);
 
   const handleUpload = useCallback(async () => {
     if (!capturedImage) return;
@@ -559,9 +559,13 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
 
   const ringColor = readyToCapture ? '#22c55e' : readiness >= 50 ? '#fbbf24' : '#ef4444';
 
+  useEffect(() => {
+    readinessRef.current = readiness;
+  }, [readiness]);
+
   return (
     <div className="w-full max-w-3xl mx-auto space-y-5">
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
+      <div className="relative">
         <div className="relative aspect-[4/3] sm:aspect-video">
           {/* Dashed outer ring provides visual feedback on detection readiness */}
           {/* Inner gray circle guides user to center their face */}
@@ -573,7 +577,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
             preserveAspectRatio="xMidYMid meet"
             style={{ zIndex: 20, position: 'relative' }}
           >
-            {/* Outer dashed ring with readiness-based stroke (Meon style) */}
+            {/* Outer dashed ring with readiness-based stroke */}
             <circle
               cx="50"
               cy="50"
@@ -584,19 +588,8 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
               strokeDasharray="5,5"
               style={{ transition: 'stroke 200ms ease' }}
             />
-            {/* Inner guide circle with gray fill */}
-            <circle
-              cx="50"
-              cy="50"
-              r="36"
-              fill="rgba(128,128,128,0.3)"
-              stroke="rgba(255,255,255,0.15)"
-              strokeWidth="0.5"
-            />
-            {/* Center crosshair for precise alignment */}
-            <line x1="48" y1="50" x2="52" y2="50" stroke="black" strokeWidth="0.5" />
-            <line x1="50" y1="48" x2="50" y2="52" stroke="black" strokeWidth="0.5" />
-            <circle cx="50" cy="50" r="0.5" fill="black" />
+            {/* Minimal center tick for alignment */}
+            <line x1="50" y1="49" x2="50" y2="51" stroke="black" strokeWidth="0.6" />
             {/* Status text below frame (Meon UI inspired) */}
             <text
               x="50"
@@ -610,7 +603,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
             </text>
           </svg>
 
-          {/* Hidden webcam keeps stream active; circular preview is rendered via canvas to avoid Firefox clip-path/video bugs */}
+          {/* Visible webcam preview with CSS clip-path to avoid toDataURL overhead */}
           <Webcam
             ref={webcamRef}
             audio={false}
@@ -620,25 +613,12 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
             screenshotFormat="image/jpeg"
             videoConstraints={{
               facingMode: 'user',
-              width: { exact: 640 },
-              height: { exact: 480 },
-              frameRate: { ideal: 10 }, // Exact dimensions speed up init; ideal fps avoids rejection
+              width: { ideal: 1280, min: 640 },
+              height: { ideal: 960, min: 480 },
+              frameRate: { ideal: 15, max: 24 },
             }}
-            className="hidden"
+            className="absolute inset-0 h-full w-full object-cover [clip-path:circle(43%_at_50%_50%)] [transform:scaleX(-1)]"
           />
-
-          {/* Visible circular preview from canvas-rendered frame */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            {canvasDataUrl ? (
-              <img
-                src={canvasDataUrl}
-                alt="Live preview"
-                className="h-full w-full object-contain [clip-path:circle(50%)] [mask-image:radial-gradient(circle_at_center,white_65%,transparent_70%)] bg-transparent"
-              />
-            ) : (
-              <div className="h-full w-full flex items-center justify-center text-gray-400 text-sm">Starting camera...</div>
-            )}
-          </div>
 
           {/* Status chips */}
           <div className="absolute bottom-4 left-4 right-4 flex flex-wrap gap-2 text-xs text-white/90">
