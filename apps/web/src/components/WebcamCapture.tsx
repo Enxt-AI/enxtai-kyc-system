@@ -564,46 +564,31 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
   }, [readiness]);
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-5">
-      <div className="relative">
-        <div className="relative aspect-[4/3] sm:aspect-video">
-          {/* Dashed outer ring provides visual feedback on detection readiness */}
-          {/* Inner gray circle guides user to center their face */}
-          {/* Crosshair helps with precise alignment */}
-          {/* z-index keeps overlay above video canvas */}
-          <svg
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="xMidYMid meet"
-            style={{ zIndex: 20, position: 'relative' }}
-          >
-            {/* Outer dashed ring with readiness-based stroke */}
-            <circle
-              cx="50"
-              cy="50"
-              r="38"
-              fill="none"
-              stroke={ringColor}
-              strokeWidth="2"
-              strokeDasharray="5,5"
-              style={{ transition: 'stroke 200ms ease' }}
-            />
-            {/* Minimal center tick for alignment */}
-            <line x1="50" y1="49" x2="50" y2="51" stroke="black" strokeWidth="0.6" />
-            {/* Status text below frame (Meon UI inspired) */}
-            <text
-              x="50"
-              y="90"
-              textAnchor="middle"
-              fontSize="3.5"
-              fill={readyToCapture ? '#22c55e' : '#9ca3af'}
-              style={{ transition: 'fill 200ms ease' }}
-            >
-              {readyToCapture ? 'Perfect! Capture now' : 'Position your face in the circle'}
-            </text>
-          </svg>
+    <div className="w-full max-w-3xl mx-auto space-y-5 flex flex-col items-center">
+      {/* Circular frame container with dotted ring outside */}
+      <div className="relative w-full max-w-md aspect-square">
+        {/* Dotted indicator ring drawn outside the circular frame */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="xMidYMid meet"
+          style={{ zIndex: 20 }}
+        >
+          {/* Dashed ring positioned outside the video circle */}
+          <circle
+            cx="50"
+            cy="50"
+            r="48"
+            fill="none"
+            stroke={ringColor}
+            strokeWidth="1.5"
+            strokeDasharray="4,4"
+            style={{ transition: 'stroke 200ms ease' }}
+          />
+        </svg>
 
-          {/* Visible webcam preview with CSS clip-path to avoid toDataURL overhead */}
+        {/* Circular video frame - radius matches inner edge of dotted ring */}
+        <div className="absolute inset-[4%] rounded-full overflow-hidden bg-black">
           <Webcam
             ref={webcamRef}
             audio={false}
@@ -617,24 +602,8 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
               height: { ideal: 960, min: 480 },
               frameRate: { ideal: 15, max: 24 },
             }}
-            className="absolute inset-0 h-full w-full object-cover [clip-path:circle(43%_at_50%_50%)] [transform:scaleX(-1)]"
+            className="absolute inset-0 h-full w-full object-cover [transform:scaleX(-1)]"
           />
-
-          {/* Status chips */}
-          <div className="absolute bottom-4 left-4 right-4 flex flex-wrap gap-2 text-xs text-white/90">
-            <span className={`rounded-full px-3 py-1 font-semibold ${readyToCapture ? 'bg-green-500/80 text-black' : 'bg-white/10'}`}>
-              {statusLabel}
-            </span>
-            <span className={`rounded-full px-3 py-1 ${brightnessOk ? 'bg-white/10 text-white' : 'bg-amber-500/80 text-black'}`}>
-              Lighting {brightnessOk ? 'OK' : 'Adjust lighting'}
-            </span>
-            <span className={`rounded-full px-3 py-1 ${sharpnessOk ? 'bg-white/10 text-white' : 'bg-amber-500/80 text-black'}`}>
-              Sharpness {sharpnessOk ? 'OK' : 'Hold still'}
-            </span>
-            <span className={`rounded-full px-3 py-1 ${centered && sizeOk ? 'bg-white/10 text-white' : 'bg-amber-500/80 text-black'}`}>
-              Framing {centered && sizeOk ? 'OK' : 'Center & resize'}
-            </span>
-          </div>
 
           {/* Loading states */}
           {!cameraReady && !permissionDenied && (
@@ -648,6 +617,22 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
             </div>
           )}
         </div>
+      </div>
+
+      {/* Status chips below the circular frame */}
+      <div className="flex flex-wrap justify-center gap-2 text-xs text-gray-800">
+        <span className={`rounded-full px-3 py-1 font-semibold ${readyToCapture ? 'bg-green-500/80 text-black' : 'bg-gray-200'}`}>
+          {statusLabel}
+        </span>
+        <span className={`rounded-full px-3 py-1 ${brightnessOk ? 'bg-gray-200' : 'bg-amber-300 text-black'}`}>
+          Lighting {brightnessOk ? 'OK' : 'Adjust lighting'}
+        </span>
+        <span className={`rounded-full px-3 py-1 ${sharpnessOk ? 'bg-gray-200' : 'bg-amber-300 text-black'}`}>
+          Sharpness {sharpnessOk ? 'OK' : 'Hold still'}
+        </span>
+        <span className={`rounded-full px-3 py-1 ${centered && sizeOk ? 'bg-gray-200' : 'bg-amber-300 text-black'}`}>
+          Framing {centered && sizeOk ? 'OK' : 'Center & resize'}
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
