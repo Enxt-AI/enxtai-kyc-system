@@ -114,9 +114,9 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
         const { FaceDetector, FilesetResolver } = await import('@mediapipe/tasks-vision');
         setCascadeProgress(30);
 
-        // Load MediaPipe vision tasks WASM runtime
+        // Load MediaPipe vision tasks WASM runtime from unpkg CDN
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm'
         );
         setCascadeProgress(60);
 
@@ -125,7 +125,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
         // Create face detector with short-range model (optimized for webcam)
         detectorRef.current = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm/blaze_face_short_range.tflite',
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
             delegate: 'GPU' // Use GPU if available
           },
           runningMode: 'VIDEO',
