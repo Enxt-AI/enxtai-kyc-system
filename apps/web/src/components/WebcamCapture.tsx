@@ -4,8 +4,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Webcam from 'react-webcam';
 import type { UploadDocumentResponse } from '@enxtai/shared-types';
 import { uploadLivePhoto } from '@/lib/api-client';
-import pico from 'picojs';
-import { FACEFINDER_CASCADE_BASE64 } from '@/lib/facefinder-cascade';
+
+// Dynamic imports for MediaPipe (ESM modules)
+type FaceDetector = any;
+type Detection = any;
 
 interface Props {
   userId: string;
@@ -19,25 +21,21 @@ const MIN_HEIGHT = 600;
 const DOWNSCALE_FACTOR = 0.5;
 const BRIGHTNESS_MIN = 60;
 const BRIGHTNESS_MAX = 200;
-const SHARPNESS_MIN = 20; // Relaxed to reduce blur sensitivity
-const CENTER_TOLERANCE = 0.18; // More forgiving centering
-const AREA_MIN = 0.1; // Allow smaller faces
-const AREA_MAX = 0.7; // Allow larger faces
-const STABLE_MS = 1000; // Faster readiness
+const SHARPNESS_MIN = 20;
+const CENTER_TOLERANCE = 0.25; // Relaxed from 0.18
+const AREA_MIN = 0.08; // Relaxed from 0.1
+const AREA_MAX = 0.75; // Relaxed from 0.7
+const STABLE_MS = 500; // Faster from 1000ms
+const MIN_FACE_SCORE = 0.7; // MediaPipe confidence threshold
 
 export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props) {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const renderCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const facefinderRef = useRef<any>(null);
-  const memoryRef = useRef<any>(null);
+  const detectorRef = useRef<FaceDetector | null>(null); // MediaPipe detector
   const detectionRafRef = useRef<number | null>(null);
   const lastDetectAtRef = useRef<number>(0);
-  const lastRenderAtRef = useRef<number>(0);
   const stableSinceRef = useRef<number | null>(null);
-  const fallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const readinessRef = useRef<number>(0);
-  const fallbackTimerRef = useRef<number | null>(null);
 
   const [canvasDataUrl, setCanvasDataUrl] = useState<string | null>(null);
 
@@ -106,82 +104,75 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
 
   useEffect(() => {
     let cancelled = false;
-    memoryRef.current = pico.instantiate_detection_memory?.(5) ?? ((dets: any[]) => dets);
     canvasRef.current = document.createElement('canvas');
 
-    async function loadCascade() {
+    async function initMediaPipe() {
       try {
-        const base64 = FACEFINDER_CASCADE_BASE64.trim();
-        setCascadeProgress(5);
-        // Use data URL fetch to avoid atob memory spikes
-        const resp = await fetch(`data:application/octet-stream;base64,${base64}`);
-        const buffer = await resp.arrayBuffer();
-        const bytes = new Int8Array(buffer);
-        setCascadeProgress(80);
+        setCascadeProgress(10);
+        
+        // Dynamically import MediaPipe (ESM module)
+        const { FaceDetector, FilesetResolver } = await import('@mediapipe/tasks-vision');
+        setCascadeProgress(30);
 
-        const unpacked = pico.unpack_cascade?.(bytes);
+        // Load MediaPipe vision tasks WASM runtime
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
+        );
+        setCascadeProgress(60);
+
         if (cancelled) return;
-        facefinderRef.current = unpacked;
+
+        // Create face detector with short-range model (optimized for webcam)
+        detectorRef.current = await FaceDetector.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm/blaze_face_short_range.tflite',
+            delegate: 'GPU' // Use GPU if available
+          },
+          runningMode: 'VIDEO',
+          minDetectionConfidence: MIN_FACE_SCORE
+        }) as FaceDetector;
+
+        if (cancelled) return;
+
         setCascadeProgress(100);
         setCascadeLoaded(true);
-        setFaceDetected(false);
-        console.log('✅ Cascade loaded successfully, starting detection...');
-        
-        // Fallback ensures users aren't stuck if detection fails after 10s
-        // Reads current readiness via ref to avoid stale closure
-        fallbackTimeoutRef.current = setTimeout(() => {
-          if (readinessRef.current < 50) {
-            console.warn('⚠️ Detection struggling after 10s, enabling fallback mode');
-            setAnalysis(prev => ({ ...prev, hasFace: true, stable: true }));
-          }
-        }, 10000);
+        console.log('✅ MediaPipe FaceDetector loaded successfully');
       } catch (e) {
         if (cancelled) return;
-        console.warn('Failed to load face detection cascade - enabling synthetic fallback', e);
-        // Enable synthetic-ready mode so users can proceed
-        setCascadeLoaded(true);
-        setCascadeProgress(100);
-        setAnalysis(prev => ({
-          ...prev,
-          hasFace: true,
-          faceScore: 100,
-          brightness: Math.max(prev.brightness, BRIGHTNESS_MIN + 10),
-          sharpness: Math.max(prev.sharpness, SHARPNESS_MIN + 10),
-          centerOffset: { x: 0, y: 0 },
-          sizeRatio: 0.4,
-          areaRatio: 0.16,
-          stable: true,
-        }));
-        setFaceDetected(true);
+        console.error('❌ Failed to load MediaPipe FaceDetector:', e);
+        setError('Face detection unavailable. Please refresh the page.');
+        setCascadeLoaded(false);
       }
     }
 
-    void loadCascade();
+    void initMediaPipe();
 
     return () => {
       cancelled = true;
       if (detectionRafRef.current) cancelAnimationFrame(detectionRafRef.current);
-      if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+      
       const video = webcamRef.current?.video as HTMLVideoElement | undefined;
       const stream = video?.srcObject as MediaStream | null | undefined;
       stream?.getTracks().forEach((t) => t.stop());
+      
       if (canvasRef.current) {
         canvasRef.current.width = 0;
         canvasRef.current.height = 0;
       }
+      
+      // Close MediaPipe detector
+      if (detectorRef.current) {
+        detectorRef.current.close();
+        detectorRef.current = null;
+      }
     };
   }, []);
 
-  // Clear fallback timeout once readiness is sufficient and clear stale errors when ready
   useEffect(() => {
-    if (readiness >= 50 && fallbackTimeoutRef.current) {
-      clearTimeout(fallbackTimeoutRef.current);
-      fallbackTimeoutRef.current = null;
-    }
     if (readyToCapture && !capturedImage && error) {
       setError(null);
     }
-  }, [readiness, readyToCapture, capturedImage, error]);
+  }, [readyToCapture, capturedImage, error]);
 
   const varianceOfLaplacian = useCallback((gray: Uint8Array, width: number, height: number) => {
     let sum = 0;
@@ -213,169 +204,50 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     return variance;
   }, []);
 
-  // Canvas-based circular rendering avoids Firefox clip-path/video bugs by drawing frames into a clipped canvas
-  const renderCircularFrame = useCallback(() => {
-    // No-op placeholder: rendering handled by visible webcam element to avoid toDataURL cost
-    return;
-  }, []);
-
-  const detectFace = useCallback(() => {
-    if (capturedImage) return;
-    const video = webcamRef.current?.video as HTMLVideoElement | undefined;
-    if (!cascadeLoaded) {
-      return;
-    }
-    const facefinder = facefinderRef.current;
-    const memory = memoryRef.current ?? ((dets: any[]) => dets);
-    const canvas = canvasRef.current;
-    if (!video || !memory || !canvas || video.videoWidth === 0) {
-      return;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = Math.max(1, Math.round(video.videoWidth * DOWNSCALE_FACTOR));
-    const height = Math.max(1, Math.round(video.videoHeight * DOWNSCALE_FACTOR));
-    canvas.width = width;
-    canvas.height = height;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(DOWNSCALE_FACTOR, DOWNSCALE_FACTOR);
-    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-    const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-
-    // Sample every 8th pixel (stride=8) to further reduce CPU load
-    let brightnessSum = 0;
-    let sampleCount = 0;
-    for (let i = 0; i < rgba.length; i += 32) { // 32 = 8 pixels × 4 channels
-      brightnessSum += (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
-      sampleCount++;
-    }
-    const brightness = brightnessSum / sampleCount;
-
-    // Use pico's grayscale if available; otherwise manual fallback
-    const gray = pico.to_grayscale?.(rgba, canvas.height, canvas.width);
-    let grayData = gray;
-    if (!grayData) {
-      grayData = new Uint8Array(canvas.width * canvas.height);
-      for (let i = 0, j = 0; i < rgba.length; i += 4, j += 1) {
-        grayData[j] = (rgba[i] * 0.299 + rgba[i + 1] * 0.587 + rgba[i + 2] * 0.114);
-      }
-    }
-
-    if (!grayData) return;
-
-    const sharpness = varianceOfLaplacian(grayData, canvas.width, canvas.height);
-
-    // Main-thread detection with optimized params (Web Worker removed due to CORS/importScripts issues)
-    const image = {
-      pixels: grayData,
-      nrows: canvas.height,
-      ncols: canvas.width,
-      ldim: canvas.width,
-    };
-
-    const params = {
-      shiftfactor: 0.1,
-      minsize: 20, // Allow smaller/farther faces
-      maxsize: 1000,
-      scalefactor: 1.1,
-    };
-
-    let dets: any[] = [];
-    if (facefinder) {
-      dets = pico.run_cascade?.(image, facefinder, params) ?? [];
-      dets = memory(dets);
-      dets = pico.cluster_detections?.(dets, 0.2) ?? [];
-    }
-    
-    processDetectionResults(dets, brightness, sharpness, canvas.width, canvas.height);
-  }, [capturedImage, cascadeLoaded, varianceOfLaplacian]);
-
   const processDetectionResults = useCallback((dets: any[], brightness: number, sharpness: number, width: number, height: number) => {
+    // Find highest-scoring detection
     let best = dets.reduce((top: any, curr: any) => (curr[3] > (top?.[3] ?? -Infinity) ? curr : top), null);
 
-    // Debug logs help diagnose why detector is stuck at low readiness %
-    // Remove these logs in production or gate behind a DEBUG flag
     console.log('Detection:', { detsLength: dets.length, bestScore: best?.[3], cascadeLoaded });
 
-    let hasSingleFace = dets.length === 1;
-    let meetsScore = Boolean(best && best[3] > 30); // Further lowered to improve detection success
-    let sizeRatio = best ? best[2] / Math.min(width, height) : 0;
-    let areaRatio = best ? Math.pow(best[2] / Math.min(width, height), 2) : 0;
-    let centerOffset = best
+    // Strict validation: require single face with high confidence
+    const hasFaceDetected = Boolean(best && dets.length === 1 && best[3] >= MIN_FACE_SCORE * 100);
+    const hasSingleFace = dets.length === 1;
+    const meetsScore = Boolean(best && best[3] >= MIN_FACE_SCORE * 100);
+    
+    const sizeRatio = best ? best[2] / Math.min(width, height) : 0;
+    const areaRatio = best ? Math.pow(best[2] / Math.min(width, height), 2) : 0;
+    const centerOffset = best
       ? {
           x: best[1] / width - 0.5,
           y: best[0] / height - 0.5,
         }
       : { x: 0, y: 0 };
 
-    console.log('Validation:', { hasSingleFace, meetsScore, areaRatio, centerOffset, brightness, sharpness });
+    console.log('Validation:', { 
+      hasFaceDetected, 
+      hasSingleFace, 
+      meetsScore, 
+      bestScore: best?.[3], 
+      areaRatio, 
+      centerOffset, 
+      brightness, 
+      sharpness 
+    });
 
-    // Fallback: If quality is good but no face detected for 5s, allow capture
     const brightnessOk = brightness >= BRIGHTNESS_MIN && brightness <= BRIGHTNESS_MAX;
     const sharpnessOk = sharpness >= SHARPNESS_MIN;
-    if (brightnessOk && sharpnessOk) {
-      if (!best) {
-        // Synthesize a centered face to allow immediate readiness when quality checks pass
-        const assumedSize = Math.min(width, height) * 0.5;
-        dets = [[height * 0.5, width * 0.5, assumedSize, 50]];
-        best = dets[0];
-      }
-      hasSingleFace = true;
-      meetsScore = true;
-      sizeRatio = best ? best[2] / Math.min(width, height) : sizeRatio;
-      areaRatio = best ? Math.pow(best[2] / Math.min(width, height), 2) : areaRatio;
-        centerOffset = best
-          ? { x: best[1] / width - 0.5, y: best[0] / height - 0.5 }
-          : { x: 0, y: 0 };
-      fallbackTimerRef.current = null;
-    }
+    const centeredOk = Math.abs(centerOffset.x) <= CENTER_TOLERANCE && Math.abs(centerOffset.y) <= CENTER_TOLERANCE;
+    const sizeOk = areaRatio >= AREA_MIN && areaRatio <= AREA_MAX;
 
-    // Retain delayed fallback as a safety net if detection still stalls despite good quality
-    if (!hasSingleFace && brightnessOk && sharpnessOk) {
-      if (!fallbackTimerRef.current) {
-        fallbackTimerRef.current = performance.now();
-      } else if (performance.now() - fallbackTimerRef.current > 5000) {
-        console.warn('Quality checks pass but no face detected - enabling fallback mode');
-        fallbackTimerRef.current = null;
-        hasSingleFace = true;
-        meetsScore = true;
-        if (!best) {
-          const assumedSize = Math.min(width, height) * 0.5;
-          dets = [[height * 0.5, width * 0.5, assumedSize, 50]];
-          best = dets[0];
-        }
-        sizeRatio = best ? best[2] / Math.min(width, height) : sizeRatio;
-        areaRatio = best ? Math.pow(best[2] / Math.min(width, height), 2) : areaRatio;
-        centerOffset = best
-          ? { x: best[1] / width - 0.5, y: best[0] / height - 0.5 }
-          : centerOffset;
-      }
-    } else {
-      fallbackTimerRef.current = null;
-    }
-
-    // Recompute derived metrics in case fallback injected a synthetic detection
-    const resolvedSizeRatio = best ? best[2] / Math.min(width, height) : sizeRatio;
-    const resolvedAreaRatio = best ? Math.pow(best[2] / Math.min(width, height), 2) : areaRatio;
-    const resolvedCenterOffset = best
-      ? { x: best[1] / width - 0.5, y: best[0] / height - 0.5 }
-      : centerOffset;
-
+    // All checks must pass for stability window
     const meetsStableChecks =
-      (hasSingleFace || meetsScore) &&
-      resolvedAreaRatio >= AREA_MIN &&
-      resolvedAreaRatio <= AREA_MAX &&
-      Math.abs(resolvedCenterOffset.x) <= CENTER_TOLERANCE &&
-      Math.abs(resolvedCenterOffset.y) <= CENTER_TOLERANCE &&
-      brightness >= BRIGHTNESS_MIN &&
-      brightness <= BRIGHTNESS_MAX &&
-      sharpness >= SHARPNESS_MIN;
-
-    // If everything but stability passes, start stability window immediately on first good frame
-    if (meetsStableChecks && !stableSinceRef.current) {
-      stableSinceRef.current = performance.now();
-    }
+      hasSingleFace &&
+      meetsScore &&
+      sizeOk &&
+      centeredOk &&
+      brightnessOk &&
+      sharpnessOk;
 
     const now = performance.now();
     if (meetsStableChecks) {
@@ -387,45 +259,112 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     const stable = Boolean(stableSinceRef.current && now - stableSinceRef.current >= STABLE_MS);
 
     console.log('Readiness checks:', {
-      '1️⃣ hasFace': hasSingleFace && meetsScore ? '✅' : '❌',
-      '2️⃣ areaRatio': resolvedAreaRatio >= AREA_MIN && resolvedAreaRatio <= AREA_MAX ? '✅' : `❌ (${resolvedAreaRatio.toFixed(2)})`,
-      '3️⃣ centered': Math.abs(resolvedCenterOffset.x) <= CENTER_TOLERANCE && Math.abs(resolvedCenterOffset.y) <= CENTER_TOLERANCE
-        ? '✅'
-        : `❌ (x:${resolvedCenterOffset.x.toFixed(2)}, y:${resolvedCenterOffset.y.toFixed(2)})`,
-      '4️⃣ brightness': brightness >= BRIGHTNESS_MIN && brightness <= BRIGHTNESS_MAX ? '✅' : `❌ (${brightness.toFixed(0)})`,
-      '5️⃣ sharpness': sharpness >= SHARPNESS_MIN ? '✅' : `❌ (${sharpness.toFixed(0)})`,
+      '1️⃣ hasFace': hasFaceDetected ? '✅' : '❌',
+      '2️⃣ areaRatio': sizeOk ? '✅' : `❌ (${areaRatio.toFixed(2)})`,
+      '3️⃣ centered': centeredOk ? '✅' : `❌ (x:${centerOffset.x.toFixed(2)}, y:${centerOffset.y.toFixed(2)})`,
+      '4️⃣ brightness': brightnessOk ? '✅' : `❌ (${brightness.toFixed(0)})`,
+      '5️⃣ sharpness': sharpnessOk ? '✅' : `❌ (${sharpness.toFixed(0)})`,
       '6️⃣ stable': stable ? '✅' : '❌',
     });
 
-    setFaceDetected(hasSingleFace && meetsScore);
+    setFaceDetected(hasFaceDetected);
     setAnalysis({
-      hasFace: hasSingleFace && meetsScore,
+      hasFace: hasFaceDetected,
       faceScore: best?.[3] ?? 0,
       brightness,
       sharpness,
-      centerOffset: resolvedCenterOffset,
-      sizeRatio: resolvedSizeRatio,
-      areaRatio: resolvedAreaRatio,
+      centerOffset,
+      sizeRatio,
+      areaRatio,
       stable,
     });
   }, []);
 
+  const detectFace = useCallback(async () => {
+    if (capturedImage) return;
+    
+    const video = webcamRef.current?.video as HTMLVideoElement | undefined;
+    const detector = detectorRef.current;
+    const canvas = canvasRef.current;
+
+    if (!cascadeLoaded || !detector || !video || !canvas || video.videoWidth === 0) {
+      return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    try {
+      // Downscale for performance
+      const width = Math.max(1, Math.round(video.videoWidth * DOWNSCALE_FACTOR));
+      const height = Math.max(1, Math.round(video.videoHeight * DOWNSCALE_FACTOR));
+      canvas.width = width;
+      canvas.height = height;
+      
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(DOWNSCALE_FACTOR, DOWNSCALE_FACTOR);
+      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+      
+      const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+      // Calculate brightness (sample every 8th pixel)
+      let brightnessSum = 0;
+      let sampleCount = 0;
+      for (let i = 0; i < rgba.length; i += 32) {
+        brightnessSum += (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
+        sampleCount++;
+      }
+      const brightness = brightnessSum / sampleCount;
+
+      // Calculate sharpness (Laplacian variance)
+      const grayData = new Uint8Array(canvas.width * canvas.height);
+      for (let i = 0, j = 0; i < rgba.length; i += 4, j++) {
+        grayData[j] = rgba[i] * 0.299 + rgba[i + 1] * 0.587 + rgba[i + 2] * 0.114;
+      }
+      const sharpness = varianceOfLaplacian(grayData, canvas.width, canvas.height);
+
+      // MediaPipe face detection
+      const startMs = performance.now();
+      const detections = await detector.detectForVideo(video, startMs);
+
+      // Map MediaPipe detections to picojs format for processDetectionResults
+      const dets: any[] = detections.detections.map((det: Detection) => {
+        const bbox = det.boundingBox!;
+        const score = det.categories[0].score;
+        
+        // picojs format: [row, col, size, score]
+        // MediaPipe bbox: {originX, originY, width, height} in pixels
+        const centerX = bbox.originX + bbox.width / 2;
+        const centerY = bbox.originY + bbox.height / 2;
+        const size = Math.max(bbox.width, bbox.height);
+        
+        return [
+          centerY,           // row (y-center in pixels)
+          centerX,           // col (x-center in pixels)
+          size,              // size (max dimension)
+          score * 100        // score (0-100 scale to match picojs)
+        ];
+      });
+
+      processDetectionResults(dets, brightness, sharpness, video.videoWidth, video.videoHeight);
+    } catch (error) {
+      console.error('Face detection error:', error);
+      return;
+    }
+  }, [capturedImage, cascadeLoaded, varianceOfLaplacian, processDetectionResults]);
+
   useEffect(() => {
     const tick = () => {
-      // Rendering handled by visible webcam element; skip toDataURL work
-
-      // Pause detection loop until camera and cascade are ready
-      // to avoid wasted CPU cycles during initialization
       if (!cameraReady || !cascadeLoaded) {
         detectionRafRef.current = requestAnimationFrame(tick);
         return;
       }
       
       const now = performance.now();
-      // Throttle detection to 700ms to reduce CPU load
-      if (now - lastDetectAtRef.current >= 700) {
+      // Throttle to 500ms for faster response
+      if (now - lastDetectAtRef.current >= 500) {
         lastDetectAtRef.current = now;
-        detectFace();
+        void detectFace(); // async call
       }
       detectionRafRef.current = requestAnimationFrame(tick);
     };
@@ -435,7 +374,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     return () => {
       if (detectionRafRef.current) cancelAnimationFrame(detectionRafRef.current);
     };
-  }, [detectFace, cameraReady, cascadeLoaded, renderCircularFrame]);
+  }, [detectFace, cameraReady, cascadeLoaded]);
 
   const onUserMedia = useCallback(() => {
     setCameraReady(true);
@@ -557,7 +496,11 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
   }, []);
   const captureLabel = readyToCapture ? 'Capture Photo' : statusLabel;
 
-  const ringColor = readyToCapture ? '#22c55e' : readiness >= 50 ? '#fbbf24' : '#ef4444';
+  const ringColor = readyToCapture 
+    ? '#22c55e' // Green: all checks pass
+    : analysis.hasFace 
+      ? '#fbbf24' // Yellow: face detected but not ready
+      : '#ef4444'; // Red: no face detected
 
   useEffect(() => {
     readinessRef.current = readiness;
