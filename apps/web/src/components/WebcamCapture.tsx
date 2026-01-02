@@ -5,7 +5,15 @@ import Webcam from 'react-webcam';
 import type { UploadDocumentResponse } from '@enxtai/shared-types';
 import { uploadLivePhoto } from '@/lib/api-client';
 
-// Dynamic imports for MediaPipe (ESM modules)
+/**
+ * FACE DETECTION: MediaPipe FaceDetector
+ * 
+ * Migrated from picojs to @mediapipe/tasks-vision for reliable face detection.
+ * MediaPipe is Google's production-grade ML solution with better accuracy and browser compatibility.
+ * 
+ * Dynamic ESM import required because MediaPipe is an ES module and Next.js uses CommonJS by default.
+ * Types are declared as 'any' to avoid TypeScript compilation issues with dynamic imports.
+ */
 type FaceDetector = any;
 type Detection = any;
 
@@ -22,16 +30,32 @@ const DOWNSCALE_FACTOR = 0.5;
 const BRIGHTNESS_MIN = 60;
 const BRIGHTNESS_MAX = 200;
 const SHARPNESS_MIN = 20;
-const CENTER_TOLERANCE = 0.25; // Relaxed from 0.18
-const AREA_MIN = 0.08; // Relaxed from 0.1
-const AREA_MAX = 0.75; // Relaxed from 0.7
-const STABLE_MS = 500; // Faster from 1000ms
-const MIN_FACE_SCORE = 0.7; // MediaPipe confidence threshold
+
+/**
+ * FACE DETECTION THRESHOLDS
+ * 
+ * Relaxed from stricter picojs values to reduce false negatives:
+ * - CENTER_TOLERANCE: 0.18 → 0.25 (allow more off-center positioning)
+ * - AREA_MIN: 0.1 → 0.08 (allow smaller face sizes)
+ * - STABLE_MS: 1000 → 500 (faster response time)
+ * - MIN_FACE_SCORE: 0.7 (MediaPipe confidence threshold, 70% minimum)
+ */
+const CENTER_TOLERANCE = 0.25;
+const AREA_MIN = 0.08;
+const AREA_MAX = 0.75;
+const STABLE_MS = 500;
+const MIN_FACE_SCORE = 0.7;
 
 export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props) {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const detectorRef = useRef<FaceDetector | null>(null); // MediaPipe detector
+  
+  /**
+   * MediaPipe FaceDetector instance (replaces picojs facefinder/memory refs)
+   * Initialized asynchronously via dynamic import in useEffect
+   */
+  const detectorRef = useRef<FaceDetector | null>(null);
+  
   const detectionRafRef = useRef<number | null>(null);
   const lastDetectAtRef = useRef<number>(0);
   const stableSinceRef = useRef<number | null>(null);
@@ -106,6 +130,17 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     let cancelled = false;
     canvasRef.current = document.createElement('canvas');
 
+    /**
+     * Initialize MediaPipe FaceDetector
+     * 
+     * Loads WASM runtime and BlazeFace model from CDN:
+     * - WASM runtime: jsdelivr CDN (version 0.10.21 - matches package.json)
+     * - Model file: Google Cloud Storage (official MediaPipe model repository)
+     * 
+     * Using 'short-range' model optimized for webcam distances (0.5-2 meters).
+     * GPU delegate enabled for better performance where available.
+     * Running mode: VIDEO (optimized for continuous frame processing vs IMAGE mode).
+     */
     async function initMediaPipe() {
       try {
         setCascadeProgress(10);
@@ -114,7 +149,7 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
         const { FaceDetector, FilesetResolver } = await import('@mediapipe/tasks-vision');
         setCascadeProgress(30);
 
-        // Load MediaPipe vision tasks WASM runtime from unpkg CDN
+        // Load MediaPipe vision tasks WASM runtime from jsdelivr CDN
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm'
         );
@@ -204,6 +239,17 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     return variance;
   }, []);
 
+  /**
+   * Process MediaPipe detection results and validate face quality
+   * 
+   * STRICT ANTI-SPOOFING VALIDATION:
+   * - Requires exactly 1 face (rejects multiple faces or objects)
+   * - Requires confidence score ≥70% (MIN_FACE_SCORE * 100)
+   * - No synthetic fallbacks (removed to prevent false positives)
+   * 
+   * Detection format from MediaPipe (mapped to picojs format):
+   * [row, col, size, score] where score is 0-100 scale
+   */
   const processDetectionResults = useCallback((dets: any[], brightness: number, sharpness: number, width: number, height: number) => {
     // Find highest-scoring detection
     let best = dets.reduce((top: any, curr: any) => (curr[3] > (top?.[3] ?? -Infinity) ? curr : top), null);
@@ -280,6 +326,25 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
     });
   }, []);
 
+  /**
+   * Detect faces using MediaPipe FaceDetector
+   * 
+   * Process flow:
+   * 1. Capture video frame to canvas (downscaled for performance)
+   * 2. Calculate brightness (RGB average) and sharpness (Laplacian variance)
+   * 3. Call MediaPipe detectForVideo() with video element and timestamp
+   * 4. Map MediaPipe bbox format to picojs format for validation compatibility
+   * 5. Pass results to processDetectionResults()
+   * 
+   * Error handling: Try/catch prevents unhandled promise rejections from 
+   * detectForVideo() while keeping RAF loop intact.
+   * 
+   * MediaPipe Detection format:
+   * - boundingBox: {originX, originY, width, height} in pixels
+   * - categories: [{score, categoryName}] where score is 0.0-1.0
+   * 
+   * Mapped to picojs format: [centerY, centerX, size, score*100]
+   */
   const detectFace = useCallback(async () => {
     if (capturedImage) return;
     
