@@ -4,6 +4,7 @@ export enum DocumentType {
   AADHAAR_CARD_FRONT = 'AADHAAR_CARD_FRONT',  // NEW
   AADHAAR_CARD_BACK = 'AADHAAR_CARD_BACK',    // NEW
   LIVE_PHOTO = 'LIVE_PHOTO',
+  SIGNATURE = 'SIGNATURE',
 }
 
 export interface UploadDocumentDto {

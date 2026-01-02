@@ -36,6 +36,7 @@ model KYCSubmission {
   aadhaarFrontUrl         String?  // NEW: Front side with photo
   aadhaarBackUrl          String?  // NEW: Back side with address
   livePhotoUrl            String?
+  signatureUrl            String?
 
   // Extracted data
   panNumber               String?

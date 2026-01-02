@@ -2,6 +2,7 @@ export enum DocumentType {
   PAN_CARD = 'PAN_CARD',
   AADHAAR_CARD = 'AADHAAR_CARD',
   LIVE_PHOTO = 'LIVE_PHOTO',
+  SIGNATURE = 'SIGNATURE',
 }
 
 export interface UploadResult {

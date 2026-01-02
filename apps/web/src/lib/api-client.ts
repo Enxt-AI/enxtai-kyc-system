@@ -126,6 +126,26 @@ export default api;
     return res.data as UploadDocumentResponse;
   }
 
+  export async function uploadSignature(
+    userId: string,
+    file: File,
+    onUploadProgress?: (progress: number) => void,
+  ): Promise<UploadDocumentResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('userId', userId);
+
+    const res = await api.post('/api/kyc/upload/signature', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!event.total || !onUploadProgress) return;
+        const percent = Math.round((event.loaded * 100) / event.total);
+        onUploadProgress(percent);
+      },
+    });
+    return res.data as UploadDocumentResponse;
+  }
+
   export async function deletePanDocument(userId: string, submissionId?: string) {
     const res = await api.post('/api/kyc/delete/pan', { userId, submissionId });
     return res.data;

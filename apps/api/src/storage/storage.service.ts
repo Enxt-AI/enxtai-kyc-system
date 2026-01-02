@@ -7,6 +7,7 @@ import {
   LIVE_PHOTOS_BUCKET,
   MAX_FILE_SIZE,
   PAN_CARDS_BUCKET,
+  SIGNATURES_BUCKET,
   PRESIGNED_URL_EXPIRY,
 } from './storage.constants';
 import {
@@ -27,6 +28,7 @@ export class StorageService implements OnModuleInit {
   private readonly panBucket: string;
   private readonly aadhaarBucket: string;
   private readonly livePhotosBucket: string;
+  private readonly signaturesBucket: string;
   private readonly bucketEncryptionConfig: { Rule: any[] };
   private readonly enableBucketEncryption: boolean;
 
@@ -48,7 +50,11 @@ export class StorageService implements OnModuleInit {
       'MINIO_LIVE_PHOTO_BUCKET',
       LIVE_PHOTOS_BUCKET,
     );
-    this.buckets = [this.panBucket, this.aadhaarBucket, this.livePhotosBucket];
+    this.signaturesBucket = this.configService.get<string>(
+      'MINIO_SIGNATURES_BUCKET',
+      SIGNATURES_BUCKET,
+    );
+    this.buckets = [this.panBucket, this.aadhaarBucket, this.livePhotosBucket, this.signaturesBucket];
 
     this.enableBucketEncryption =
       this.configService.get<string>('MINIO_ENABLE_SSE', 'false') === 'true';
@@ -155,6 +161,8 @@ export class StorageService implements OnModuleInit {
         return this.aadhaarBucket;
       case DocumentType.LIVE_PHOTO:
         return this.livePhotosBucket;
+      case DocumentType.SIGNATURE:
+        return this.signaturesBucket;
       default:
         return this.panBucket;
     }

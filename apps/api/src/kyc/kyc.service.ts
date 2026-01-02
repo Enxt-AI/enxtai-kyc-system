@@ -58,6 +58,16 @@ export class KycService {
     private readonly faceRecognitionService: FaceRecognitionService,
   ) {}
 
+  /** Generate a temporary phone that won't collide with UNIQUE(phone) */
+  private generateTempPhone() {
+    const ts = Date.now().toString();
+    const rand = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, '0');
+    // Use last 7 digits of timestamp + 3 random digits → 10 digits after the 999 prefix
+    return `999${ts.slice(-7)}${rand}`;
+  }
+
   /**
    * Get or Create User (Helper)
    * 
@@ -77,14 +87,39 @@ export class KycService {
 
     if (!user) {
       // Auto-create user with generated email/phone
-      const timestamp = Date.now();
-      user = await this.prisma.user.create({
-        data: {
-          id: userId,
-          email: `user-${userId.substring(0, 8)}@kyc-temp.local`,
-          phone: `999${timestamp.toString().substring(0, 7)}`, // Generate unique phone
-        },
-      });
+      const email = `user-${userId.substring(0, 8)}@kyc-temp.local`;
+
+      // Retry a few times to avoid UNIQUE(phone) collisions in fast sequential calls
+      for (let i = 0; i < 3; i++) {
+        try {
+          user = await this.prisma.user.create({
+            data: {
+              id: userId,
+              email,
+              phone: this.generateTempPhone(),
+            },
+          });
+          break;
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            // Retry with a new phone value
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!user) {
+        // Last-resort fallback with userId-derived digits to guarantee uniqueness
+        const numericFromId = userId.replace(/\D/g, '').padEnd(10, '0').slice(0, 10);
+        user = await this.prisma.user.create({
+          data: {
+            id: userId,
+            email,
+            phone: `999${numericFromId}`,
+          },
+        });
+      }
     }
 
     return user;
@@ -470,6 +505,48 @@ export class KycService {
           userId: user.id,
         action: 'KYC_LIVE_PHOTO_UPLOAD',
         metadata: { type: 'LIVE_PHOTO', objectPath },
+      },
+    });
+
+    return updated;
+  }
+
+  async uploadSignatureDocument(userId: string, file: MultipartFile) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const user = await this.getOrCreateUser(userId);
+    const submission = await this.getOrCreateSubmission(user.id);
+
+    const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
+    await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
+
+    const uploadDto: UploadDocumentDto = {
+      buffer,
+      filename: file.filename,
+      mimetype: file.mimetype,
+    };
+
+    const objectPath = await this.storageService.uploadDocument(
+      DocumentType.SIGNATURE,
+      user.id,
+      uploadDto,
+    );
+
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      // Cast to any to tolerate older generated Prisma clients until migrations are applied
+      data: {
+        signatureUrl: objectPath,
+      } as any,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'KYC_SIGNATURE_UPLOAD',
+        metadata: { type: 'SIGNATURE', objectPath },
       },
     });
 

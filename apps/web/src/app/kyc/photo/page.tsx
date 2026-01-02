@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { WebcamCapture } from '@/components/WebcamCapture';
 import { createKYCSubmission, getKYCSubmission } from '@/lib/api-client';
 
@@ -12,6 +13,7 @@ export default function KycPhotoPage() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     async function init() {
@@ -85,6 +87,10 @@ export default function KycPhotoPage() {
               className={`rounded-full px-5 py-2 text-sm font-semibold text-white shadow transition ${
                 uploaded ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
               }`}
+              onClick={() => {
+                if (!uploaded) return;
+                router.push('/kyc/signature');
+              }}
             >
               Continue
             </button>

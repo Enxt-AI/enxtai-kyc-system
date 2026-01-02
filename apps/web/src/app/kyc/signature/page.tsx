@@ -1,0 +1,268 @@
+"use client";
+
+import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createKYCSubmission, getKYCSubmission, uploadSignature } from '@/lib/api-client';
+
+export default function KycSignaturePage() {
+  const [userId] = useState(
+    process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111',
+  );
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [uploaded, setUploaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'draw' | 'upload'>('draw');
+  const [progress, setProgress] = useState(0);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+  const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const router = useRouter();
+
+  const getCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    // Account for CSS scaling vs. intrinsic canvas size
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  useEffect(() => {
+    async function init() {
+      try {
+        const existing = await getKYCSubmission(userId);
+        if (existing?.id) {
+          setSubmissionId(existing.id);
+        } else {
+          const res = await createKYCSubmission(userId);
+          setSubmissionId(res.id);
+        }
+      } catch (err: any) {
+        const message = err?.response?.data?.message || 'Unable to start submission';
+        setError(message);
+      }
+    }
+    void init();
+  }, [userId]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+  }, []);
+
+  const startDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = getCanvasCoords(e);
+    if (!point) return;
+    lastPoint.current = point;
+    drawing.current = true;
+  };
+
+  const moveDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawing.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const current = getCanvasCoords(e);
+    if (!current) return;
+    if (lastPoint.current) {
+      ctx.beginPath();
+      ctx.moveTo(lastPoint.current.x, lastPoint.current.y);
+      ctx.lineTo(current.x, current.y);
+      ctx.stroke();
+    }
+    lastPoint.current = current;
+  };
+
+  const endDraw = () => {
+    drawing.current = false;
+    lastPoint.current = null;
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const uploadFromCanvas = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setUploading(true);
+    setError(null);
+    setProgress(0);
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        setUploading(false);
+        setError('Unable to generate signature image');
+        return;
+      }
+      const file = new File([blob], 'signature.png', { type: 'image/png' });
+      try {
+        await uploadSignature(userId, file, setProgress);
+        setUploaded(true);
+      } catch (err: any) {
+        const message = err?.response?.data?.message || 'Signature upload failed';
+        setError(message);
+      } finally {
+        setUploading(false);
+      }
+    }, 'image/png');
+  };
+
+  const uploadFile = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    setProgress(0);
+    try {
+      await uploadSignature(userId, file, setProgress);
+      setUploaded(true);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Signature upload failed';
+      setError(message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    uploadFile(file);
+  };
+
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-50 p-6 sm:p-10">
+      <div className="mx-auto max-w-5xl space-y-8">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm text-gray-500">Submission ID: {submissionId ?? '...'}</p>
+            <h1 className="text-3xl font-semibold text-gray-900">Digital Signature</h1>
+            <p className="text-sm text-gray-700 mt-1">
+              Draw your signature or upload a scanned signature image (PNG/JPEG, max 5MB).
+            </p>
+          </div>
+          <Link href="/kyc/photo" className="text-blue-600 hover:underline text-sm font-semibold">
+            Back to Live Photo
+          </Link>
+        </header>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm space-y-6">
+          <div className="flex gap-2 rounded-full bg-gray-100 p-1 w-fit">
+            <button
+              className={`px-4 py-2 text-sm font-semibold rounded-full transition ${
+                tab === 'draw' ? 'bg-white shadow text-gray-900' : 'text-gray-600'
+              }`}
+              onClick={() => setTab('draw')}
+              type="button"
+            >
+              Draw Signature
+            </button>
+            <button
+              className={`px-4 py-2 text-sm font-semibold rounded-full transition ${
+                tab === 'upload' ? 'bg-white shadow text-gray-900' : 'text-gray-600'
+              }`}
+              onClick={() => setTab('upload')}
+              type="button"
+            >
+              Upload Image
+            </button>
+          </div>
+
+          {tab === 'draw' && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+                <canvas
+                  ref={canvasRef}
+                  width={600}
+                  height={220}
+                  className="w-full rounded bg-white shadow-inner cursor-crosshair"
+                  onPointerDown={startDraw}
+                  onPointerMove={moveDraw}
+                  onPointerUp={endDraw}
+                  onPointerLeave={endDraw}
+                />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:opacity-50"
+                  onClick={uploadFromCanvas}
+                  disabled={uploading}
+                >
+                  {uploading ? `Uploading... ${progress}%` : 'Upload Signature'}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-300"
+                  onClick={clearCanvas}
+                  disabled={uploading}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tab === 'upload' && (
+            <div className="space-y-4">
+              <label className="flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center text-gray-600 hover:border-blue-400 hover:text-blue-600 cursor-pointer">
+                <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={onFileSelected} />
+                <span className="text-sm font-semibold">Click to upload signature image</span>
+                <span className="text-xs text-gray-500">PNG or JPEG, max 5MB</span>
+              </label>
+              {uploading && <p className="text-sm text-gray-600">Uploading... {progress}%</p>}
+            </div>
+          )}
+
+          {uploaded && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-800 text-sm">
+              Signature uploaded successfully. You can proceed.
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <Link
+              href="/kyc/verify"
+              className="rounded-full bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-300"
+            >
+              Skip for now
+            </Link>
+            <button
+              type="button"
+              onClick={() => router.push('/kyc/verify')}
+              disabled={!uploaded}
+              className={`rounded-full px-5 py-2 text-sm font-semibold text-white shadow transition ${
+                uploaded ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}

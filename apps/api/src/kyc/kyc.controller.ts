@@ -364,6 +364,60 @@ export class KycController {
   }
 
   /**
+   * Upload Digital Signature
+   *
+   * Accepts a drawn or uploaded signature image (PNG/JPEG). Stored in MinIO for downstream
+   * validation and record-keeping. No status transition is enforced here; signatures are
+   * optional in the current workflow but persisted for auditability.
+   */
+  @Post('upload/signature')
+  async uploadSignature(@Req() req: FastifyRequest) {
+    try {
+      const parts = req.parts();
+      let userId: string | undefined;
+      let fileData: { buffer: Buffer; filename: string; mimetype: string } | undefined;
+
+      for await (const part of parts) {
+        if (part.type === 'field') {
+          if (part.fieldname === 'userId') {
+            userId = part.value as string;
+          }
+        } else if (part.type === 'file' && part.fieldname === 'file') {
+          const buffer = await part.toBuffer();
+          fileData = {
+            buffer,
+            filename: part.filename,
+            mimetype: part.mimetype,
+          };
+        }
+      }
+
+      if (!userId) {
+        throw new BadRequestException('userId is required');
+      }
+
+      if (!fileData) {
+        throw new BadRequestException('File is required');
+      }
+
+      const file: MultipartFile = {
+        ...fileData,
+        toBuffer: async () => fileData.buffer,
+      } as any;
+
+      const submission = await this.kycService.uploadSignatureDocument(userId, file);
+      return {
+        success: true,
+        submissionId: submission.id,
+        documentUrl: submission.signatureUrl,
+      };
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException(err?.message ?? 'Upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
    * Trigger Face Verification
    * 
    * Initiates face verification workflow: downloads documents from MinIO, extracts faces
