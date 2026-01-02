@@ -542,6 +542,12 @@ export function WebcamCapture({ userId, onUploadSuccess, onUploadError }: Props)
         throw new Error('Upload succeeded but URL was not returned');
       }
       setSuccessUrl(url);
+      
+      // Stop webcam stream after successful upload
+      const video = webcamRef.current?.video as HTMLVideoElement | undefined;
+      const stream = video?.srcObject as MediaStream | null | undefined;
+      stream?.getTracks().forEach((t) => t.stop());
+      
       onUploadSuccess(url);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Upload failed. Please try again';

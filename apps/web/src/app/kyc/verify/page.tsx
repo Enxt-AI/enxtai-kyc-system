@@ -1,66 +1,74 @@
 'use client';
 
-import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { Suspense, useMemo } from 'react';
-import FaceVerificationStatus from '@/components/FaceVerificationStatus';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
-function VerifyPageContent() {
-  const searchParams = useSearchParams();
+export default function VerifyPage() {
   const router = useRouter();
-  const submissionId = useMemo(() => searchParams.get('submissionId'), [searchParams]);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Retrieve submissionId from localStorage
+    const storedId = localStorage.getItem('kyc_submission_id');
+    setSubmissionId(storedId);
+  }, []);
+
+  const handleStartNewKYC = () => {
+    // Clear localStorage
+    localStorage.removeItem('kyc_submission_id');
+    // Redirect to home
+    router.push('/');
+  };
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-0">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Face Verification</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            We will match your live selfie with your PAN or Aadhaar photo and run a liveness check.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Link
-            href="/kyc/upload"
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
-          >
-            Back to Uploads
-          </Link>
-          <button
-            onClick={() => router.push('/kyc/photo')}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
-          >
-            Live Photo
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-b from-green-50 via-white to-gray-50 flex items-center justify-center p-6">
+      <div className="mx-auto max-w-2xl w-full space-y-6">
+        <div className="rounded-2xl border border-green-200 bg-white p-8 shadow-lg text-center space-y-6">
+          {/* Success Icon */}
+          <div className="mx-auto w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
+            <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
 
-      {!submissionId ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No submission ID provided. Append <span className="font-semibold">?submissionId=&lt;id&gt;</span> to the URL after finishing uploads.
-        </div>
-      ) : (
-        <>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <p className="font-semibold text-slate-900">Before you start:</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Ensure your PAN and Aadhaar photos are clear and fully visible.</li>
-              <li>Use a well-lit environment for the live photo.</li>
-              <li>Keep still during verification; this takes a few seconds.</li>
+          {/* Success Message */}
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">KYC Submission Complete!</h1>
+            <p className="text-gray-600">
+              Thank you for completing your KYC verification process.
+            </p>
+          </div>
+
+          {/* Submission Details */}
+          {submissionId && (
+            <div className="rounded-lg bg-gray-50 p-4 text-left space-y-2">
+              <p className="text-sm font-semibold text-gray-700">Submission Details:</p>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p><span className="font-medium">Submission ID:</span> {submissionId}</p>
+                <p><span className="font-medium">Status:</span> Under Review</p>
+              </div>
+            </div>
+          )}
+
+          {/* What's Next */}
+          <div className="rounded-lg bg-blue-50 p-4 text-left space-y-2">
+            <p className="text-sm font-semibold text-blue-900">What happens next?</p>
+            <ul className="text-xs text-blue-800 space-y-1 list-disc pl-5">
+              <li>Your documents are being verified by our team</li>
+              <li>You will receive an email notification once verification is complete</li>
+              <li>This process typically takes 24-48 hours</li>
             </ul>
           </div>
 
-          <FaceVerificationStatus submissionId={submissionId} />
-        </>
-      )}
+          {/* Action Button */}
+          <button
+            onClick={handleStartNewKYC}
+            className="w-full rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700 transition"
+          >
+            Start New KYC Submission
+          </button>
+        </div>
+      </div>
     </div>
-  );
-}
-
-export default function VerifyPage() {
-  return (
-    <Suspense fallback={<div className="p-8 text-sm text-slate-600">Loading verification...</div>}>
-      <VerifyPageContent />
-    </Suspense>
   );
 }

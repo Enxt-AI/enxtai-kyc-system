@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
@@ -20,6 +20,13 @@ export default function KycUploadPage() {
   const panRef = useRef<DocumentUploadRef>(null);
   const aadhaarFrontRef = useRef<DocumentUploadRef>(null);
   const aadhaarBackRef = useRef<DocumentUploadRef>(null);
+
+  // Store submissionId in localStorage when it's set
+  useEffect(() => {
+    if (submissionId) {
+      localStorage.setItem('kyc_submission_id', submissionId);
+    }
+  }, [submissionId]);
 
   const uploadedCount = [panUploaded, aadhaarFrontUploaded, aadhaarBackUploaded].filter(Boolean).length;
   const selectedCount = [panSelected, aadhaarFrontSelected, aadhaarBackSelected].filter(Boolean).length;
