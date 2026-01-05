@@ -7,9 +7,10 @@ import { WebcamCapture } from '@/components/WebcamCapture';
 import { createKYCSubmission, getKYCSubmission } from '@/lib/api-client';
 
 export default function KycPhotoPage() {
-  const [userId] = useState(
-    process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111',
-  );
+  // Retrieve userId from localStorage (set during document upload)
+  const [userId] = useState(() => {
+    return localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
+  });
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);

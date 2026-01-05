@@ -16,6 +16,7 @@ export default function VerifyPage() {
   const handleStartNewKYC = () => {
     // Clear localStorage
     localStorage.removeItem('kyc_submission_id');
+    localStorage.removeItem('kyc_user_id');
     // Redirect to home
     router.push('/');
   };

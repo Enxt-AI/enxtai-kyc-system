@@ -6,7 +6,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
 
 export default function KycUploadPage() {
-  const userId = useMemo(() => uuidv4(), []); // Generate once per mount
+  // Generate userId once and store in localStorage for consistency across KYC flow
+  const userId = useMemo(() => {
+    const stored = localStorage.getItem('kyc_user_id');
+    if (stored) return stored;
+    const newId = uuidv4();
+    localStorage.setItem('kyc_user_id', newId);
+    return newId;
+  }, []);
+  
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [panUploaded, setPanUploaded] = useState(false);
   const [aadhaarFrontUploaded, setAadhaarFrontUploaded] = useState(false);
