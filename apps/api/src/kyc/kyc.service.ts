@@ -12,6 +12,8 @@ import { MAX_FILE_SIZE } from '../storage/storage.constants';
 import { DocumentType, UploadDocumentDto } from '../storage/storage.types';
 import { OcrService } from '../ocr/ocr.service';
 import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
+import { WebhookService } from '../webhooks/webhook.service';
+import { WebhookEvent } from '../webhooks/webhook-events.enum';
 import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
@@ -45,9 +47,21 @@ const MAX_HEIGHT = 8192;
  * - Simplifies frontend logic by eliminating pre-creation API calls
  * - Generated emails/phones are placeholders (e.g., user-xxx@kyc-temp.local)
  * 
+ * **Multi-Tenancy**:
+ * - All operations scoped to clientId (extracted from X-API-Key by TenantMiddleware)
+ * - Documents stored in client-specific MinIO buckets (kyc-{clientId}-{suffix})
+ * - User lookups constrained by (clientId, externalUserId) composite unique key
+ * - Legacy internal endpoints use clientId '00000000-0000-0000-0000-000000000000'
+ * 
+ * **Webhook Integration**:
+ * - WebhookService injected for real-time status change notifications
+ * - Webhooks triggered after document uploads and verification completion
+ * - Failures logged but don't block KYC workflow (isolated error handling)
+ * 
  * @see {@link StorageService} for MinIO S3 operations
  * @see {@link OcrService} for Tesseract.js OCR integration
  * @see {@link FaceRecognitionService} for face-api.js verification
+ * @see {@link WebhookService} for webhook delivery
  */
 @Injectable()
 export class KycService {
@@ -56,6 +70,7 @@ export class KycService {
     private readonly storageService: StorageService,
     private readonly ocrService: OcrService,
     private readonly faceRecognitionService: FaceRecognitionService,
+    private readonly webhookService: WebhookService,
   ) {}
 
   /** Generate a temporary phone that won't collide with UNIQUE(phone) */
@@ -78,11 +93,17 @@ export class KycService {
    * - Email: user-{first8CharsOfUuid}@kyc-temp.local
    * - Phone: 999{timestamp7Digits} (ensures uniqueness)
    * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
+   * - Maintains backward compatibility while supporting new client-facing endpoints
+   * 
    * @param userId - UUID v4 string
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns User object (existing or newly created)
    * @private
    */
-  private async getOrCreateUser(userId: string) {
+  private async getOrCreateUser(userId: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
     let user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
@@ -95,6 +116,8 @@ export class KycService {
           user = await this.prisma.user.create({
             data: {
               id: userId,
+              clientId, // Use provided clientId (defaults to legacy for backward compatibility)
+              externalUserId: userId, // Use internal ID as external ID
               email,
               phone: this.generateTempPhone(),
             },
@@ -115,6 +138,8 @@ export class KycService {
         user = await this.prisma.user.create({
           data: {
             id: userId,
+            clientId, // Use provided clientId (defaults to legacy for backward compatibility)
+            externalUserId: userId, // Use internal ID as external ID
             email,
             phone: `999${numericFromId}`,
           },
@@ -125,8 +150,21 @@ export class KycService {
     return user;
   }
 
-  // Helper: Get or create submission
-  private async getOrCreateSubmission(userId: string) {
+  /**
+   * Get or Create Submission (Helper)
+   * 
+   * Retrieves most recent submission for user or creates new one if not found.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns KYCSubmission object (existing or newly created)
+   * @private
+   */
+  private async getOrCreateSubmission(userId: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
     let submission = await this.prisma.kYCSubmission.findFirst({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -136,6 +174,7 @@ export class KycService {
       submission = await this.prisma.kYCSubmission.create({
         data: {
           userId,
+          clientId, // Use provided clientId (defaults to legacy for backward compatibility)
           documentSource: DocumentSource.MANUAL_UPLOAD,
           internalStatus: InternalStatus.PENDING,
         },
@@ -143,6 +182,151 @@ export class KycService {
     }
 
     return submission;
+  }
+
+  /**
+   * Trigger Webhook Helper
+   * 
+   * Sends webhook notification to client's configured endpoint with KYC event data.
+   * Fetches user details, builds webhook payload, and delegates to WebhookService.
+   * 
+   * **Error Isolation**:
+   * - Webhook failures are caught and logged but do NOT throw exceptions
+   * - Ensures KYC workflow continues even if client webhook endpoint is down
+   * - All delivery attempts logged to WebhookLog table for debugging
+   * 
+   * **Data Mapping**:
+   * - `kycSessionId`: Submission ID (for client API correlation)
+   * - `externalUserId`: Client's user identifier (from User.externalUserId)
+   * - `status`: Current submission status
+   * - `extractedData`: OCR results (PAN number, Aadhaar number, name, DOB)
+   * - `verificationScores`: Face match and liveness scores (if verification completed)
+   * - `rejectionReason`: Admin rejection reason (if applicable)
+   * 
+   * @param submission - KYCSubmission object with updated status
+   * @param event - Webhook event type (documents_uploaded, verification_completed, status_changed)
+   * 
+   * @returns Promise<void> - Always resolves (errors caught internally)
+   * 
+   * @private Helper method for KycService webhook triggers
+   * 
+   * @example
+   * ```typescript
+   * // After document upload completes
+   * await this.triggerWebhook(
+   *   updated,
+   *   WebhookEvent.KYC_DOCUMENTS_UPLOADED
+   * );
+   * 
+   * // After face verification completes
+   * await this.triggerWebhook(
+   *   verified,
+   *   WebhookEvent.KYC_VERIFICATION_COMPLETED
+   * );
+   * ```
+   */
+  private async triggerWebhook(
+    submission: any,
+    event: any,
+  ): Promise<void> {
+    try {
+      // Fetch user to get externalUserId and clientId
+      const user = await this.prisma.user.findUnique({
+        where: { id: submission.userId },
+        select: {
+          externalUserId: true,
+          clientId: true,
+        },
+      });
+
+      if (!user) {
+        // Should never happen (submission references user via FK)
+        throw new Error(`User not found for submission ${submission.id}`);
+      }
+
+      // Build webhook data payload
+      const webhookData: any = {
+        kycSessionId: submission.id,
+        externalUserId: user.externalUserId,
+        status: submission.internalStatus,
+      };
+
+      // Include extracted data if available
+      if (submission.panNumber || submission.aadhaarNumber || submission.extractedName || submission.dateOfBirth) {
+        webhookData.extractedData = {
+          panNumber: submission.panNumber || undefined,
+          aadhaarNumber: submission.aadhaarNumber || undefined,
+          fullName: submission.extractedName || undefined,
+          dateOfBirth: submission.dateOfBirth ? submission.dateOfBirth.toISOString().split('T')[0] : undefined,
+        };
+      }
+
+      // Include verification scores if available
+      if (submission.faceMatchScore !== null || submission.livenessScore !== null) {
+        webhookData.verificationScores = {
+          faceMatchScore: submission.faceMatchScore !== null ? submission.faceMatchScore : undefined,
+          livenessScore: submission.livenessScore !== null ? submission.livenessScore : undefined,
+        };
+      }
+
+      // Include rejection reason if submission was rejected
+      if (submission.rejectionReason) {
+        webhookData.rejectionReason = submission.rejectionReason;
+      }
+
+      // Send webhook (errors caught internally by WebhookService)
+      await this.webhookService.sendWebhook(user.clientId, event, webhookData);
+    } catch (error) {
+      // Log error but don't throw (webhook failures should not break KYC flow)
+      console.error(`Failed to trigger webhook for submission ${submission.id}:`, error);
+    }
+  }
+
+  /**
+   * Check and Trigger Documents Uploaded Webhook
+   * 
+   * Centralized helper to detect when all required documents are uploaded
+   * and trigger the KYC_DOCUMENTS_UPLOADED webhook. Called from all document
+   * upload methods to ensure webhook fires regardless of upload order.
+   * 
+   * **Required Documents**:
+   * - PAN document (panDocumentUrl)
+   * - Aadhaar (either legacy aadhaarDocumentUrl OR both aadhaarFrontUrl + aadhaarBackUrl)
+   * - Live photo (livePhotoUrl)
+   * 
+   * **Trigger Conditions**:
+   * - All required documents present
+   * - Submission status is DOCUMENTS_UPLOADED
+   * 
+   * @param submission - Updated KYCSubmission object after document upload
+   * @returns Promise<void> - Always resolves (errors caught internally)
+   * @private Helper method called from all upload paths
+   */
+  private async checkAndTriggerDocumentsUploadedWebhook(
+    submission: any,
+  ): Promise<void> {
+    try {
+      // Check if all required documents are present
+      const hasPan = Boolean(submission.panDocumentUrl);
+      const hasAadhaar = Boolean(
+        submission.aadhaarDocumentUrl || 
+        (submission.aadhaarFrontUrl && submission.aadhaarBackUrl)
+      );
+      const hasLivePhoto = Boolean(submission.livePhotoUrl);
+      
+      // Trigger webhook only if all documents uploaded and status is DOCUMENTS_UPLOADED
+      if (
+        hasPan && 
+        hasAadhaar && 
+        hasLivePhoto && 
+        submission.internalStatus === InternalStatus.DOCUMENTS_UPLOADED
+      ) {
+        await this.triggerWebhook(submission, WebhookEvent.KYC_DOCUMENTS_UPLOADED);
+      }
+    } catch (error) {
+      // Log error but don't throw (webhook check failures should not break upload flow)
+      console.error(`Failed to check/trigger documents uploaded webhook for submission ${submission.id}:`, error);
+    }
   }
 
   private async getSubmissionForUser(userId: string, submissionId?: string) {
@@ -166,11 +350,25 @@ export class KycService {
     return submission;
   }
 
-  async createSubmission(userId: string) {
-    const user = await this.getOrCreateUser(userId);
+  /**
+   * Create KYC Submission
+   * 
+   * Creates a new KYC verification submission for a user.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Created KYCSubmission object
+   */
+  async createSubmission(userId: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
+    const user = await this.getOrCreateUser(userId, clientId);
     return this.prisma.kYCSubmission.create({
       data: {
         userId,
+        clientId, // Use provided clientId (defaults to legacy for backward compatibility)
         documentSource: DocumentSource.MANUAL_UPLOAD,
         internalStatus: InternalStatus.PENDING,
       },
@@ -200,16 +398,30 @@ export class KycService {
     };
   }
 
-  async uploadPanDocument(userId: string, file: MultipartFile) {
+  /**
+   * Upload PAN Document
+   * 
+   * Uploads PAN card image to MinIO storage with validation.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadPanDocument(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
     
     // Auto-create user if not exists
-    const user = await this.getOrCreateUser(userId);
+    const user = await this.getOrCreateUser(userId, clientId);
 
     // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(user.id);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -222,6 +434,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.PAN_CARD,
+      user.clientId,
       user.id,
       uploadDto,
     );
@@ -242,19 +455,33 @@ export class KycService {
       },
     });
 
+    // Check if all documents uploaded and trigger webhook if needed
+    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+
     return updated;
   }
 
-  async uploadAadhaarDocument(userId: string, file: MultipartFile) {
+  /**
+   * Upload Aadhaar Document (Legacy)
+   * 
+   * Uploads single-side Aadhaar card image. Prefer uploadAadhaarFront/uploadAadhaarBack.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadAadhaarDocument(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    
-    // Auto-create user if not exists
-    const user = await this.getOrCreateUser(userId);
 
-    // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(user.id);
+    const user = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -267,6 +494,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD,
+      user.clientId,
       user.id,
       uploadDto,
     );
@@ -290,16 +518,33 @@ export class KycService {
       },
     });
 
+    // Check if all documents uploaded and trigger webhook if needed
+    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+
     return updated;
   }
 
-  async uploadAadhaarFront(userId: string, file: MultipartFile) {
+  /**
+   * Upload Aadhaar Front Document
+   * 
+   * Uploads Aadhaar front side (contains photograph for face matching).
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadAadhaarFront(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId);
-    const submission = await this.getOrCreateSubmission(user.id);
+    const user = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -312,6 +557,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD_FRONT,
+      user.clientId,
       user.id,
       uploadDto,
     );
@@ -332,16 +578,33 @@ export class KycService {
       },
     });
 
+    // Check if all documents uploaded and trigger webhook if needed
+    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+
     return updated;
   }
 
-  async uploadAadhaarBack(userId: string, file: MultipartFile) {
+  /**
+   * Upload Aadhaar Back Document
+   * 
+   * Uploads Aadhaar back side (contains address information).
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadAadhaarBack(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId);
-    const submission = await this.getOrCreateSubmission(user.id);
+    const user = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -354,6 +617,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD_BACK,
+      user.clientId,
       user.id,
       uploadDto,
     );
@@ -373,6 +637,9 @@ export class KycService {
         metadata: { type: 'AADHAAR_BACK', objectPath },
       },
     });
+
+    // Check if all documents uploaded and trigger webhook if needed
+    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
 
     return updated;
   }
@@ -461,16 +728,30 @@ export class KycService {
     return updated;
   }
 
-  async uploadLivePhotoDocument(userId: string, file: MultipartFile) {
+  /**
+   * Upload Live Photo Document
+   * 
+   * Uploads user's live photograph for face verification.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadLivePhotoDocument(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
     
     // Auto-create user if not exists
-    const user = await this.getOrCreateUser(userId);
+    const user = await this.getOrCreateUser(userId, clientId);
 
     // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(user.id);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -483,7 +764,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.LIVE_PHOTO,
-        user.id,
+      user.clientId,
+      user.id,
       uploadDto,
     );
 
@@ -508,16 +790,33 @@ export class KycService {
       },
     });
 
+    // Check if all documents uploaded and trigger webhook if needed
+    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+
     return updated;
   }
 
-  async uploadSignatureDocument(userId: string, file: MultipartFile) {
+  /**
+   * Upload Signature Document
+   * 
+   * Uploads user's signature image for verification.
+   * 
+   * **Multi-Tenancy (Dual-Mode Operation)**:
+   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
+   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
+   * 
+   * @param userId - Internal user UUID
+   * @param file - Multipart file upload
+   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
+   * @returns Updated KYCSubmission object
+   */
+  async uploadSignatureDocument(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId);
-    const submission = await this.getOrCreateSubmission(user.id);
+    const user = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(user.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -530,6 +829,7 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.SIGNATURE,
+      user.clientId,
       user.id,
       uploadDto,
     );
@@ -624,6 +924,9 @@ export class KycService {
       },
     });
 
+    // Trigger webhook after face verification completes (includes verification scores)
+    await this.triggerWebhook(updated, WebhookEvent.KYC_VERIFICATION_COMPLETED);
+
     return updated;
   }
 
@@ -695,6 +998,46 @@ export class KycService {
     return updated;
   }
 
+  /**
+   * Prepare File Buffer with Validation
+   * 
+   * Validates file type and size before processing. Combines type and size validation
+   * into a single operation to fail fast on invalid uploads.
+   * 
+   * **Validation Steps**:
+   * 1. File type validation against allowed MIME types
+   * 2. File size validation against maximum allowed size (5MB)
+   * 3. Buffer conversion from multipart stream
+   * 
+   * **Error Handling**:
+   * - BadRequestException: Invalid file type (not in allowedTypes array)
+   * - PayloadTooLargeException: File size exceeds 5MB limit
+   * - Stream errors: Propagated from file.toBuffer() operation
+   * 
+   * @param file - Multipart file from upload request
+   * @param allowedTypes - Array of allowed MIME types (e.g., ['image/jpeg', 'image/png'])
+   * @returns Promise<Buffer> - Validated file buffer ready for processing
+   * 
+   * @throws {BadRequestException} When file type is not in allowedTypes
+   * @throws {PayloadTooLargeException} When file size exceeds MAX_FILE_SIZE (5MB)
+   * @throws {Error} When file.toBuffer() operation fails
+   * 
+   * @private Helper method for all document upload operations
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const buffer = await this.prepareFileBuffer(file, ['image/jpeg', 'image/png']);
+   *   // Process validated buffer
+   * } catch (error) {
+   *   if (error instanceof BadRequestException) {
+   *     // Handle invalid file type
+   *   } else if (error instanceof PayloadTooLargeException) {
+   *     // Handle oversized file
+   *   }
+   * }
+   * ```
+   */
   private async prepareFileBuffer(file: MultipartFile, allowedTypes: string[]): Promise<Buffer> {
     this.validateFileType(file.mimetype, allowedTypes);
 
@@ -703,6 +1046,40 @@ export class KycService {
     return buffer;
   }
 
+  /**
+   * Validate File Type Against Allowed MIME Types
+   * 
+   * Ensures uploaded file matches one of the expected MIME types to prevent
+   * processing of unsupported file formats or potential security risks.
+   * 
+   * **Supported Types**:
+   * - Documents: ['image/jpeg', 'image/png'] (ALLOWED_MIME_TYPES)
+   * - Live Photos: ['image/jpeg', 'image/png'] (IMAGE_ONLY_MIME_TYPES)
+   * - No PDF support to prevent OCR complexity and ensure image processing
+   * 
+   * **Security Considerations**:
+   * - MIME type validation prevents execution of disguised executable files
+   * - Limited to image formats reduces attack surface for document processing
+   * - Client-side file extensions not trusted (MIME type is server-validated)
+   * 
+   * @param mimetype - File MIME type from multipart upload (e.g., 'image/jpeg')
+   * @param allowedTypes - Array of allowed MIME type strings
+   * 
+   * @throws {BadRequestException} When MIME type is not in allowed list
+   * 
+   * @private Validation helper for file uploads
+   * 
+   * @example
+   * ```typescript
+   * // Usage in document upload
+   * try {
+   *   this.validateFileType('image/jpeg', ['image/jpeg', 'image/png']);
+   *   // File type is valid, continue processing
+   * } catch (error) {
+   *   // Client receives: "Invalid file type. Allowed: image/jpeg, image/png"
+   * }
+   * ```
+   */
   private validateFileType(mimetype: string, allowedTypes: string[]) {
     if (!allowedTypes.includes(mimetype)) {
       const allowedList = allowedTypes.join(', ');
@@ -710,12 +1087,89 @@ export class KycService {
     }
   }
 
+  /**
+   * Validate File Size Against Maximum Limit
+   * 
+   * Prevents storage of oversized files that could impact system performance
+   * or exceed storage quotas. Uses HTTP 413 status for proper client handling.
+   * 
+   * **Size Limits**:
+   * - Maximum: 5MB (5,242,880 bytes) defined by MAX_FILE_SIZE constant
+   * - Rationale: Balance between image quality and processing performance
+   * - Large images are downscaled by Sharp for OCR processing anyway
+   * 
+   * **Storage Optimization**:
+   * - MinIO bucket storage costs scale with file sizes
+   * - OCR performance degrades with very large images
+   * - Face recognition works better with moderately sized images
+   * 
+   * @param size - File size in bytes from buffer.byteLength
+   * @param maxSize - Maximum allowed size in bytes (typically MAX_FILE_SIZE)
+   * 
+   * @throws {PayloadTooLargeException} When file size exceeds maxSize limit
+   * 
+   * @private Validation helper for file uploads
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   this.validateFileSize(buffer.byteLength, 5242880); // 5MB
+   *   // File size is acceptable
+   * } catch (error) {
+   *   // Client receives HTTP 413: "File size exceeds 5MB limit"
+   * }
+   * ```
+   */
   private validateFileSize(size: number, maxSize: number) {
     if (size > maxSize) {
       throw new PayloadTooLargeException('File size exceeds 5MB limit');
     }
   }
 
+  /**
+   * Validate Image Dimensions for Processing Compatibility
+   * 
+   * Ensures uploaded images meet minimum and maximum dimension requirements
+   * for reliable OCR extraction and face recognition processing.
+   * 
+   * **Dimension Requirements**:
+   * - Minimum: 300x300 pixels (MIN_WIDTH × MIN_HEIGHT)
+   * - Maximum: 8192x8192 pixels (MAX_WIDTH × MAX_HEIGHT)
+   * - Rationale: Balance between processing quality and performance
+   * 
+   * **Processing Considerations**:
+   * - OCR accuracy improves with higher resolution (min 300px)
+   * - Face detection requires sufficient pixel detail (min 300px)
+   * - Excessive resolution slows down processing (max 8192px)
+   * - Sharp library handles metadata extraction and dimension validation
+   * 
+   * **Error Handling**:
+   * - Non-image files: Skipped (no dimension validation needed)
+   * - Corrupt images: Sharp metadata() throws, bubbles up as HTTP 500
+   * - Invalid dimensions: BadRequestException with specific requirements
+   * 
+   * @param mimetype - File MIME type (only image/* types are validated)
+   * @param buffer - File buffer for Sharp metadata extraction
+   * 
+   * @throws {BadRequestException} When image dimensions are outside allowed range
+   * @throws {Error} When Sharp cannot read image metadata (corrupt file)
+   * 
+   * @private Image validation helper
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   await this.validateImageDimensionsIfNeeded('image/jpeg', buffer);
+   *   // Image dimensions are acceptable
+   * } catch (error) {
+   *   if (error instanceof BadRequestException) {
+   *     // Handle dimension error: "Image dimensions must be between 300x300 and 8192x8192"
+   *   } else {
+   *     // Handle corrupt file or Sharp processing error
+   *   }
+   * }
+   * ```
+   */
   private async validateImageDimensionsIfNeeded(mimetype: string, buffer: Buffer) {
     if (!mimetype.startsWith('image/')) {
       return;
@@ -767,6 +1221,40 @@ export class KycService {
     return {};
   }
 
+  /**
+   * Parse MinIO Object Path from Storage URL
+   * 
+   * Extracts bucket name and object name from stored document URLs for MinIO operations.
+   * Used when downloading/deleting documents that were previously uploaded.
+   * 
+   * **URL Format**: "{bucketName}/{objectPath}"
+   * - Example: "kyc-pan-cards/client_123/user_456/pan_20240115_103000.jpg"
+   * - Bucket: "kyc-pan-cards"
+   * - ObjectName: "client_123/user_456/pan_20240115_103000.jpg"
+   * 
+   * **Error Handling**:
+   * - Missing bucket or object name results in BadRequestException
+   * - Prevents MinIO operations with invalid paths
+   * - Critical for document deletion and download operations
+   * 
+   * @param path - Storage path string from database (panDocumentUrl, aadhaarFrontUrl, etc.)
+   * @returns Object with bucket and objectName for MinIO operations
+   * 
+   * @throws {BadRequestException} When path format is invalid or components missing
+   * 
+   * @private Helper for MinIO operations
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const { bucket, objectName } = this.parseObjectPath("kyc-pan/client/user/file.jpg");
+   *   // bucket: "kyc-pan", objectName: "client/user/file.jpg"
+   *   await this.storageService.downloadDocument(bucket, objectName);
+   * } catch (error) {
+   *   // Handle invalid document path error
+   * }
+   * ```
+   */
   private parseObjectPath(path: string): { bucket: string; objectName: string } {
     const [bucket, ...rest] = path.split('/');
     const objectName = rest.join('/');
@@ -776,6 +1264,45 @@ export class KycService {
     return { bucket, objectName };
   }
 
+  /**
+   * Convert Stream to Buffer with Error Handling
+   * 
+   * Converts MinIO download streams to buffers for in-memory processing.
+   * Essential for passing document data to OCR and face recognition services.
+   * 
+   * **Stream Processing**:
+   * - Collects stream chunks into buffer array
+   * - Concatenates chunks into single buffer
+   * - Handles stream errors and completion events
+   * 
+   * **Memory Considerations**:
+   * - Entire file loaded into memory (limited by 5MB upload size)
+   * - Required for TensorFlow.js and Tesseract.js processing
+   * - Alternative: Stream processing not supported by ML libraries
+   * 
+   * **Error Scenarios**:
+   * - Stream read errors (network issues, MinIO unavailable)
+   * - Memory allocation failures (very large files)
+   * - Premature stream termination
+   * 
+   * @param stream - Readable stream from MinIO download operation
+   * @returns Promise<Buffer> - Complete file buffer for processing
+   * 
+   * @throws {Error} When stream encounters read errors or memory issues
+   * 
+   * @private Helper for document processing
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const downloadResult = await this.storageService.downloadDocument(bucket, object);
+   *   const buffer = await this.streamToBuffer(downloadResult.stream);
+   *   // Use buffer for OCR or face recognition
+   * } catch (error) {
+   *   // Handle stream conversion or download errors
+   * }
+   * ```
+   */
   private async streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
     const chunks: Buffer[] = [];
     return new Promise((resolve, reject) => {

@@ -200,6 +200,34 @@ export class OcrService {
     });
   }
 
+  /**
+   * Parse MinIO Object Path for OCR Document Access
+   * 
+   * Extracts bucket and object name from stored document URLs for OCR processing.
+   * Similar to KycService.parseObjectPath but throws OCR-specific exceptions.
+   * 
+   * **Error Handling**:
+   * - Validates path format before attempting MinIO operations
+   * - Throws OcrException instead of generic BadRequestException
+   * - Provides context for OCR-specific error handling flow
+   * 
+   * @param path - Document URL from database (panDocumentUrl, aadhaarDocumentUrl)
+   * @returns Object with bucket and objectName for storage operations
+   * 
+   * @throws {OcrException} When path format is invalid or missing components
+   * 
+   * @private Helper for OCR document access
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   const { bucket, objectName } = this.parseObjectPath(submission.panDocumentUrl);
+   *   const download = await this.storageService.downloadDocument(bucket, objectName);
+   * } catch (error) {
+   *   // Handles OCR-specific path validation errors
+   * }
+   * ```
+   */
   private parseObjectPath(path: string): { bucket: string; objectName: string } {
     const [bucket, ...rest] = path.split('/');
     const objectName = rest.join('/');
@@ -261,6 +289,39 @@ export class OcrService {
     return address || undefined;
   }
 
+  /**
+   * Validate Document Format Against PDF Restriction
+   * 
+   * Prevents PDF document processing which is not supported by current OCR pipeline.
+   * PDFs require different processing libraries and add complexity to text extraction.
+   * 
+   * **Rationale for PDF Restriction**:
+   * - Tesseract.js optimized for image processing (JPEG, PNG)
+   * - PDFs may contain multiple pages, text layers, or complex layouts
+   * - Image-only requirement ensures consistent OCR processing
+   * - Simpler error handling and validation flow
+   * 
+   * **User Experience**:
+   * - Clear error message guides users to provide image format
+   * - HTTP 415 Unsupported Media Type indicates format issue
+   * - Prevents wasted processing time on unsupported formats
+   * 
+   * @param objectName - MinIO object name with file extension
+   * @param docType - Document type for error context ('PAN', 'AADHAAR')
+   * 
+   * @throws {OcrException} When document is PDF format (HTTP 415)
+   * 
+   * @private Validation helper for document format
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   this.ensureNotPdf('document.pdf', 'PAN');
+   * } catch (error) {
+   *   // Client receives: "PAN PDF documents are not supported for OCR; please upload an image"
+   * }
+   * ```
+   */
   private ensureNotPdf(objectName: string, docType: string) {
     if (objectName.toLowerCase().endsWith('.pdf')) {
       throw new OcrException(
@@ -271,6 +332,47 @@ export class OcrService {
     }
   }
 
+  /**
+   * Validate OCR Confidence Against Minimum Threshold
+   * 
+   * Ensures OCR results meet minimum quality standards before accepting extracted data.
+   * Low confidence scores indicate poor image quality or problematic text recognition.
+   * 
+   * **Confidence Scoring**:
+   * - Tesseract.js confidence: 0-100 (higher is better)
+   * - Default threshold: 60% (configurable via MIN_CONFIDENCE_DEFAULT)
+   * - Below threshold: Reject extraction and request better image
+   * 
+   * **Quality Factors Affecting Confidence**:
+   * - Image resolution and sharpness
+   * - Lighting conditions and contrast
+   * - Document orientation and perspective
+   * - Text clarity and font readability
+   * - Image compression artifacts
+   * 
+   * **Error Handling Strategy**:
+   * - HTTP 422 Unprocessable Entity for quality issues
+   * - Detailed logging with confidence scores for debugging
+   * - User-friendly message requesting better image quality
+   * 
+   * @param confidence - OCR confidence score from Tesseract.js (0-100)
+   * @param submissionId - Submission ID for error context and logging
+   * @param docType - Document type for error context ('PAN', 'AADHAAR')
+   * 
+   * @throws {OcrException} When confidence is below minimum threshold (HTTP 422)
+   * 
+   * @private Quality validation for OCR results
+   * 
+   * @example
+   * ```typescript
+   * try {
+   *   this.ensureConfidence(45, 'sub_123', 'PAN');
+   * } catch (error) {
+   *   // Logs: "Low OCR confidence (45) for PAN submission sub_123; threshold 60"
+   *   // Client receives: "Image quality too low for OCR"
+   * }
+   * ```
+   */
   private ensureConfidence(confidence: number, submissionId: string, docType: string) {
     if (confidence < this.minConfidence) {
       this.logger.warn(

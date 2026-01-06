@@ -7,9 +7,7 @@ import { createKYCSubmission, getKYCSubmission, uploadSignature } from '@/lib/ap
 
 export default function KycSignaturePage() {
   // Retrieve userId from localStorage (set during document upload)
-  const [userId] = useState(() => {
-    return localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
-  });
+  const [userId, setUserId] = useState<string>('11111111-1111-1111-1111-111111111111');
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -18,6 +16,12 @@ export default function KycSignaturePage() {
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+
+  // Load userId from localStorage on client side only
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
+    setUserId(storedUserId);
+  }, []);
   const [uploadMethod, setUploadMethod] = useState<'draw' | 'upload' | null>(null);
   const [hasDrawnContent, setHasDrawnContent] = useState(false);
 

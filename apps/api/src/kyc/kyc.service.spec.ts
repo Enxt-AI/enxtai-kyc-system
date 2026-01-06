@@ -36,7 +36,7 @@ describe('KycService', () => {
   beforeEach(async () => {
     prisma = {
       user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', clientId: '00000000-0000-0000-0000-000000000000' }),
       },
       kYCSubmission: {
         create: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'user-1', internalStatus: InternalStatus.PENDING }),
@@ -80,7 +80,7 @@ describe('KycService', () => {
   it('uploads PAN document with validations', async () => {
     const file = mockFile('image/jpeg', 1024 * 1024);
     const res = await service.uploadPanDocument('user-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.PAN_CARD, 'user-1', expect.any(Object));
+    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.PAN_CARD, '00000000-0000-0000-0000-000000000000', 'user-1', expect.any(Object));
     expect(prisma.kYCSubmission.update).toHaveBeenCalledWith({
       where: { id: 'sub-1' },
       data: {
@@ -110,7 +110,7 @@ describe('KycService', () => {
   it('uploads Aadhaar document and updates submission', async () => {
     const file = mockFile('image/png', 500000);
     const res = await service.uploadAadhaarDocument('user-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD, 'user-1', expect.any(Object));
+    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD, '00000000-0000-0000-0000-000000000000', 'user-1', expect.any(Object));
     expect(prisma.kYCSubmission.update).toHaveBeenCalled();
     expect(res.aadhaarDocumentUrl).toBeDefined();
   });
@@ -130,6 +130,7 @@ describe('KycService', () => {
     const res = await service.uploadLivePhotoDocument('user-1', file);
     expect(storage.uploadDocument).toHaveBeenCalledWith(
       DocumentType.LIVE_PHOTO,
+      '00000000-0000-0000-0000-000000000000',
       'user-1',
       expect.any(Object),
     );

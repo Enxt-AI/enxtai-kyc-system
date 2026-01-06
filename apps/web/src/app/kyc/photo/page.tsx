@@ -8,11 +8,15 @@ import { createKYCSubmission, getKYCSubmission } from '@/lib/api-client';
 
 export default function KycPhotoPage() {
   // Retrieve userId from localStorage (set during document upload)
-  const [userId] = useState(() => {
-    return localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
-  });
+  const [userId, setUserId] = useState<string>('11111111-1111-1111-1111-111111111111');
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
+
+  // Load userId from localStorage on client side only
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
+    setUserId(storedUserId);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 

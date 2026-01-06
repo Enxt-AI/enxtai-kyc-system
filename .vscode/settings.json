@@ -1,0 +1,11 @@
+{
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "files.trimTrailingWhitespace": true,
+  "[typescript]": {
+    "files.encoding": "utf8"
+  },
+  "[typescriptreact]": {
+    "files.encoding": "utf8"
+  }
+}

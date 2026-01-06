@@ -1,3 +1,6 @@
+// DEPRECATED: These constants are no longer used for bucket names.
+// Bucket names are now generated dynamically per-client: kyc-{clientId}-{suffix}
+// Kept for backward compatibility with existing tests and documentation.
 export const PAN_CARDS_BUCKET = 'pan-cards';
 export const AADHAAR_CARDS_BUCKET = 'aadhaar-cards';
 export const LIVE_PHOTOS_BUCKET = 'live-photos';

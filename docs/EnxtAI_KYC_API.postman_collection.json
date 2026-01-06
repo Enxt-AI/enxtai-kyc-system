@@ -1,0 +1,242 @@
+{
+  "info": {
+    "name": "EnxtAI KYC API",
+    "description": "Complete API collection for EnxtAI KYC verification system",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "12345678"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{API_KEY}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:3001/api",
+      "type": "string"
+    },
+    {
+      "key": "API_KEY",
+      "value": "your-api-key-here",
+      "type": "string"
+    },
+    {
+      "key": "EXTERNAL_USER_ID",
+      "value": "customer-12345",
+      "type": "string"
+    },
+    {
+      "key": "KYC_SESSION_ID",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Initiate KYC Session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    const response = pm.response.json();",
+              "    pm.collectionVariables.set('KYC_SESSION_ID', response.kycSessionId);",
+              "    console.log('KYC Session ID saved:', response.kycSessionId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"externalUserId\": \"{{EXTERNAL_USER_ID}}\",\n  \"email\": \"john.doe@example.com\",\n  \"phone\": \"+919876543210\",\n  \"metadata\": {\n    \"transactionId\": \"txn-abc-123\",\n    \"source\": \"postman\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/initiate",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "initiate"]
+        },
+        "description": "Creates a new KYC verification session. Saves kycSessionId to collection variable for subsequent requests."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Upload PAN Card",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "externalUserId",
+              "value": "{{EXTERNAL_USER_ID}}",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/path/to/pan-card.jpg",
+              "description": "Select PAN card image (JPEG/PNG, max 5MB)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/upload/pan",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "upload", "pan"]
+        },
+        "description": "Uploads PAN card document. Update file path in body before sending."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Upload Aadhaar Front",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "externalUserId",
+              "value": "{{EXTERNAL_USER_ID}}",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/path/to/aadhaar-front.jpg",
+              "description": "Select Aadhaar front image (with photograph)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/upload/aadhaar/front",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "upload", "aadhaar", "front"]
+        },
+        "description": "Uploads Aadhaar front side (with photograph). Update file path in body."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Upload Aadhaar Back",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "externalUserId",
+              "value": "{{EXTERNAL_USER_ID}}",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/path/to/aadhaar-back.jpg",
+              "description": "Select Aadhaar back image (with address)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/upload/aadhaar/back",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "upload", "aadhaar", "back"]
+        },
+        "description": "Uploads Aadhaar back side (with address). Update file path in body."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Upload Live Photo",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "externalUserId",
+              "value": "{{EXTERNAL_USER_ID}}",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/path/to/live-photo.jpg",
+              "description": "Select live photograph (selfie)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/upload/live-photo",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "upload", "live-photo"]
+        },
+        "description": "Uploads live photograph. Triggers automatic face verification after upload."
+      },
+      "response": []
+    },
+    {
+      "name": "6. Get KYC Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/status/{{KYC_SESSION_ID}}",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "status", "{{KYC_SESSION_ID}}"]
+        },
+        "description": "Retrieves detailed KYC status. Uses kycSessionId from initiate request."
+      },
+      "response": []
+    },
+    {
+      "name": "7. Trigger Verification (Optional)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"kycSessionId\": \"{{KYC_SESSION_ID}}\"\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/v1/kyc/verify",
+          "host": ["{{BASE_URL}}"],
+          "path": ["v1", "kyc", "verify"]
+        },
+        "description": "Manually triggers face verification. Optional - verification auto-triggers after live photo upload."
+      },
+      "response": []
+    }
+  ]
+}

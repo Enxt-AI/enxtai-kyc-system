@@ -7,69 +7,111 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// User Model
+// Represents end-users undergoing KYC verification
+// Multi-Tenancy Changes:
+// - clientId: Foreign key to Client (tenant isolation)
+// - externalUserId: Client's own user identifier (e.g., "client-user-123")
+// - Composite unique index [clientId, externalUserId] prevents duplicate mappings
+// Rationale:
+// - Clients send their own user IDs via API
+// - We map external IDs to internal UUIDs for consistency
+// - Same external ID can exist across different clients (isolated by clientId)
 model User {
-  id              String          @id @default(uuid())
-  email           String          @unique
-  phone           String          @unique
-  kycStatus       KYCStatus       @default(PENDING)
-  cvlKraId        String?         @unique
-  cvlKraStatus    String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  kycSubmissions  KYCSubmission[]
-  auditLogs       AuditLog[]
+  id String @id @default(uuid())
 
+  // Multi-Tenancy Fields
+  clientId       String
+  client         Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  externalUserId String // Client's user ID (e.g., "user-456" from their system)
+
+  // Existing Fields
+  email          String
+  phone          String
+  kycStatus      KYCStatus       @default(PENDING)
+  cvlKraId       String?         @unique
+  cvlKraStatus   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  kycSubmissions KYCSubmission[]
+  auditLogs      AuditLog[]
+
+  // Indexes
+  @@unique([id, clientId]) // Composite unique for FK reference from KYCSubmission
+  @@unique([clientId, externalUserId]) // Prevent duplicate external IDs per client
+  @@unique([clientId, email]) // Per-tenant email uniqueness
+  @@unique([clientId, phone]) // Per-tenant phone uniqueness
+  @@index([clientId])
+  @@index([clientId, email]) // Efficient tenant-scoped email lookups
   @@map("users")
 }
 
+// KYCSubmission Model
+// Stores KYC verification data for end-users
+// Multi-Tenancy Changes:
+// - clientId: Foreign key to Client (tenant isolation)
+// - Composite index [clientId, internalStatus] for efficient client-scoped queries
+// Rationale:
+// - All KYC data must be scoped to a client
+// - Client portal queries filter by clientId + status
+// - Prevents cross-tenant data leakage
 model KYCSubmission {
-  id                      String          @id @default(uuid())
-  userId                  String
-  submissionDate          DateTime        @default(now())
+  id String @id @default(uuid())
+
+  // Multi-Tenancy Field
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Existing Fields
+  userId         String
+  submissionDate DateTime @default(now())
 
   // Document source
-  documentSource          DocumentSource
+  documentSource DocumentSource
 
   // Document URLs (MinIO paths - encrypted)
-  panDocumentUrl          String?
-  aadhaarDocumentUrl      String?  // Keep for backward compatibility
-  aadhaarFrontUrl         String?  // NEW: Front side with photo
-  aadhaarBackUrl          String?  // NEW: Back side with address
-  livePhotoUrl            String?
-  signatureUrl            String?
+  panDocumentUrl     String?
+  aadhaarDocumentUrl String? // Keep for backward compatibility
+  aadhaarFrontUrl    String? // NEW: Front side with photo
+  aadhaarBackUrl     String? // NEW: Back side with address
+  livePhotoUrl       String?
+  signatureUrl       String?
 
   // Extracted data
-  panNumber               String?
-  aadhaarNumber           String?         // Masked (last 4 digits only)
-  fullName                String?
-  dateOfBirth             DateTime?
-  address                 Json?
+  panNumber     String?
+  aadhaarNumber String? // Masked (last 4 digits only)
+  fullName      String?
+  dateOfBirth   DateTime?
+  address       Json?
 
   // OCR results
-  ocrResults              Json?
+  ocrResults Json?
 
   // Face verification results
-  faceMatchScore          Float?
-  livenessScore           Float?
-  faceExtractionSuccess   Boolean         @default(false)
+  faceMatchScore        Float?
+  livenessScore         Float?
+  faceExtractionSuccess Boolean @default(false)
 
   // CVL KRA integration
-  cvlKraSubmitted         Boolean         @default(false)
-  cvlKraSubmissionDate    DateTime?
-  cvlKraResponse          Json?
-  cvlKraStatus            String?
+  cvlKraSubmitted      Boolean   @default(false)
+  cvlKraSubmissionDate DateTime?
+  cvlKraResponse       Json?
+  cvlKraStatus         String?
 
   // Status
-  internalStatus          InternalStatus  @default(PENDING)
-  finalStatus             FinalStatus     @default(INCOMPLETE)
-  rejectionReason         String?
+  internalStatus  InternalStatus @default(PENDING)
+  finalStatus     FinalStatus    @default(INCOMPLETE)
+  rejectionReason String?
 
   // Timestamps
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user                    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId, clientId], references: [id, clientId], onDelete: Cascade)
 
+  // Indexes
+  @@index([clientId])
+  @@index([clientId, internalStatus]) // Efficient client-scoped status queries
   @@index([userId])
   @@index([panNumber])
   @@index([internalStatus])
@@ -78,15 +120,15 @@ model KYCSubmission {
 }
 
 model AuditLog {
-  id          String    @id @default(uuid())
-  userId      String?
-  action      String
-  metadata    Json?
-  ipAddress   String?
-  userAgent   String?
-  timestamp   DateTime  @default(now())
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
 
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([timestamp])
@@ -121,4 +163,133 @@ enum FinalStatus {
   INCOMPLETE
   COMPLETE
   REJECTED
+}
+
+// ClientStatus Enum
+// Defines the operational status of a client organization
+// - ACTIVE: Client can make API requests and access services
+// - SUSPENDED: Client access temporarily disabled (billing issues, policy violations)
+// - TRIAL: Client in trial period with potential feature limitations
+enum ClientStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+// ClientUserRole Enum
+// Defines access levels for client portal users
+// - SUPER_ADMIN: Platform administrator with access to all clients and system management
+// - ADMIN: Full access to client portal (manage webhooks, regenerate API keys, view all data)
+// - VIEWER: Read-only access to submissions and analytics
+enum ClientUserRole {
+  SUPER_ADMIN
+  ADMIN
+  VIEWER
+}
+
+// Client Model (Tenant/Organization)
+// Represents a FinTech company using the KYC SaaS platform
+// Multi-Tenancy Strategy:
+// - Each client is a separate tenant with isolated data
+// - API key authentication identifies the client for all requests
+// - Webhook configuration allows real-time status notifications
+// - Config JSON field enables per-client customization (thresholds, required fields)
+// Security:
+// - apiKey is SHA-256 hashed for secure storage
+// - apiKeyPlaintext shown once during creation, then nullified
+// - webhookSecret stored plaintext (needed for HMAC signature generation)
+model Client {
+  id   String @id @default(uuid())
+  name String // Organization name (e.g., "SMC Private Wealth")
+
+  // API Authentication
+  apiKey          String  @unique // SHA-256 hashed API key
+  apiKeyPlaintext String? // Temporary storage, shown once then set to null
+
+  // Webhook Configuration
+  webhookUrl    String? // Client's endpoint for KYC status notifications
+  webhookSecret String? // Client's secret for HMAC signature verification
+
+  // Status & Configuration
+  status ClientStatus @default(ACTIVE)
+  config Json? // Custom settings: { "requireSignature": true, "faceMatchThreshold": 0.8 }
+
+  // Relationships
+  users          User[]
+  kycSubmissions KYCSubmission[]
+  clientUsers    ClientUser[]
+  webhookLogs    WebhookLog[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("clients")
+}
+
+// ClientUser Model
+// Represents users who access the client portal (not end-users doing KYC)
+// Purpose:
+// - Authenticate client organization staff to view their KYC submissions
+// - Manage webhook configuration and API keys
+// - View analytics and download reports
+// Security:
+// - Password stored as bcrypt hash (handled in application layer)
+// - Role-based access control (SUPER_ADMIN, ADMIN, VIEWER)
+// - SUPER_ADMIN users have clientId as null (platform administrators)
+// - Each regular user belongs to exactly one client (tenant isolation)
+model ClientUser {
+  id       String @id @default(uuid())
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Authentication
+  email    String @unique
+  password String // Bcrypt hashed password
+
+  // Authorization
+  role ClientUserRole @default(VIEWER)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([email])
+  @@map("client_users")
+}
+
+// WebhookLog Model
+// Tracks all webhook delivery attempts for debugging and monitoring
+// Purpose:
+// - Log every webhook HTTP request (success or failure)
+// - Enable clients to debug webhook integration issues
+// - Monitor webhook reliability and response times
+// Retention:
+// - Keep logs for 30-90 days (configurable)
+// - Display last 50-100 logs in client portal
+// Future Enhancement:
+// - Add retry logic tracking (attemptCount field ready for this)
+model WebhookLog {
+  id       String @id @default(uuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Webhook Details
+  event   String // e.g., "kyc.verification_completed"
+  payload Json // Full webhook payload sent
+
+  // Response Details
+  responseStatus Int? // HTTP status code (200, 500, etc.)
+  responseBody   String? // Response body (truncated if large)
+  attemptCount   Int     @default(1) // For future retry logic
+
+  // Timestamp
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([clientId, createdAt]) // Efficient queries for recent logs
+  @@index([event])
+  @@map("webhook_logs")
 }

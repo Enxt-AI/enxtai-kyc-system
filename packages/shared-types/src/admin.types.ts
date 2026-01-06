@@ -51,3 +51,86 @@ export interface KycStatusResponse {
   progress: number;
   statusLabel: string;
 }
+
+/**
+ * Admin Client List Item
+ * 
+ * Lightweight client data for admin table display.
+ * 
+ * @property id - Client UUID
+ * @property name - Organization name
+ * @property status - Client status (ACTIVE, SUSPENDED, TRIAL)
+ * @property apiKey - Masked API key (first 10 chars + '...')
+ * @property totalKycs - Total KYC submissions count
+ * @property createdAt - ISO 8601 timestamp
+ */
+export interface AdminClientListItem {
+  id: string;
+  name: string;
+  status: string; // 'ACTIVE' | 'SUSPENDED' | 'TRIAL'
+  apiKey: string; // Masked: 'client_abc...'
+  totalKycs: number;
+  createdAt: string; // ISO 8601
+}
+
+/**
+ * Admin Client Detail
+ * 
+ * Full client data for edit page.
+ * 
+ * @property id - Client UUID
+ * @property name - Organization name
+ * @property status - Client status
+ * @property apiKey - Masked API key
+ * @property webhookUrl - Webhook endpoint URL (null if not configured)
+ * @property webhookSecret - Masked webhook secret ('***' or null)
+ * @property totalKycs - Total KYC submissions count
+ * @property verifiedKycs - Count of verified submissions
+ * @property rejectedKycs - Count of rejected submissions
+ * @property createdAt - ISO 8601 timestamp
+ * @property updatedAt - ISO 8601 timestamp
+ */
+export interface AdminClientDetail {
+  id: string;
+  name: string;
+  status: string;
+  apiKey: string; // Masked
+  webhookUrl: string | null;
+  webhookSecret: string | null; // Masked
+  totalKycs: number;
+  verifiedKycs: number;
+  rejectedKycs: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Create Client Response
+ * 
+ * Response after creating a new client.
+ * Contains plaintext API key (shown once).
+ * 
+ * @property id - Client UUID
+ * @property name - Organization name
+ * @property apiKey - Plaintext API key (SHOW ONCE, then clear)
+ * @property defaultAdminEmail - Email of created default admin user
+ * @property defaultAdminPassword - Temporary password for default admin (SHOW ONCE)
+ */
+export interface CreateClientResponse {
+  id: string;
+  name: string;
+  apiKey: string; // Plaintext (show once)
+  defaultAdminEmail: string;
+  defaultAdminPassword: string; // Temporary password (show once)
+}
+
+/**
+ * Regenerate API Key Response
+ * 
+ * Response after regenerating client API key.
+ * 
+ * @property apiKey - New plaintext API key (SHOW ONCE)
+ */
+export interface RegenerateApiKeyResponse {
+  apiKey: string; // Plaintext (show once)
+}

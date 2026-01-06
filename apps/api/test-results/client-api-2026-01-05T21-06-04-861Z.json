@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-01-05T21:06:04.860Z",
+  "config": {
+    "apiKey": "",
+    "baseUrl": "http://localhost:3001",
+    "mock": true
+  },
+  "results": [
+    {
+      "name": "API Authentication",
+      "status": "FAIL",
+      "duration": 48.64699999988079,
+      "error": "Error"
+    },
+    {
+      "name": "User Creation",
+      "status": "FAIL",
+      "duration": 5.133299998939037,
+      "error": "Error"
+    },
+    {
+      "name": "Error Handling",
+      "status": "FAIL",
+      "duration": 3.4274000003933907,
+      "error": "Error"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "passed": 0,
+    "failed": 3,
+    "skipped": 0,
+    "totalDuration": 57.20769999921322
+  }
+}

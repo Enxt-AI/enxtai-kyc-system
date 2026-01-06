@@ -332,6 +332,51 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 |--------|----------|-------------|
 | GET | `/api/health` | Health check (Prisma, MinIO connectivity) |
 
+## 📖 API Documentation
+
+### For Clients (External Integration)
+
+- **Swagger UI**: http://localhost:3001/api/docs (interactive API explorer)
+- **Integration Guide**: [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) (step-by-step tutorial)
+- **Postman Collection**: [docs/EnxtAI_KYC_API.postman_collection.json](docs/EnxtAI_KYC_API.postman_collection.json) (import into Postman)
+
+### Client-Facing Endpoints
+
+All client-facing endpoints require `X-API-Key` header authentication:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/kyc/initiate` | Create new KYC session |
+| POST | `/api/v1/kyc/upload/pan` | Upload PAN card document |
+| POST | `/api/v1/kyc/upload/aadhaar/front` | Upload Aadhaar front side |
+| POST | `/api/v1/kyc/upload/aadhaar/back` | Upload Aadhaar back side |
+| POST | `/api/v1/kyc/upload/live-photo` | Upload live photograph |
+| GET | `/api/v1/kyc/status/:kycSessionId` | Get KYC verification status |
+| POST | `/api/v1/kyc/verify` | Manually trigger verification |
+
+**Quick Start:**
+```bash
+# 1. Obtain API key from client portal
+# 2. Initiate KYC session
+curl -X POST http://localhost:3001/api/v1/kyc/initiate \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"externalUserId": "customer-123", "email": "user@example.com"}'
+
+# 3. Upload documents (see Integration Guide for details)
+# 4. Check status or receive webhook notification
+```
+
+### Webhook Events
+
+Configure webhook URL in client portal to receive real-time notifications:
+
+- `kyc.documents_uploaded` - All documents uploaded
+- `kyc.verification_completed` - Face verification completed
+- `kyc.status_changed` - Admin changed status (approved/rejected)
+
+See [Integration Guide](docs/INTEGRATION_GUIDE.md#webhook-setup) for signature verification examples.
+
 ## 🧪 Testing
 
 ### Manual Testing Flow
@@ -406,7 +451,634 @@ See `docker-compose.prod.yml` (to be created) for production-ready configuration
 - Resource limits
 - Logging
 
-## 🔮 Future Enhancements
+## � Production Deployment
+
+### Environment Setup
+
+#### Production Environment Variables
+
+Create production `.env` files for secure deployment:
+
+**`apps/api/.env.production`**
+```env
+# Database
+DATABASE_URL="postgresql://username:password@prod-db:5432/kyc_production"
+
+# Redis
+REDIS_URL="redis://prod-redis:6379"
+
+# MinIO S3 Storage
+MINIO_ENDPOINT="prod-minio"
+MINIO_PORT="9000" 
+MINIO_ACCESS_KEY="production_access_key"
+MINIO_SECRET_KEY="production_secret_key_change_me"
+MINIO_USE_SSL="true"
+MINIO_PAN_BUCKET="kyc-pan"
+MINIO_AADHAAR_BUCKET="kyc-aadhaar-cards"
+MINIO_LIVE_PHOTO_BUCKET="kyc-live-photos"
+
+# JWT & Security
+JWT_SECRET="secure-production-jwt-secret-256-bits"
+JWT_EXPIRES_IN="24h"
+
+# API Rate Limiting
+THROTTLE_TTL="60000"
+THROTTLE_LIMIT="100"
+
+# Logging
+NODE_ENV="production"
+LOG_LEVEL="info"
+
+# Health & Monitoring
+PORT="3001"
+HEALTH_CHECK_TIMEOUT="30000"
+
+# Face Recognition
+FACE_API_MODELS_PATH="./node_modules/@vladmandic/face-api/model"
+FACE_API_MATCH_THRESHOLD="0.8"
+FACE_API_LIVENESS_THRESHOLD="0.8"
+```
+
+**`apps/web/.env.production`**
+```env
+# API Configuration
+NEXT_PUBLIC_API_URL="https://api.your-domain.com"
+NEXT_PUBLIC_APP_ENV="production"
+
+# Security
+NEXTAUTH_SECRET="secure-nextjs-secret-change-in-production"
+NEXTAUTH_URL="https://kyc.your-domain.com"
+
+# Feature Flags
+NEXT_PUBLIC_ENABLE_FACE_DETECTION="true"
+NEXT_PUBLIC_ENABLE_ADMIN_PANEL="true"
+```
+
+### Docker Production Build
+
+#### Build Production Images
+
+```bash
+# Build API image
+cd apps/api
+docker build -t enxtai/kyc-api:latest .
+
+# Build Web image  
+cd ../web
+docker build -t enxtai/kyc-web:latest .
+```
+
+#### Production Docker Compose
+
+**`docker-compose.prod.yml`**
+```yaml
+version: '3.8'
+
+services:
+  api:
+    image: enxtai/kyc-api:latest
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ./apps/api/.env.production
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    image: enxtai/kyc-web:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ./apps/web/.env.production
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: kyc_production
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secure_prod_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: production_access_key
+      MINIO_ROOT_PASSWORD: production_secret_key_change_me
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+```
+
+### Database Migration
+
+```bash
+# Run Prisma migrations in production
+cd apps/api
+npx prisma migrate deploy
+
+# Generate Prisma client
+npx prisma generate
+```
+
+### Deployment Steps
+
+1. **Infrastructure Setup**
+   ```bash
+   # Clone repository to production server
+   git clone https://github.com/enxtai/kyc-system.git
+   cd kyc-system
+   
+   # Create production environment files
+   cp apps/api/.env.example apps/api/.env.production
+   cp apps/web/.env.example apps/web/.env.production
+   # Edit files with production values
+   ```
+
+2. **Build and Deploy**
+   ```bash
+   # Build production images
+   docker-compose -f docker-compose.prod.yml build
+   
+   # Start services
+   docker-compose -f docker-compose.prod.yml up -d
+   
+   # Run database migrations
+   docker-compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+   ```
+
+3. **Verify Deployment**
+   ```bash
+   # Check service health
+   curl http://localhost:3001/health
+   
+   # Check application status
+   curl http://localhost:3000
+   
+   # Test client API
+   cd apps/api
+   pnpm test:client-api --apiKey="your-production-key" --baseUrl="http://localhost:3001"
+   ```
+
+### SSL/HTTPS Configuration
+
+For production, configure SSL termination using:
+
+- **Reverse Proxy**: Nginx or Apache with Let's Encrypt certificates
+- **Load Balancer**: AWS ALB, CloudFlare, or similar with SSL certificates
+- **CDN**: CloudFront, CloudFlare for static asset caching
+
+**Example Nginx Configuration**:
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name api.your-domain.com;
+    
+    ssl_certificate /path/to/certificate.crt;
+    ssl_certificate_key /path/to/private.key;
+    
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name kyc.your-domain.com;
+    
+    ssl_certificate /path/to/certificate.crt;
+    ssl_certificate_key /path/to/private.key;
+    
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Monitoring & Logging
+
+#### Structured Logging with Pino
+
+The API uses Pino for structured JSON logging with request context:
+
+```json
+{
+  "level": "info",
+  "time": "2024-01-15T10:30:00.000Z",
+  "pid": 1,
+  "hostname": "api-container",
+  "req": {
+    "method": "POST",
+    "url": "/v1/kyc/documents/upload/user-123",
+    "clientId": "client_abc123",
+    "userId": "user_456"
+  },
+  "res": {
+    "statusCode": 201
+  },
+  "responseTime": 234,
+  "msg": "Document upload successful"
+}
+```
+
+#### Log Aggregation
+
+Configure log aggregation with ELK Stack or CloudWatch:
+
+**Docker Logging Driver**:
+```yaml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "100m"
+    max-file: "5"
+```
+
+**Fluentd/Fluent Bit Configuration** for shipping logs to Elasticsearch.
+
+#### Health Monitoring
+
+- **Health Endpoint**: `/health` (includes database, Redis, MinIO connectivity)
+- **Metrics Endpoint**: `/metrics` (Prometheus-compatible metrics)
+- **Uptime Monitoring**: Configure external monitoring (Pingdom, UptimeRobot)
+
+## 📖 Client API Documentation
+
+### Authentication
+
+All client-facing APIs require authentication via API key in the header:
+
+```bash
+curl -H "X-API-Key: your-api-key-here" \
+     -H "Content-Type: application/json" \
+     "https://api.your-domain.com/v1/health"
+```
+
+### Base URLs
+
+- **Development**: `http://localhost:3001`
+- **Production**: `https://api.your-domain.com`
+
+### Rate Limiting
+
+- **Limit**: 100 requests per minute per API key
+- **Response**: `429 Too Many Requests` when exceeded
+- **Headers**: `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+### Error Format
+
+All API errors follow this standardized format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "DOCUMENT_UPLOAD_FAILED",
+    "message": "Failed to upload document",
+    "details": "File size exceeds 10MB limit",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "path": "/v1/kyc/documents/upload"
+  }
+}
+```
+
+#### Error Codes
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `UNAUTHORIZED` | 401 | Invalid or missing API key |
+| `FORBIDDEN` | 403 | Access denied for current client |
+| `VALIDATION_ERROR` | 400 | Invalid request data or missing fields |
+| `DOCUMENT_UPLOAD_FAILED` | 400 | File upload failed (size, type, corruption) |
+| `OCR_EXTRACTION_FAILED` | 422 | Unable to extract data from document |
+| `FACE_VERIFICATION_FAILED` | 422 | Face comparison failed |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests per minute |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |
+
+### API Endpoints
+
+#### 1. Health Check
+
+```http
+GET /v1/health
+```
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "services": {
+    "database": "healthy",
+    "storage": "healthy",
+    "redis": "healthy"
+  }
+}
+```
+
+#### 2. Create User
+
+```http
+POST /v1/kyc/users
+Content-Type: application/json
+
+{
+  "userId": "user-12345",
+  "email": "user@example.com",
+  "phone": "+919876543210",
+  "name": "John Doe"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "user-12345",
+    "status": "PENDING",
+    "createdAt": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+#### 3. Upload Document
+
+```http
+POST /v1/kyc/documents/upload/{userId}
+Content-Type: multipart/form-data
+
+document: <file>
+documentType: "AADHAAR_FRONT" | "AADHAAR_BACK" | "PAN_CARD" | "SELFIE"
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "documentId": "doc_abc123",
+    "documentType": "AADHAAR_FRONT", 
+    "uploadedAt": "2024-01-15T10:30:00Z",
+    "extractedData": {
+      "aadhaarNumber": "1234-5678-****",
+      "name": "JOHN DOE",
+      "dateOfBirth": "01/01/1990"
+    }
+  }
+}
+```
+
+#### 4. Get KYC Status
+
+```http
+GET /v1/kyc/status/{userId}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "user-12345",
+    "status": "DOCUMENTS_UPLOADED",
+    "completedSteps": [
+      "AADHAAR_FRONT",
+      "AADHAAR_BACK", 
+      "PAN_CARD"
+    ],
+    "nextSteps": ["SELFIE"],
+    "extractedData": {
+      "pan": "ABCDE1234F",
+      "aadhaarNumber": "1234-5678-****",
+      "name": "JOHN DOE",
+      "dateOfBirth": "01/01/1990"
+    },
+    "verificationScores": {
+      "faceMatch": 0.92,
+      "liveness": 0.88
+    },
+    "updatedAt": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+#### 5. Trigger Face Verification
+
+```http
+POST /v1/kyc/verify/{userId}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "verificationId": "verify_xyz789",
+    "status": "FACE_VERIFIED",
+    "scores": {
+      "faceMatch": 0.92,
+      "liveness": 0.88
+    },
+    "autoApproved": true,
+    "completedAt": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+### Testing Scripts
+
+The system includes comprehensive test scripts for API validation:
+
+#### Client API Tests
+
+```bash
+# Test with live API
+cd apps/api
+pnpm test:client-api --apiKey="your-api-key" --baseUrl="http://localhost:3001"
+
+# Test with mock data (no real files)
+pnpm test:client-api --mock
+
+# Test specific scenarios
+pnpm test:client-api --apiKey="test-key" --baseUrl="https://api.staging.com"
+```
+
+**Test Coverage**:
+- ✅ API Authentication (valid/invalid keys)
+- ✅ User Creation and Management
+- ✅ Document Upload (all types)
+- ✅ OCR Data Extraction
+- ✅ Face Verification Process
+- ✅ Status Tracking and Updates
+- ✅ Error Handling (invalid inputs, file size limits)
+- ✅ Rate Limiting (100 req/min validation)
+
+#### Webhook Tests
+
+```bash
+# Start webhook test server 
+pnpm test:webhooks --secret="your-webhook-secret" --port=3002
+
+# Test signature verification only
+pnpm test:webhooks --verify-only --secret="your-webhook-secret"
+
+# Auto-stop after timeout
+pnpm test:webhooks --secret="test-secret" --timeout=60000
+```
+
+**Webhook Events**:
+- `document_uploaded`: Document successfully stored
+- `ocr_completed`: Text extraction finished
+- `verification_completed`: Face verification done
+- `kyc_status_changed`: Status updated
+
+### SDK & Integration Examples
+
+#### JavaScript/TypeScript Integration
+
+```typescript
+import axios from 'axios';
+
+class KycClient {
+  private client;
+
+  constructor(apiKey: string, baseUrl: string) {
+    this.client = axios.create({
+      baseURL: baseUrl,
+      headers: { 'X-API-Key': apiKey }
+    });
+  }
+
+  async createUser(userData: {
+    userId: string;
+    email: string; 
+    phone: string;
+    name: string;
+  }) {
+    const response = await this.client.post('/v1/kyc/users', userData);
+    return response.data;
+  }
+
+  async uploadDocument(userId: string, file: File, documentType: string) {
+    const formData = new FormData();
+    formData.append('document', file);
+    formData.append('documentType', documentType);
+    
+    const response = await this.client.post(
+      `/v1/kyc/documents/upload/${userId}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  }
+
+  async getStatus(userId: string) {
+    const response = await this.client.get(`/v1/kyc/status/${userId}`);
+    return response.data;
+  }
+
+  async triggerVerification(userId: string) {
+    const response = await this.client.post(`/v1/kyc/verify/${userId}`);
+    return response.data;
+  }
+}
+
+// Usage
+const kycClient = new KycClient('your-api-key', 'https://api.your-domain.com');
+
+try {
+  const user = await kycClient.createUser({
+    userId: 'customer-123',
+    email: 'customer@example.com',
+    phone: '+919876543210', 
+    name: 'Customer Name'
+  });
+  console.log('User created:', user);
+} catch (error) {
+  console.error('API Error:', error.response?.data?.error);
+}
+```
+
+#### cURL Examples
+
+```bash
+# Create user
+curl -X POST "https://api.your-domain.com/v1/kyc/users" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "customer-123",
+    "email": "customer@example.com", 
+    "phone": "+919876543210",
+    "name": "Customer Name"
+  }'
+
+# Upload Aadhaar front
+curl -X POST "https://api.your-domain.com/v1/kyc/documents/upload/customer-123" \
+  -H "X-API-Key: your-api-key" \
+  -F "document=@aadhaar-front.jpg" \
+  -F "documentType=AADHAAR_FRONT"
+
+# Check status  
+curl -X GET "https://api.your-domain.com/v1/kyc/status/customer-123" \
+  -H "X-API-Key: your-api-key"
+
+# Trigger verification
+curl -X POST "https://api.your-domain.com/v1/kyc/verify/customer-123" \
+  -H "X-API-Key: your-api-key"
+```
+
+## �🔮 Future Enhancements
 
 - **DigiLocker Integration**: Fetch verified documents directly from DigiLocker API (eliminates manual uploads)
 - **CVL KRA Submission**: Auto-submit verified KYC data to CVL KRA (Central KYC Registry)

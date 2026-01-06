@@ -7,12 +7,17 @@ import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
 
 export default function KycUploadPage() {
   // Generate userId once and store in localStorage for consistency across KYC flow
-  const userId = useMemo(() => {
+  const [userId, setUserId] = useState<string>('');
+  
+  useEffect(() => {
     const stored = localStorage.getItem('kyc_user_id');
-    if (stored) return stored;
-    const newId = uuidv4();
-    localStorage.setItem('kyc_user_id', newId);
-    return newId;
+    if (stored) {
+      setUserId(stored);
+    } else {
+      const newId = uuidv4();
+      localStorage.setItem('kyc_user_id', newId);
+      setUserId(newId);
+    }
   }, []);
   
   const [submissionId, setSubmissionId] = useState<string | null>(null);
