@@ -1,8 +1,8 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
-import type { 
-  UploadDocumentResponse, 
-  ClientStats, 
-  ClientSubmissionsResponse, 
+import type {
+  UploadDocumentResponse,
+  ClientStats,
+  ClientSubmissionsResponse,
   ClientSubmissionDetail,
   AdminClientListItem,
   AdminClientDetail,
@@ -13,20 +13,20 @@ import { getSession } from 'next-auth/react';
 
 /**
  * API Client Configuration
- * 
+ *
  * Axios instance for backend API requests with authentication support.
- * 
+ *
  * @remarks
  * **Base Configuration**:
  * - Base URL: Process.env.NEXT_PUBLIC_API_URL or localhost:3001
  * - Timeout: 15 seconds
  * - Automatic error handling
- * 
+ *
  * **Authentication**:
  * - Request interceptor adds session token for client portal requests
  * - Token retrieved from NextAuth session
  * - Only applied to /api/v1/client/* routes (multi-tenant API)
- * 
+ *
  * **Interceptors**:
  * 1. Request: Add X-API-Key header for authenticated routes
  * 2. Response: Centralized error handling (passthrough for now)
@@ -38,21 +38,21 @@ const api = axios.create({
 
 /**
  * Request Interceptor
- * 
+ *
  * Adds authentication token to requests for client portal API routes.
- * 
+ *
  * @remarks
  * **Behavior**:
  * - Checks if request URL matches /api/v1/client/* pattern
  * - Retrieves JWT token from NextAuth session
  * - Adds Authorization Bearer header with token
  * - Only applies to authenticated client portal requests
- * 
+ *
  * **Token Source**:
  * - NextAuth JWT token (stored in httpOnly cookie)
  * - Retrieved using getSession() from next-auth/react
  * - Automatically refreshed by NextAuth if expired
- * 
+ *
  * **Security**:
  * - Bearer token sent in Authorization header (standard OAuth 2.0)
  * - Token only sent to backend API (not third-party services)
@@ -61,11 +61,11 @@ const api = axios.create({
  */
 api.interceptors.request.use(
   async (config) => {
-    // Check if request is to client portal API
-    if (config.url?.includes('/api/v1/client')) {
+    // Check if request is to client portal or admin API
+    if (config.url?.includes('/api/v1/client') || config.url?.includes('/api/admin')) {
       // Get session which contains JWT token data
       const session = await getSession();
-      
+
       // Add Authorization Bearer header if session exists
       // In NextAuth v4, we can access the token directly from session
       // The backend should validate this token and extract clientId/role
@@ -79,11 +79,11 @@ api.interceptors.request.use(
           role: session.user.role,
           email: session.user.email,
         })).toString('base64');
-        
+
         config.headers['Authorization'] = `Bearer ${token}`;
       }
     }
-    
+
     return config;
   },
   (error) => {
@@ -93,9 +93,9 @@ api.interceptors.request.use(
 
 /**
  * Response Interceptor
- * 
+ *
  * Centralized error handling for API responses.
- * 
+ *
  * @remarks
  * Currently passes errors through for component-level handling.
  * Future enhancement: Add toast notifications, retry logic, etc.
@@ -295,21 +295,21 @@ export default api;
 
 /**
  * Client Portal API Functions
- * 
+ *
  * Functions for client portal endpoints (/api/v1/client/*).
  * These endpoints use NextAuth session-based authentication.
  */
 
 /**
  * Get Client Settings
- * 
+ *
  * Fetches current client configuration including webhook URL and masked API key.
- * 
+ *
  * @remarks
  * **Authentication**: Requires NextAuth session token (automatically added by interceptor)
  * **Endpoint**: GET /api/v1/client/settings
  * **Response**: { name, webhookUrl, webhookSecret: '***', apiKey: 'client_abc...' }
- * 
+ *
  * @returns Client settings with masked sensitive fields
  */
 export async function getClientSettings() {
@@ -324,18 +324,18 @@ export async function getClientSettings() {
 
 /**
  * Update Webhook Configuration
- * 
+ *
  * Updates client's webhook endpoint and secret for KYC status notifications.
- * 
+ *
  * @remarks
  * **Validation**:
  * - URL must be HTTPS (enforced by backend DTO)
  * - Secret must be at least 16 characters (enforced by backend DTO)
- * 
+ *
  * **Endpoint**: PUT /api/v1/client/webhook
  * **Request**: { webhookUrl, webhookSecret }
  * **Response**: { success: true, webhookUrl }
- * 
+ *
  * @param webhookUrl - HTTPS endpoint to receive webhooks
  * @param webhookSecret - Secret for HMAC signature verification (16+ chars)
  * @returns Success response with configured URL
@@ -348,9 +348,9 @@ export async function updateWebhookConfig(webhookUrl: string, webhookSecret: str
 
 /**
  * Test Webhook Endpoint
- * 
+ *
  * Sends a test webhook payload to verify client endpoint is reachable and responding.
- * 
+ *
  * @remarks
  * **Test Payload**:
  * ```json
@@ -361,11 +361,11 @@ export async function updateWebhookConfig(webhookUrl: string, webhookSecret: str
  *   "data": { "message": "Test webhook from EnxtAI KYC" }
  * }
  * ```
- * 
+ *
  * **Endpoint**: POST /api/v1/client/webhook/test
  * **Response**: { success, statusCode, responseTime, error? }
  * **Timeout**: 10 seconds
- * 
+ *
  * @returns Test result with status code and response time
  * @throws {AxiosError} If webhook not configured or network error
  */
@@ -381,14 +381,14 @@ export async function testWebhook() {
 
 /**
  * Get Webhook Delivery Logs
- * 
+ *
  * Fetches paginated webhook delivery history for debugging and monitoring.
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/v1/client/webhook/logs?page=1&limit=50
  * **Response**: { logs: [...], total, page, limit, totalPages }
  * **Max Limit**: 100 logs per page
- * 
+ *
  * @param page - Page number (1-indexed)
  * @param limit - Logs per page (default 50, max 100)
  * @returns Paginated webhook logs with metadata
@@ -412,20 +412,20 @@ export async function getWebhookLogs(page: number = 1, limit: number = 50) {
 
 /**
  * Get Client Dashboard Statistics
- * 
+ *
  * Fetches aggregated KYC submission metrics for dashboard.
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/v1/client/stats
- * 
+ *
  * **Returns**: Object with submission counts and rejection rate
- * 
+ *
  * **Authentication**: Requires valid session token
- * 
+ *
  * **Error Handling**:
  * - 401: Session expired or invalid
  * - 500: Database or calculation error
- * 
+ *
  * @example
  * ```typescript
  * const stats = await getClientStats();
@@ -439,12 +439,12 @@ export async function getClientStats(): Promise<ClientStats> {
 
 /**
  * Get Paginated Client Submissions
- * 
+ *
  * Retrieves KYC submissions with filtering and pagination for submissions table.
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/v1/client/submissions
- * 
+ *
  * **Query Parameters**:
  * - `page`: Page number (1-indexed, default 1)
  * - `limit`: Items per page (default 20, max 100)
@@ -452,11 +452,11 @@ export async function getClientStats(): Promise<ClientStats> {
  * - `search`: Search by externalUserId or email (case-insensitive)
  * - `startDate`: Filter by submissionDate >= startDate (ISO 8601)
  * - `endDate`: Filter by submissionDate <= endDate (ISO 8601)
- * 
+ *
  * **Returns**: Paginated response with submissions array and metadata
- * 
+ *
  * **Sorting**: Results ordered by submissionDate DESC (newest first)
- * 
+ *
  * @param filters - Filter criteria
  * @param filters.status - Filter by internal status
  * @param filters.search - Search term for externalUserId or email
@@ -464,7 +464,7 @@ export async function getClientStats(): Promise<ClientStats> {
  * @param filters.endDate - Maximum submission date
  * @param page - Page number (1-indexed)
  * @param limit - Items per page
- * 
+ *
  * @example
  * ```typescript
  * // Get verified submissions from January 2026
@@ -490,7 +490,7 @@ export async function getClientSubmissions(
   const params = new URLSearchParams();
   params.append('page', page.toString());
   params.append('limit', limit.toString());
-  
+
   if (filters?.status) params.append('status', filters.status);
   if (filters?.search) params.append('search', filters.search);
   if (filters?.startDate) params.append('startDate', filters.startDate);
@@ -504,25 +504,25 @@ export async function getClientSubmissions(
 
 /**
  * Get Client Submission Detail
- * 
+ *
  * Fetches full submission data with presigned URLs for document viewing.
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/v1/client/submissions/:id
- * 
+ *
  * **Returns**: Complete submission object with extracted data and presigned document URLs
- * 
+ *
  * **Presigned URLs**: Valid for 1 hour, regenerate page if expired
- * 
+ *
  * **Tenant Isolation**: Backend validates submission belongs to client
- * 
+ *
  * **Error Handling**:
  * - 401: Session expired or invalid
  * - 404: Submission not found or belongs to different client
  * - 500: Database or storage error
- * 
+ *
  * @param submissionId - UUID of KYC submission
- * 
+ *
  * @example
  * ```typescript
  * const detail = await getClientSubmissionDetail('123e4567-e89b-12d3-a456-426614174000');
@@ -540,28 +540,28 @@ export async function getClientSubmissionDetail(
 
 /**
  * Export Submissions to CSV
- * 
+ *
  * Client-side CSV generation from submission data with auto-download.
- * 
+ *
  * @remarks
  * **CSV Format**:
  * - UTF-8 encoded with BOM for Excel compatibility
  * - Comma-separated with quoted strings
  * - Header row: User ID, Email, Phone, Status, Face Score, Liveness Score, Submitted, Updated
- * 
+ *
  * **Processing**:
  * 1. Converts submission objects to CSV rows
  * 2. Formats dates to readable format (ISO 8601 without milliseconds)
  * 3. Rounds scores to 2 decimal places
  * 4. Creates Blob with text/csv MIME type
  * 5. Triggers browser download with dynamic filename
- * 
+ *
  * **Browser Compatibility**: Modern browsers with Blob and URL.createObjectURL support
- * 
+ *
  * **File Naming**: `kyc_submissions_YYYYMMDD_HHMMSS.csv` with timestamp
- * 
+ *
  * @param submissions - Array of submission objects to export
- * 
+ *
  * @example
  * ```typescript
  * const response = await getClientSubmissions();
@@ -616,11 +616,11 @@ export function exportSubmissionsToCSV(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  
+
   // Generate filename with timestamp
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, '');
   link.download = `kyc_submissions_${timestamp}.csv`;
-  
+
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -629,12 +629,12 @@ export function exportSubmissionsToCSV(
 
 /**
  * Get All Clients (Admin)
- * 
+ *
  * Fetches all client organizations for admin list view.
- * 
+ *
  * @returns Promise<AdminClientListItem[]>
  * @throws Error if request fails
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/admin/clients
  * **Authentication**: Requires admin session
@@ -647,13 +647,13 @@ export async function getAllClients(): Promise<AdminClientListItem[]> {
 
 /**
  * Get Client Detail (Admin)
- * 
+ *
  * Fetches full client details for edit page.
- * 
+ *
  * @param clientId - Client UUID
  * @returns Promise<AdminClientDetail>
  * @throws Error if request fails or client not found
- * 
+ *
  * @remarks
  * **Endpoint**: GET /api/admin/clients/:id
  * **Authentication**: Requires admin session
@@ -666,18 +666,18 @@ export async function getClientDetail(clientId: string): Promise<AdminClientDeta
 
 /**
  * Create Client (Admin)
- * 
+ *
  * Creates a new client organization with API key and default admin user.
- * 
+ *
  * @param data - CreateClientDto with name, email, optional webhook config
  * @returns Promise<CreateClientResponse> with plaintext credentials
  * @throws Error if request fails or validation errors
- * 
+ *
  * @remarks
  * **Endpoint**: POST /api/admin/clients
  * **Authentication**: Requires admin session
  * **Response**: Plaintext API key and default admin password (SHOW ONCE)
- * 
+ *
  * **Important**: Display credentials in UI immediately
  */
 export async function createClient(data: {
@@ -692,14 +692,14 @@ export async function createClient(data: {
 
 /**
  * Update Client (Admin)
- * 
+ *
  * Updates client name and/or status.
- * 
+ *
  * @param clientId - Client UUID
  * @param data - UpdateClientDto with optional name and status
  * @returns Promise<AdminClientDetail> updated client detail
  * @throws Error if request fails or client not found
- * 
+ *
  * @remarks
  * **Endpoint**: PUT /api/admin/clients/:id
  * **Authentication**: Requires admin session
@@ -715,18 +715,18 @@ export async function updateClient(
 
 /**
  * Regenerate API Key (Admin)
- * 
+ *
  * Generates new API key for client, invalidating the old one.
- * 
+ *
  * @param clientId - Client UUID
  * @returns Promise<RegenerateApiKeyResponse> with new plaintext API key
  * @throws Error if request fails or client not found
- * 
+ *
  * @remarks
  * **Endpoint**: POST /api/admin/clients/:id/regenerate-key
  * **Authentication**: Requires admin session
  * **Response**: Plaintext API key (SHOW ONCE)
- * 
+ *
  * **Warning**: Old API key immediately invalidated
  */
 export async function regenerateApiKey(clientId: string): Promise<RegenerateApiKeyResponse> {

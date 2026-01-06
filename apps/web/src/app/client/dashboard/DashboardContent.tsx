@@ -5,24 +5,31 @@ import { useEffect, useState } from 'react';
 import { getClientStats } from '@/lib/api-client';
 import type { ClientStats } from '@enxtai/shared-types';
 import Link from 'next/link';
+import axios from 'axios';
+
+interface Client {
+  id: string;
+  name: string;
+  status: string;
+}
 
 /**
  * Dashboard Content - Client Component
- * 
+ *
  * Main dashboard for client portal with KYC statistics and quick actions.
- * 
+ *
  * @remarks
  * **Features**:
  * - Real-time statistics cards (total, verified, pending, rejected)
  * - Rejection rate indicator with color-coded alert levels
  * - Quick action buttons for common tasks
  * - Loading states and error handling
- * 
+ *
  * **Data Fetching**:
  * - Loads stats on mount using getClientStats()
  * - Automatic retry on error (manual refresh button)
  * - Session-based authentication via NextAuth
- * 
+ *
  * **Visual Design**:
  * - Statistics cards with icons and trend colors
  * - Rejection rate badge: Green (<10%), Yellow (10-20%), Red (>20%)
@@ -33,10 +40,38 @@ export default function DashboardContent() {
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [loadingClients, setLoadingClients] = useState(false);
+
+  const isSuperAdmin = (session?.user as any)?.role === 'SUPER_ADMIN';
 
   useEffect(() => {
-    loadStats();
-  }, []);
+    if (isSuperAdmin) {
+      loadClients();
+    } else {
+      loadStats();
+    }
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (isSuperAdmin && selectedClientId) {
+      loadStats();
+    }
+  }, [selectedClientId]);
+
+  const loadClients = async () => {
+    try {
+      setLoadingClients(true);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/admin/clients`);
+      setClients(response.data);
+    } catch (err: any) {
+      console.error('Failed to load clients:', err);
+      setError(err.response?.data?.message || 'Failed to load clients');
+    } finally {
+      setLoadingClients(false);
+    }
+  };
 
   const loadStats = async () => {
     try {
@@ -62,13 +97,56 @@ export default function DashboardContent() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-2 text-gray-600">
-          Welcome back, <span className="font-medium">{session?.user?.email}</span>
-        </p>
-      </div>
+      {/* SUPER_ADMIN Client Selector */}
+      {isSuperAdmin && (
+        <div className="mb-6 bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <div className="text-purple-600 text-xl mr-3">👑</div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-purple-800 mb-2">Super Admin: Select Client</h3>
+              <p className="text-sm text-purple-700 mb-3">Choose a client to view their dashboard data</p>
+              {loadingClients ? (
+                <div className="text-sm text-purple-600">Loading clients...</div>
+              ) : (
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className="w-full max-w-md px-3 py-2 border border-purple-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white text-gray-900"
+                >
+                  <option value="">-- Select a client --</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name} ({client.status})
+                    </option>
+                  ))}
+                </select>
+              )}
+              {selectedClientId && (
+                <p className="text-xs text-purple-600 mt-2">
+                  Viewing data for: <span className="font-semibold">{clients.find(c => c.id === selectedClientId)?.name}</span>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUPER_ADMIN: Show message if no client selected */}
+      {isSuperAdmin && !selectedClientId ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
+          <div className="text-6xl mb-4">📊</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Select a Client</h2>
+          <p className="text-gray-600">Choose a client from the dropdown above to view their dashboard statistics</p>
+        </div>
+      ) : (
+        <>
+          {/* Page Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-2 text-gray-600">
+              Welcome back, <span className="font-medium">{session?.user?.email}</span>
+            </p>
+          </div>
 
       {/* Error State */}
       {error && (
@@ -158,10 +236,10 @@ export default function DashboardContent() {
       {/* Rejection Rate Alert */}
       {stats && stats.totalSubmissions > 0 && (
         <div className={`mb-8 rounded-lg p-4 ${
-          stats.rejectionRate > 20 
-            ? 'bg-red-50 border border-red-200' 
-            : stats.rejectionRate > 10 
-            ? 'bg-yellow-50 border border-yellow-200' 
+          stats.rejectionRate > 20
+            ? 'bg-red-50 border border-red-200'
+            : stats.rejectionRate > 10
+            ? 'bg-yellow-50 border border-yellow-200'
             : 'bg-green-50 border border-green-200'
         }`}>
           <div className="flex items-center">
@@ -179,10 +257,10 @@ export default function DashboardContent() {
               <p className={`text-sm mt-1 ${
                 stats.rejectionRate > 20 ? 'text-red-700' : stats.rejectionRate > 10 ? 'text-yellow-700' : 'text-green-700'
               }`}>
-                {stats.rejectionRate > 20 
-                  ? 'High rejection rate detected. Review submission guidelines or quality checks.' 
-                  : stats.rejectionRate > 10 
-                  ? 'Moderate rejection rate. Monitor submission quality.' 
+                {stats.rejectionRate > 20
+                  ? 'High rejection rate detected. Review submission guidelines or quality checks.'
+                  : stats.rejectionRate > 10
+                  ? 'Moderate rejection rate. Monitor submission quality.'
                   : 'Excellent! Your rejection rate is below 10%.'}
               </p>
             </div>
@@ -229,6 +307,8 @@ export default function DashboardContent() {
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -2,24 +2,32 @@
 
 import { SessionProvider } from 'next-auth/react';
 import ClientPortalContent from './ClientPortalContent';
+import ClientRoleGuard from '@/components/ClientRoleGuard';
 
 /**
  * Client Portal Layout
- * 
- * Protected layout for client portal with session management and navigation.
- * 
+ *
+ * Protected layout for client portal with role-based access control and session management.
+ *
  * @remarks
  * **Features**:
+ * - Role-based access control (ADMIN, VIEWER only)
  * - Session-based authentication (redirects if not logged in)
  * - Sidebar navigation (Dashboard, Submissions, Settings, Logout)
  * - Responsive design (collapsible sidebar on mobile)
  * - User info display (email, client role)
- * 
+ *
  * **Route Protection**:
- * - Checks authentication status on mount
- * - Redirects to /client/login if no session
- * - Shows loading state during auth check
- * 
+ * - Middleware ensures valid JWT token (redirects to /client-login if missing)
+ * - ClientAuthGuard checks authentication status (inside ClientPortalContent)
+ * - ClientRoleGuard blocks SUPER_ADMIN users (redirects to /admin/dashboard)
+ * - Only ADMIN and VIEWER roles can access client portal
+ *
+ * **RBAC Strategy**:
+ * - SUPER_ADMIN users have `clientId=null` and cannot access tenant-scoped APIs
+ * - They are automatically redirected to `/admin/dashboard`
+ * - ADMIN/VIEWER users have valid `clientId` and can access their tenant's portal
+ *
  * **Navigation Structure**:
  * ```
  * ┌─────────────────────────────────────┐
@@ -32,7 +40,7 @@ import ClientPortalContent from './ClientPortalContent';
  * │  🚪 Logout                          │
  * └─────────────────────────────────────┘
  * ```
- * 
+ *
  * **Mobile Behavior**:
  * - Hamburger menu icon on mobile
  * - Sidebar slides in/out
@@ -45,7 +53,9 @@ export default function ClientLayout({
 }) {
   return (
     <SessionProvider>
-      <ClientPortalContent>{children}</ClientPortalContent>
+      <ClientRoleGuard>
+        <ClientPortalContent>{children}</ClientPortalContent>
+      </ClientRoleGuard>
     </SessionProvider>
   );
 }

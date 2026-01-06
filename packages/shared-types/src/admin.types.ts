@@ -54,9 +54,9 @@ export interface KycStatusResponse {
 
 /**
  * Admin Client List Item
- * 
+ *
  * Lightweight client data for admin table display.
- * 
+ *
  * @property id - Client UUID
  * @property name - Organization name
  * @property status - Client status (ACTIVE, SUSPENDED, TRIAL)
@@ -70,14 +70,16 @@ export interface AdminClientListItem {
   status: string; // 'ACTIVE' | 'SUSPENDED' | 'TRIAL'
   apiKey: string; // Masked: 'client_abc...'
   totalKycs: number;
+  verifiedKycs: number;
+  rejectedKycs: number;
   createdAt: string; // ISO 8601
 }
 
 /**
  * Admin Client Detail
- * 
+ *
  * Full client data for edit page.
- * 
+ *
  * @property id - Client UUID
  * @property name - Organization name
  * @property status - Client status
@@ -106,10 +108,10 @@ export interface AdminClientDetail {
 
 /**
  * Create Client Response
- * 
+ *
  * Response after creating a new client.
  * Contains plaintext API key (shown once).
- * 
+ *
  * @property id - Client UUID
  * @property name - Organization name
  * @property apiKey - Plaintext API key (SHOW ONCE, then clear)
@@ -126,9 +128,9 @@ export interface CreateClientResponse {
 
 /**
  * Regenerate API Key Response
- * 
+ *
  * Response after regenerating client API key.
- * 
+ *
  * @property apiKey - New plaintext API key (SHOW ONCE)
  */
 export interface RegenerateApiKeyResponse {

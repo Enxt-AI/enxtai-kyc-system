@@ -2,30 +2,17 @@
 
 // SHARED AUTH, ROLE-BASED REDIRECT: Single backend, separate UIs.
 
-import { signIn, useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
+import { signIn } from 'next-auth/react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-export default function LoginPage() {
+export default function ClientLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { data: session, status } = useSession();
-
-  useEffect(() => {
-    // Role-based redirect after session is established
-    if (status === 'authenticated' && session?.user) {
-      const role = (session.user as any).role;
-      if (role === 'SUPER_ADMIN') {
-        router.push('/admin/dashboard');
-      } else {
-        router.push('/client/dashboard');
-      }
-    }
-  }, [status, session, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,8 +28,9 @@ export default function LoginPage() {
 
       if (result?.error) {
         setError('Invalid email or password');
+      } else {
+        router.push('/client/dashboard');
       }
-      // Redirect handled by useEffect after session update
     } catch (err) {
       setError('An error occurred during login');
     } finally {
@@ -54,8 +42,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Admin Login</h1>
-          <p className="mt-2 text-sm text-gray-600">Sign in to manage clients and review KYC submissions</p>
+          <h1 className="text-3xl font-bold text-gray-900">Client Login</h1>
+          <p className="mt-2 text-sm text-gray-600">Sign in to access your KYC dashboard</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
@@ -71,7 +59,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="admin@enxtai.com"
+                placeholder="admin@testfintech.com"
               />
             </div>
 
@@ -108,7 +96,7 @@ export default function LoginPage() {
           <div className="text-center text-sm text-gray-600">
             <p>Demo credentials:</p>
             <code className="block mt-1 text-xs bg-gray-100 p-2 rounded">
-              admin@enxtai.com / admin123
+              admin@testfintech.com / client123
             </code>
           </div>
         </div>

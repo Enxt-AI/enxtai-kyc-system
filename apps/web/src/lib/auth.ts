@@ -211,19 +211,18 @@ export const authOptions: NextAuthOptions = {
    * Custom authentication pages.
    *
    * @remarks
-   * **Custom Pages**:
-   * - Sign in: /client/login (custom React component)
-   * - Sign out: Default NextAuth page
-   * - Error: Default NextAuth page
+   * **Login Pages**:
+   * - Super Admin: /login (default sign-in page)
+   * - Client Admin: /client-login (accessed via middleware redirect)
    *
-   * **Custom Login Page Benefits**:
-   * - Consistent branding with client portal
-   * - Custom form validation
-   * - Custom error messages
-   * - Responsive design
+   * **Rationale**:
+   * - Super Admins use /login for internal access
+   * - Client Admins use /client-login for tenant-specific access
+   * - Middleware redirects /client/* routes to /client-login
+   * - Role-based redirect after login ensures correct dashboard
    */
   pages: {
-    signIn: '/client/login',
+    signIn: '/login',
   },
 
   /**

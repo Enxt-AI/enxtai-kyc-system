@@ -12,16 +12,43 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  /**
+   * Get Pending KYC Reviews
+   *
+   * @remarks
+   * **Authentication**: Requires SUPER_ADMIN role (enforced by SessionAuthGuard + RolesGuard)
+   * **Purpose**: Fetch all KYC submissions pending admin review across all clients
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
   @Get('kyc/pending-review')
   async getPendingReviews() {
     return this.adminService.getPendingReviews();
   }
 
+  /**
+   * Get KYC Submission Details
+   *
+   * @remarks
+   * **Authentication**: Requires SUPER_ADMIN role (enforced by SessionAuthGuard + RolesGuard)
+   * **Purpose**: Fetch detailed KYC submission data with presigned URLs for document viewing
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
   @Get('kyc/submission/:id')
   async getSubmission(@Param('id') id: string) {
     return this.adminService.getSubmissionWithPresignedUrls(id);
   }
 
+  /**
+   * Approve KYC Submission
+   *
+   * @remarks
+   * **Authentication**: Requires SUPER_ADMIN role (enforced by SessionAuthGuard + RolesGuard)
+   * **Purpose**: Mark KYC submission as verified and trigger client webhook notification
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
   @Post('kyc/approve')
   async approve(@Body() dto: ApproveSubmissionDto) {
     try {
@@ -33,6 +60,15 @@ export class AdminController {
     }
   }
 
+  /**
+   * Reject KYC Submission
+   *
+   * @remarks
+   * **Authentication**: Requires SUPER_ADMIN role (enforced by SessionAuthGuard + RolesGuard)
+   * **Purpose**: Mark KYC submission as rejected with reason and trigger client webhook notification
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
   @Post('kyc/reject')
   async reject(@Body() dto: RejectSubmissionDto) {
     try {
@@ -46,14 +82,14 @@ export class AdminController {
 
   /**
    * Get All Clients
-   * 
+   *
    * Endpoint: GET /api/admin/clients
-   * 
+   *
    * @remarks
    * **Purpose**: List all client organizations for super admin
    * **Response**: Array of AdminClientListItem with masked API keys
    * **Authentication**: Requires SUPER_ADMIN role
-   * 
+   *
    * **Response Format**:
    * ```json
    * [
@@ -77,17 +113,17 @@ export class AdminController {
 
   /**
    * Get Client Detail
-   * 
+   *
    * Endpoint: GET /api/admin/clients/:id
-   * 
+   *
    * @param id - Client UUID
    * @returns AdminClientDetail with usage statistics
-   * 
+   *
    * @remarks
    * **Purpose**: View full client details for editing
    * **Response**: AdminClientDetail with masked sensitive fields
    * **Authentication**: Requires SUPER_ADMIN role
-   * 
+   *
    * **Error Scenarios**:
    * - 404 Not Found: Client doesn't exist
    */
@@ -100,17 +136,17 @@ export class AdminController {
 
   /**
    * Create Client
-   * 
+   *
    * Endpoint: POST /api/admin/clients
-   * 
+   *
    * @param dto - CreateClientDto with name, email, optional webhook config
    * @returns CreateClientResponse with plaintext API key and password
-   * 
+   *
    * @remarks
    * **Purpose**: Onboard new client organization
    * **Response**: Plaintext credentials (SHOW ONCE)
    * **Authentication**: Requires SUPER_ADMIN role
-   * 
+   *
    * **Request Body**:
    * ```json
    * {
@@ -120,7 +156,7 @@ export class AdminController {
    *   "webhookSecret": "wh_secret_abc123"
    * }
    * ```
-   * 
+   *
    * **Response Format**:
    * ```json
    * {
@@ -131,7 +167,7 @@ export class AdminController {
    *   "defaultAdminPassword": "TempPass123456"
    * }
    * ```
-   * 
+   *
    * **Important**: Display API key and password in UI with copy buttons
    */
   @UseGuards(SessionAuthGuard, RolesGuard)
@@ -143,18 +179,18 @@ export class AdminController {
 
   /**
    * Update Client
-   * 
+   *
    * Endpoint: PUT /api/admin/clients/:id
-   * 
+   *
    * @param id - Client UUID
    * @param dto - UpdateClientDto with optional name and status
    * @returns Updated AdminClientDetail
-   * 
+   *
    * @remarks
    * **Purpose**: Update client name or status (suspend/activate)
    * **Response**: Updated client detail
    * **Authentication**: Requires SUPER_ADMIN role
-   * 
+   *
    * **Request Body**:
    * ```json
    * {
@@ -172,24 +208,24 @@ export class AdminController {
 
   /**
    * Regenerate API Key
-   * 
+   *
    * Endpoint: POST /api/admin/clients/:id/regenerate-key
-   * 
+   *
    * @param id - Client UUID
    * @returns RegenerateApiKeyResponse with new plaintext API key
-   * 
+   *
    * @remarks
    * **Purpose**: Generate new API key (invalidates old one)
    * **Response**: Plaintext API key (SHOW ONCE)
    * **Authentication**: Requires SUPER_ADMIN role
-   * 
+   *
    * **Response Format**:
    * ```json
    * {
    *   "apiKey": "client_new_abc123..."
    * }
    * ```
-   * 
+   *
    * **Warning**: Old API key immediately invalidated
    */
   @UseGuards(SessionAuthGuard, RolesGuard)

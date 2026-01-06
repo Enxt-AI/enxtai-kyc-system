@@ -12,9 +12,9 @@ import type { UpdateClientDto } from './dto/update-client.dto';
 
 /**
  * Admin Service
- * 
+ *
  * Provides admin-only operations for managing KYC submissions, users, and clients.
- * 
+ *
  * @remarks
  * **Webhook Integration**:
  * - WebhookService injected for real-time status change notifications
@@ -44,10 +44,10 @@ export class AdminService {
 
   /**
    * Approve KYC Submission
-   * 
+   *
    * Manually approve a submission in PENDING_REVIEW status. Sets status to VERIFIED
    * and triggers webhook notification to client.
-   * 
+   *
    * @param submissionId - KYC submission UUID
    * @param adminUserId - Admin user UUID (for audit trail)
    * @param notes - Optional approval notes
@@ -81,10 +81,10 @@ export class AdminService {
 
   /**
    * Reject KYC Submission
-   * 
+   *
    * Manually reject a submission in PENDING_REVIEW status. Sets status to REJECTED,
    * stores rejection reason, and triggers webhook notification to client.
-   * 
+   *
    * @param submissionId - KYC submission UUID
    * @param adminUserId - Admin user UUID (for audit trail)
    * @param reason - Rejection reason (included in webhook payload)
@@ -141,14 +141,14 @@ export class AdminService {
 
   /**
    * Trigger Webhook Helper
-   * 
+   *
    * Sends webhook notification to client's configured endpoint after admin status change.
    * Fetches user details, builds webhook payload, and delegates to WebhookService.
-   * 
+   *
    * **Error Isolation**:
    * - Webhook failures are caught and logged but do NOT throw exceptions
    * - Ensures admin operations continue even if client webhook endpoint is down
-   * 
+   *
    * @param submission - Updated KYCSubmission object
    * @param event - Webhook event type (typically KYC_STATUS_CHANGED)
    * @returns Promise<void> - Always resolves (errors caught internally)
@@ -229,22 +229,22 @@ export class AdminService {
 
   /**
    * Get All Clients (Admin List)
-   * 
+   *
    * Retrieves all client organizations with KYC submission counts.
    * Used by super admin to view and manage clients.
-   * 
+   *
    * @returns Array of AdminClientListItem with masked API keys and stats
-   * 
+   *
    * @remarks
    * **Query Optimization**:
    * - Uses Prisma aggregation to count KYCs per client
    * - Single query with groupBy for efficiency
    * - Ordered by createdAt DESC (newest first)
-   * 
+   *
    * **Field Masking**:
    * - API key: First 10 characters + '...' (e.g., 'client_abc...')
    * - Webhook secret: Not included in list view (only in detail)
-   * 
+   *
    * **Performance**:
    * - Indexed on Client.status for fast filtering
    * - Consider pagination if client count exceeds 100
@@ -260,32 +260,50 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return clients.map(client => ({
-      id: client.id,
-      name: client.name,
-      status: client.status,
-      apiKey: client.apiKey.substring(0, 10) + '...', // Mask API key
-      totalKycs: client._count.kycSubmissions,
-      createdAt: client.createdAt.toISOString(),
-    }));
+    // Fetch verified and rejected counts for each client in parallel
+    const clientsWithStats = await Promise.all(
+      clients.map(async (client) => {
+        const [verifiedCount, rejectedCount] = await Promise.all([
+          this.prisma.kYCSubmission.count({
+            where: { clientId: client.id, internalStatus: 'VERIFIED' },
+          }),
+          this.prisma.kYCSubmission.count({
+            where: { clientId: client.id, internalStatus: 'REJECTED' },
+          }),
+        ]);
+
+        return {
+          id: client.id,
+          name: client.name,
+          status: client.status,
+          apiKey: client.apiKey.substring(0, 10) + '...', // Mask API key
+          totalKycs: client._count.kycSubmissions,
+          verifiedKycs: verifiedCount,
+          rejectedKycs: rejectedCount,
+          createdAt: client.createdAt.toISOString(),
+        };
+      })
+    );
+
+    return clientsWithStats;
   }
 
   /**
    * Get Client Detail (Admin View)
-   * 
+   *
    * Retrieves full client data with usage statistics.
    * Used by super admin to view client details and edit settings.
-   * 
+   *
    * @param clientId - Client UUID
    * @returns AdminClientDetail with masked sensitive fields
    * @throws NotFoundException if client not found
-   * 
+   *
    * @remarks
    * **Statistics Calculation**:
    * - Total KYCs: Count all submissions
    * - Verified KYCs: Count submissions with internalStatus = VERIFIED
    * - Rejected KYCs: Count submissions with internalStatus = REJECTED
-   * 
+   *
    * **Field Masking**:
    * - API key: First 10 characters + '...'
    * - Webhook secret: '***' if configured, null if not set
@@ -331,13 +349,13 @@ export class AdminService {
 
   /**
    * Create Client (Admin Onboarding)
-   * 
+   *
    * Creates a new client organization with API key, MinIO buckets, and default admin user.
    * This is the primary onboarding flow for new FinTech clients.
-   * 
+   *
    * @param dto - CreateClientDto with name, email, optional webhook config
    * @returns CreateClientResponse with plaintext API key and default admin password
-   * 
+   *
    * @remarks
    * **Onboarding Steps**:
    * 1. Generate API key (SHA-256 hash + plaintext)
@@ -347,16 +365,16 @@ export class AdminService {
    * 5. Create default ClientUser (email from DTO, bcrypt password)
    * 6. Clear apiKeyPlaintext from database
    * 7. Return plaintext credentials (SHOW ONCE)
-   * 
+   *
    * **Transaction Safety**:
    * - Wrap in Prisma transaction (rollback if any step fails)
    * - MinIO bucket creation outside transaction (idempotent)
-   * 
+   *
    * **Security**:
    * - API key: 32 bytes entropy, SHA-256 hashed
    * - Default password: 16 chars, must be changed on first login
    * - Plaintext credentials returned once, then cleared
-   * 
+   *
    * **Error Handling**:
    * - Duplicate client name: Throw BadRequestException
    * - MinIO bucket creation failure: Log error, continue (buckets can be created later)
@@ -419,24 +437,24 @@ export class AdminService {
 
   /**
    * Update Client (Admin Edit)
-   * 
+   *
    * Updates client name and/or status.
-   * 
+   *
    * @param clientId - Client UUID
    * @param dto - UpdateClientDto with optional name and status
    * @returns Updated AdminClientDetail
    * @throws NotFoundException if client not found
-   * 
+   *
    * @remarks
    * **Allowed Updates**:
    * - name: Organization name
    * - status: ACTIVE, SUSPENDED, TRIAL
-   * 
+   *
    * **Status Change Effects**:
    * - SUSPENDED: Client API requests return 401 Unauthorized
    * - ACTIVE: Client can make API requests normally
    * - TRIAL: Client can make requests (may have feature limits)
-   * 
+   *
    * **Audit Trail**:
    * - Log status changes to AuditLog table
    * - Include adminUserId for accountability
@@ -456,24 +474,24 @@ export class AdminService {
 
   /**
    * Regenerate API Key (Admin Operation)
-   * 
+   *
    * Generates a new API key for a client, invalidating the old one.
    * Used when client loses their API key or suspects compromise.
-   * 
+   *
    * @param clientId - Client UUID
    * @returns RegenerateApiKeyResponse with new plaintext API key
    * @throws NotFoundException if client not found
-   * 
+   *
    * @remarks
    * **Security Implications**:
    * - Old API key immediately invalidated (all requests fail)
    * - Client must update their systems with new key
    * - Plaintext key shown once, then cleared from database
-   * 
+   *
    * **Notification**:
    * - Consider sending email to client admin users
    * - Log regeneration event to AuditLog
-   * 
+   *
    * **Rollback**:
    * - No rollback possible (old key is lost)
    * - Client must contact support if new key is lost
@@ -504,11 +522,11 @@ export class AdminService {
 
   /**
    * Generate Temporary Password
-   * 
+   *
    * Generates a secure random password for default admin user.
-   * 
+   *
    * @returns 16-character alphanumeric password
-   * 
+   *
    * @remarks
    * **Format**: 16 characters, alphanumeric (A-Z, a-z, 0-9)
    * **Entropy**: ~95 bits (cryptographically secure)

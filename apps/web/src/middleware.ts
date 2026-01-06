@@ -5,25 +5,46 @@ import type { NextRequest } from 'next/server';
 /**
  * NextAuth Middleware (v4)
  *
- * Protects client portal routes from unauthenticated access.
+ * Protects client portal and admin panel routes from unauthenticated access.
  *
  * @remarks
- * **Protected Routes**:
+ * **Protected Route Groups**:
+ *
+ * **Client Portal** (`/client/*`):
  * - `/client/dashboard` - Client dashboard
  * - `/client/submissions` - KYC submissions list
  * - `/client/settings` - User settings
- * - All other `/client/*` routes except `/client/login`
+ * - Allowed roles: ADMIN, VIEWER
+ * - Redirect: `/client-login` (if unauthenticated)
+ *
+ * **Admin Panel** (`/admin/*`):
+ * - `/admin/dashboard` - Admin dashboard
+ * - `/admin/clients` - Client management
+ * - `/admin/kyc-review` - KYC review queue
+ * - Allowed role: SUPER_ADMIN only
+ * - Redirect: `/login` (if unauthenticated)
+ *
+ * **Public Routes**:
+ * - `/login` - Super Admin login (no auth required)
+ * - `/client-login` - Client Admin login (no auth required)
+ * - `/` - Public KYC submission flow (no auth required)
  *
  * **Behavior**:
  * - Authenticated users: Allow access to protected routes
- * - Unauthenticated users: Redirect to `/client/login`
- * - Login page accessible without authentication
+ * - Unauthenticated users: Redirect to appropriate login page
+ * - Login pages accessible without authentication
  *
  * **How it Works**:
- * 1. Middleware intercepts all /client/* requests
+ * 1. Middleware intercepts /client/* and /admin/* requests
  * 2. Checks if user has valid JWT token
- * 3. If no token and not on login page, redirect to login
- * 4. If token exists, allow request to proceed
+ * 3. If no token, redirect to appropriate login page
+ * 4. If token exists, allow request to proceed (role check done by guard components)
+ *
+ * **RBAC Strategy**:
+ * - Middleware only checks authentication (token presence)
+ * - Role-based authorization handled by guard components:
+ *   - ClientRoleGuard: Blocks SUPER_ADMIN from /client/*
+ *   - SuperAdminGuard: Blocks ADMIN/VIEWER from /admin/*
  *
  * **Session Validation**:
  * - NextAuth checks JWT token validity
@@ -35,18 +56,23 @@ import type { NextRequest } from 'next/server';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow access to login page without authentication
-  if (pathname === '/client/login') {
+  // Allow access to login pages without authentication
+  if (pathname === '/login' || pathname === '/client-login') {
     return NextResponse.next();
   }
 
   // Check if user has valid JWT token
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
-  // Protect all /client/* routes (except login)
+  // Protect /admin/* routes (redirect to Super Admin login)
+  if (pathname.startsWith('/admin') && !token) {
+    const loginUrl = new URL('/login', req.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Protect /client/* routes (redirect to Client Admin login)
   if (pathname.startsWith('/client') && !token) {
-    // Redirect to login page
-    const loginUrl = new URL('/client/login', req.url);
+    const loginUrl = new URL('/client-login', req.url);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -60,21 +86,22 @@ export async function middleware(req: NextRequest) {
  * Specifies which routes the middleware should run on.
  *
  * @remarks
- * **Matcher Pattern**:
- * - `/client/:path*` - All routes under /client (including login)
+ * **Matcher Patterns**:
+ * - `/client/:path*` - All client portal routes
+ * - `/admin/:path*` - All admin panel routes
  *
  * **Rationale**:
- * - Only client portal routes require authentication checks
- * - Avoids unnecessary token lookups on public routes (/, /kyc/*, /admin/*)
+ * - Only protected routes require authentication checks
+ * - Avoids unnecessary token lookups on public routes (/, /kyc/*, /api/*)
  * - Improves performance by limiting middleware execution scope
  *
  * **Note**:
- * The middleware function itself handles the /client/login exception,
- * allowing unauthenticated access to the login page.
+ * The middleware function itself handles login page exceptions
+ * (/login, /client-login) allowing unauthenticated access.
  *
  * **Performance**:
  * Middleware only runs on matched routes (efficient).
  */
 export const config = {
-  matcher: '/client/:path*',
+  matcher: ['/client/:path*', '/admin/:path*'],
 };

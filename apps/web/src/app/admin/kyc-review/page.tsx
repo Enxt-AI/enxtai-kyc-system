@@ -1,42 +1,50 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import type { PendingReviewSubmission } from '@enxtai/shared-types';
 import PendingReviewTable from '@/components/admin/PendingReviewTable';
 import ReviewModal from '@/components/admin/ReviewModal';
 import { getPendingReviews } from '@/lib/api-client';
 
+/**
+ * Admin KYC Review Page
+ *
+ * Platform administrator interface for reviewing and approving/rejecting KYC submissions.
+ *
+ * @remarks
+ * **Purpose**:
+ * - View all pending KYC submissions across all clients (cross-tenant)
+ * - Review submission details, documents, and OCR data
+ * - Approve or reject submissions with optional comments
+ * - Track review actions by admin user ID
+ *
+ * **RBAC Protection**:
+ * - SuperAdminGuard (via layout) ensures only SUPER_ADMIN can access
+ * - Uses NextAuth session to get admin user ID (no sessionStorage hack)
+ * - Admin ID guaranteed valid due to middleware + guard protection
+ *
+ * **Session Usage**:
+ * - `session.user.id` used as `adminUserId` for audit trail
+ * - Session managed by NextAuth (JWT tokens)
+ * - No manual validation needed (guards handle authentication)
+ *
+ * **Features**:
+ * - Real-time submission list with auto-refresh after actions
+ * - Modal-based review workflow
+ * - Error handling for API failures
+ * - Loading states during data fetch
+ *
+ * **Cross-Tenant Access**:
+ * SUPER_ADMIN users can review submissions from all clients.
+ * Backend API validates SUPER_ADMIN role before returning cross-tenant data.
+ */
 export default function AdminKycReviewPage() {
+  const { data: session } = useSession();
   const [pending, setPending] = useState<PendingReviewSubmission[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [adminUserId, setAdminUserId] = useState<string>('');
-  const [adminIdentityError, setAdminIdentityError] = useState<string | null>(null);
-
-  const uuidPattern = useMemo(
-    () => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    [],
-  );
-
-  useEffect(() => {
-    const resolveAdminId = () => {
-      const sessionId = typeof window !== 'undefined' ? window.sessionStorage.getItem('adminUserId') ?? '' : '';
-      const envId = process.env.NEXT_PUBLIC_ADMIN_USER_ID ?? '';
-      const resolvedId = sessionId || envId;
-
-      if (!resolvedId || !uuidPattern.test(resolvedId)) {
-        setAdminUserId('');
-        setAdminIdentityError('Admin identity missing or invalid. Please sign in again.');
-        return;
-      }
-
-      setAdminUserId(resolvedId);
-      setAdminIdentityError(null);
-    };
-
-    resolveAdminId();
-  }, [uuidPattern]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,26 +78,14 @@ export default function AdminKycReviewPage() {
       {!loading && !error && (
         <PendingReviewTable
           items={pending}
-          onSelect={(id) => {
-            if (!adminUserId) {
-              setError('Admin identity missing or invalid.');
-              return;
-            }
-            setSelected(id);
-          }}
+          onSelect={(id) => setSelected(id)}
         />
       )}
 
-      {adminIdentityError && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          {adminIdentityError}
-        </div>
-      )}
-
-      {selected && adminUserId && (
+      {selected && session?.user && (
         <ReviewModal
           submissionId={selected}
-          adminUserId={adminUserId}
+          adminUserId={session.user.id}
           onClose={() => setSelected(null)}
           onActionComplete={load}
         />
