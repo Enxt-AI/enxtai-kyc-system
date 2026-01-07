@@ -1,5 +1,45 @@
 'use client';
 
+/**
+ * Super Admin Login Page
+ *
+ * Authentication page for EnxtAI internal Super Admin users.
+ *
+ * @route /admin/login
+ *
+ * @remarks
+ * **Purpose**:
+ * - Authenticates SUPER_ADMIN role users (EnxtAI team)
+ * - Separate from Client Admin login (/client/login)
+ * - Uses NextAuth credentials provider
+ *
+ * **Authentication Flow**:
+ * 1. User enters email/password
+ * 2. NextAuth validates against backend API
+ * 3. Backend checks ClientUser table (role=SUPER_ADMIN, clientId=null)
+ * 4. On success, creates JWT session with role claim
+ * 5. Client-side role check redirects to /admin/dashboard
+ *
+ * **Role-Based Redirect**:
+ * - Handled client-side after successful authentication
+ * - Uses getSession() to verify SUPER_ADMIN role
+ * - window.location.href for hard redirect (avoids session timing issues)
+ * - NextAuth redirect callback provides fallback but doesn't do role logic
+ *
+ * **Demo Credentials**:
+ * - Email: admin@enxtai.com
+ * - Password: admin123
+ * - Role: SUPER_ADMIN
+ *
+ * **Security**:
+ * - JWT tokens stored in httpOnly cookies
+ * - CSRF protection enabled
+ * - Role-based redirect prevents unauthorized access
+ *
+ * @see {@link file:apps/web/src/lib/auth.ts} NextAuth configuration
+ * @see {@link file:apps/web/src/middleware.ts} Route protection middleware
+ */
+
 // SHARED AUTH, ROLE-BASED REDIRECT: Single backend, separate UIs.
 
 import { signIn, getSession } from 'next-auth/react';
@@ -7,7 +47,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-export default function ClientLoginPage() {
+export default function SuperAdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -58,8 +98,8 @@ export default function ClientLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Client Login</h1>
-          <p className="mt-2 text-sm text-gray-600">Sign in to access your KYC dashboard</p>
+          <h1 className="text-3xl font-bold text-gray-900">Super Admin Login</h1>
+          <p className="mt-2 text-sm text-gray-600">Sign in to your Super Admin account to manage clients and review KYC submissions</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
@@ -75,7 +115,7 @@ export default function ClientLoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="admin@testfintech.com"
+                placeholder="admin@enxtai.com"
               />
             </div>
 
@@ -110,9 +150,9 @@ export default function ClientLoginPage() {
           </form>
 
           <div className="text-center text-sm text-gray-600">
-            <p>Demo credentials:</p>
+            <p>Super Admin Demo Credentials:</p>
             <code className="block mt-1 text-xs bg-gray-100 p-2 rounded">
-              admin@testfintech.com / client123
+              admin@enxtai.com / admin123
             </code>
           </div>
         </div>

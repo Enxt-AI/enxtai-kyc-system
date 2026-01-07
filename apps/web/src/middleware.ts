@@ -15,19 +15,20 @@ import type { NextRequest } from 'next/server';
  * - `/client/submissions` - KYC submissions list
  * - `/client/settings` - User settings
  * - Allowed roles: ADMIN, VIEWER
- * - Redirect: `/client-login` (if unauthenticated)
+ * - Redirect: `/client/login` (if unauthenticated)
  *
  * **Admin Panel** (`/admin/*`):
  * - `/admin/dashboard` - Admin dashboard
  * - `/admin/clients` - Client management
  * - `/admin/kyc-review` - KYC review queue
  * - Allowed role: SUPER_ADMIN only
- * - Redirect: `/login` (if unauthenticated)
+ * - Redirect: `/admin/login` (if unauthenticated)
  *
  * **Public Routes**:
- * - `/login` - Super Admin login (no auth required)
- * - `/client-login` - Client Admin login (no auth required)
- * - `/` - Public KYC submission flow (no auth required)
+ * - `/admin/login` - Super Admin login (no auth required)
+ * - `/client/login` - Client Admin login (no auth required)
+ * - `/` - Public landing page (no auth required, handled by page component)
+ * - `/kyc/*` - Public KYC submission flow (no auth required)
  *
  * **Behavior**:
  * - Authenticated users: Allow access to protected routes
@@ -39,6 +40,11 @@ import type { NextRequest } from 'next/server';
  * 2. Checks if user has valid JWT token
  * 3. If no token, redirect to appropriate login page
  * 4. If token exists, allow request to proceed (role check done by guard components)
+ *
+ * **Note on Root `/` Redirect**:
+ * - Middleware does NOT handle root `/` redirect
+ * - Root page component (`app/page.tsx`) handles authenticated user redirect
+ * - This separation keeps middleware focused on authentication checks only
  *
  * **RBAC Strategy**:
  * - Middleware only checks authentication (token presence)
@@ -57,7 +63,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow access to login pages without authentication
-  if (pathname === '/login' || pathname === '/client-login') {
+  if (pathname === '/admin/login' || pathname === '/client/login') {
     return NextResponse.next();
   }
 
@@ -66,13 +72,13 @@ export async function middleware(req: NextRequest) {
 
   // Protect /admin/* routes (redirect to Super Admin login)
   if (pathname.startsWith('/admin') && !token) {
-    const loginUrl = new URL('/login', req.url);
+    const loginUrl = new URL('/admin/login', req.url);
     return NextResponse.redirect(loginUrl);
   }
 
   // Protect /client/* routes (redirect to Client Admin login)
   if (pathname.startsWith('/client') && !token) {
-    const loginUrl = new URL('/client-login', req.url);
+    const loginUrl = new URL('/client/login', req.url);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -97,7 +103,7 @@ export async function middleware(req: NextRequest) {
  *
  * **Note**:
  * The middleware function itself handles login page exceptions
- * (/login, /client-login) allowing unauthenticated access.
+ * (/admin/login, /client/login) allowing unauthenticated access.
  *
  * **Performance**:
  * Middleware only runs on matched routes (efficient).

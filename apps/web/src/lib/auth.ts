@@ -210,6 +210,46 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+
+    /**
+     * Redirect Callback
+     *
+     * Fallback redirect handler for NextAuth flows.
+     *
+     * @param url - Default redirect URL from NextAuth
+     * @param baseUrl - Application base URL
+     * @returns Safe redirect destination URL
+     *
+     * @remarks
+     * **Security Purpose**:
+     * - Prevents open redirect vulnerabilities
+     * - Only allows redirects to internal URLs (same origin)
+     *
+     * **Role-Based Redirects**:
+     * - NOT handled here due to NextAuth v4 limitations
+     * - Primary role logic implemented client-side in login pages
+     * - Login pages use `signIn(redirect: false)` + `getSession()` + `window.location.href`
+     *
+     * **When This Callback Runs**:
+     * - OAuth/social login callbacks
+     * - API-triggered `signIn()` calls with `redirect: true`
+     * - Other NextAuth redirect scenarios
+     *
+     * **Fallback Behavior**:
+     * - Internal URLs: passed through unchanged
+     * - External URLs: redirected to base URL for safety
+     *
+     * @see {@link https://next-auth.js.org/configuration/callbacks#redirect-callback NextAuth Redirect Callback}
+     */
+    async redirect({ url, baseUrl }) {
+      // Prevent open redirects - only allow internal URLs
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+
+      // External URLs get redirected to base URL for security
+      return baseUrl;
+    },
   },
 
   /**
@@ -223,13 +263,13 @@ export const authOptions: NextAuthOptions = {
    * - Client Admin: /client-login (accessed via middleware redirect)
    *
    * **Rationale**:
-   * - Super Admins use /login for internal access
-   * - Client Admins use /client-login for tenant-specific access
-   * - Middleware redirects /client/* routes to /client-login
+   * - Super Admins use /admin/login for internal access
+   * - Client Admins use /client/login for tenant-specific access
+   * - Middleware redirects /client/* routes to /client/login
    * - Role-based redirect after login ensures correct dashboard
    */
   pages: {
-    signIn: '/login',
+    signIn: '/admin/login',
   },
 
   /**

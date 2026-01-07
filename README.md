@@ -14,6 +14,24 @@ EnxtAI KYC System is a production-grade, full-stack application for automated id
 - 🗄️ Secure Storage: MinIO S3-compatible storage with AES-256 encryption
 - 📈 Progress Tracking: Real-time status updates (PENDING → DOCUMENTS_UPLOADED → OCR_COMPLETED → FACE_VERIFIED)
 
+## 🔐 Authentication & Access
+
+The system implements multi-tenant role-based access control with separate login portals for different user types:
+
+### User Types & Login URLs
+
+| User Type | Login URL | Purpose | Demo Credentials |
+|-----------|-----------|---------|------------------|
+| **Super Admin** | `http://localhost:3000/admin/login` | Platform administration, client management, KYC review | `admin@enxtai.com` / `admin123` |
+| **Client Admin** | `http://localhost:3000/client/login` | FinTech client operations, submission management | `admin@testfintech.com` / `client123` |
+| **End User** | `http://localhost:3000` | KYC verification process | No authentication required |
+
+### URL Migration & Backward Compatibility
+
+- **Legacy URL**: `/client-login` → **301 redirect** to `/client/login`
+- **New Structure**: `/admin/login` and `/client/login` for better organization
+- **Public Access**: KYC verification flow at `/` requires no authentication
+
 ## 🏗️ Architecture
 
 ```mermaid
@@ -24,7 +42,7 @@ graph TB
         D[Status Page] --> E[KycStatusIndicator]
         F[Admin Dashboard] --> G[PendingReviewTable]
     end
-    
+
     subgraph "Backend (NestJS 11.0.10 + Fastify)"
         H[KycController] --> I[KycService]
         I --> J[StorageService]
@@ -33,18 +51,18 @@ graph TB
         M[AdminController] --> N[AdminService]
         N --> I
     end
-    
+
     subgraph "Data Layer"
         O[PrismaService] --> P[(PostgreSQL 15)]
         J --> Q[MinIO S3]
         I --> R[(Redis 7)]
     end
-    
+
     subgraph "External Services (Future)"
         S[DigiLocker API]
         T[CVL KRA API]
     end
-    
+
     A -->|HTTP/REST| H
     D -->|HTTP/REST| H
     F -->|HTTP/REST| M
@@ -53,7 +71,7 @@ graph TB
     L -->|face-api.js<br/>TensorFlow.js| L
     I -.->|Future| S
     I -.->|Future| T
-    
+
     style A fill:#61dafb
     style H fill:#e0234e
     style P fill:#336791
@@ -73,27 +91,27 @@ sequenceDiagram
     participant OCR as Tesseract.js
     participant FaceRec as face-api.js
     participant DB as PostgreSQL
-    
+
     User->>Frontend: Upload PAN Card
-    Frontend->>API: POST /api/kyc/upload/pan
+    Frontend->>API: POST /api/v1/kyc/upload/pan
     API->>Storage: Store in kyc-pan bucket
     API->>DB: Create/Update Submission (DOCUMENTS_UPLOADED)
-    API-->>Frontend: Success + submissionId
-    
+    API-->>Frontend: Success + kycSessionId
+
     User->>Frontend: Upload Aadhaar Front/Back
-    Frontend->>API: POST /api/kyc/upload/aadhaar
+    Frontend->>API: POST /api/v1/kyc/upload/aadhaar/front & /back
     API->>Storage: Store in kyc-aadhaar-cards bucket
     API->>DB: Update Submission
     API-->>Frontend: Success
-    
+
     User->>Frontend: Capture Live Photo
-    Frontend->>API: POST /api/kyc/upload/live-photo
+    Frontend->>API: POST /api/v1/kyc/upload/live-photo
     API->>Storage: Store in kyc-live-photos bucket
     API->>DB: Update Submission
     API-->>Frontend: Success
-    
+
     User->>Frontend: Trigger Verification
-    Frontend->>API: POST /api/kyc/verify/face
+    Frontend->>API: POST /api/v1/kyc/verify
     API->>Storage: Download Documents
     API->>OCR: Extract PAN/Aadhaar Data
     OCR-->>API: Extracted Text (PAN#, name, DOB, address)
@@ -101,7 +119,7 @@ sequenceDiagram
     API->>FaceRec: Verify Face Match
     FaceRec-->>API: Match Score + Liveness Score
     API->>DB: Update Scores & Status
-    
+
     alt Score >= 80%
         API->>DB: Status = FACE_VERIFIED
         API-->>Frontend: Auto-Approved ✓
@@ -307,15 +325,13 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/kyc/submission` | Create new KYC submission |
-| GET | `/api/kyc/status/:userId` | Get KYC status with progress % |
-| GET | `/api/kyc/submission/:userId` | Get full submission details |
-| POST | `/api/kyc/upload/pan` | Upload PAN card image |
-| POST | `/api/kyc/upload/aadhaar` | Upload Aadhaar front/back images |
-| POST | `/api/kyc/upload/live-photo` | Upload live photo (selfie) |
-| POST | `/api/kyc/verify/face` | Trigger face verification workflow |
-| POST | `/api/kyc/extract/pan` | Extract PAN data via OCR |
-| POST | `/api/kyc/extract/aadhaar` | Extract Aadhaar data via OCR |
+| POST | `/api/v1/kyc/initiate` | Create new KYC session |
+| POST | `/api/v1/kyc/upload/pan` | Upload PAN card document |
+| POST | `/api/v1/kyc/upload/aadhaar/front` | Upload Aadhaar front side |
+| POST | `/api/v1/kyc/upload/aadhaar/back` | Upload Aadhaar back side |
+| POST | `/api/v1/kyc/upload/live-photo` | Upload live photograph |
+| GET | `/api/v1/kyc/status/:kycSessionId` | Get KYC verification status |
+| POST | `/api/v1/kyc/verify` | Manually trigger verification |
 
 ### Admin Endpoints
 
@@ -356,7 +372,7 @@ All client-facing endpoints require `X-API-Key` header authentication:
 
 **Quick Start:**
 ```bash
-# 1. Obtain API key from client portal
+# 1. Obtain API key from client portal (http://localhost:3000/client/login)
 # 2. Initiate KYC session
 curl -X POST http://localhost:3001/api/v1/kyc/initiate \
   -H "X-API-Key: your-api-key" \
@@ -365,6 +381,8 @@ curl -X POST http://localhost:3001/api/v1/kyc/initiate \
 
 # 3. Upload documents (see Integration Guide for details)
 # 4. Check status or receive webhook notification
+curl -X GET http://localhost:3001/api/v1/kyc/status/{kycSessionId} \
+  -H "X-API-Key: your-api-key"
 ```
 
 ### Webhook Events
@@ -383,7 +401,7 @@ See [Integration Guide](docs/INTEGRATION_GUIDE.md#webhook-setup) for signature v
 
 1. **Start KYC Process:**
    - Navigate to http://localhost:3000
-   - Click "Start KYC"
+   - Click "Begin KYC Verification"
 
 2. **Upload Documents:**
    - Upload a PAN card image (JPEG/PNG, <5MB)
@@ -404,9 +422,19 @@ See [Integration Guide](docs/INTEGRATION_GUIDE.md#webhook-setup) for signature v
    - View results: Face Match Score, Liveness Score, Status
 
 5. **Admin Review (if <80% confidence):**
-   - Navigate to http://localhost:3000/admin
-   - View pending reviews
+   - Navigate to http://localhost:3000/admin/login
+   - Login with Super Admin credentials: `admin@enxtai.com` / `admin123`
+   - View pending reviews in `/admin/kyc-review`
    - Approve or reject with notes
+
+6. **Client Portal Testing:**
+   - Navigate to http://localhost:3000/client/login
+   - Login with Client Admin credentials: `admin@testfintech.com` / `client123`
+   - Access client dashboard at `/client/dashboard`
+   - View submissions and configure settings
+
+**Legacy URL Support:**
+- `/client-login` → 301 redirect to `/client/login` (backward compatibility)
 
 ### Database Inspection
 
@@ -469,7 +497,7 @@ REDIS_URL="redis://prod-redis:6379"
 
 # MinIO S3 Storage
 MINIO_ENDPOINT="prod-minio"
-MINIO_PORT="9000" 
+MINIO_PORT="9000"
 MINIO_ACCESS_KEY="production_access_key"
 MINIO_SECRET_KEY="production_secret_key_change_me"
 MINIO_USE_SSL="true"
@@ -523,7 +551,7 @@ NEXT_PUBLIC_ENABLE_ADMIN_PANEL="true"
 cd apps/api
 docker build -t enxtai/kyc-api:latest .
 
-# Build Web image  
+# Build Web image
 cd ../web
 docker build -t enxtai/kyc-web:latest .
 ```
@@ -629,7 +657,7 @@ npx prisma generate
    # Clone repository to production server
    git clone https://github.com/enxtai/kyc-system.git
    cd kyc-system
-   
+
    # Create production environment files
    cp apps/api/.env.example apps/api/.env.production
    cp apps/web/.env.example apps/web/.env.production
@@ -640,10 +668,10 @@ npx prisma generate
    ```bash
    # Build production images
    docker-compose -f docker-compose.prod.yml build
-   
+
    # Start services
    docker-compose -f docker-compose.prod.yml up -d
-   
+
    # Run database migrations
    docker-compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
    ```
@@ -652,10 +680,10 @@ npx prisma generate
    ```bash
    # Check service health
    curl http://localhost:3001/health
-   
+
    # Check application status
    curl http://localhost:3000
-   
+
    # Test client API
    cd apps/api
    pnpm test:client-api --apiKey="your-production-key" --baseUrl="http://localhost:3001"
@@ -674,10 +702,10 @@ For production, configure SSL termination using:
 server {
     listen 443 ssl http2;
     server_name api.your-domain.com;
-    
+
     ssl_certificate /path/to/certificate.crt;
     ssl_certificate_key /path/to/private.key;
-    
+
     location / {
         proxy_pass http://localhost:3001;
         proxy_set_header Host $host;
@@ -690,10 +718,10 @@ server {
 server {
     listen 443 ssl http2;
     server_name kyc.your-domain.com;
-    
+
     ssl_certificate /path/to/certificate.crt;
     ssl_certificate_key /path/to/private.key;
-    
+
     location / {
         proxy_pass http://localhost:3000;
         proxy_set_header Host $host;
@@ -867,7 +895,7 @@ documentType: "AADHAAR_FRONT" | "AADHAAR_BACK" | "PAN_CARD" | "SELFIE"
   "success": true,
   "data": {
     "documentId": "doc_abc123",
-    "documentType": "AADHAAR_FRONT", 
+    "documentType": "AADHAAR_FRONT",
     "uploadedAt": "2024-01-15T10:30:00Z",
     "extractedData": {
       "aadhaarNumber": "1234-5678-****",
@@ -893,7 +921,7 @@ GET /v1/kyc/status/{userId}
     "status": "DOCUMENTS_UPLOADED",
     "completedSteps": [
       "AADHAAR_FRONT",
-      "AADHAAR_BACK", 
+      "AADHAAR_BACK",
       "PAN_CARD"
     ],
     "nextSteps": ["SELFIE"],
@@ -966,7 +994,7 @@ pnpm test:client-api --apiKey="test-key" --baseUrl="https://api.staging.com"
 #### Webhook Tests
 
 ```bash
-# Start webhook test server 
+# Start webhook test server
 pnpm test:webhooks --secret="your-webhook-secret" --port=3002
 
 # Test signature verification only
@@ -1001,7 +1029,7 @@ class KycClient {
 
   async createUser(userData: {
     userId: string;
-    email: string; 
+    email: string;
     phone: string;
     name: string;
   }) {
@@ -1013,7 +1041,7 @@ class KycClient {
     const formData = new FormData();
     formData.append('document', file);
     formData.append('documentType', documentType);
-    
+
     const response = await this.client.post(
       `/v1/kyc/documents/upload/${userId}`,
       formData,
@@ -1040,7 +1068,7 @@ try {
   const user = await kycClient.createUser({
     userId: 'customer-123',
     email: 'customer@example.com',
-    phone: '+919876543210', 
+    phone: '+919876543210',
     name: 'Customer Name'
   });
   console.log('User created:', user);
@@ -1058,7 +1086,7 @@ curl -X POST "https://api.your-domain.com/v1/kyc/users" \
   -H "Content-Type: application/json" \
   -d '{
     "userId": "customer-123",
-    "email": "customer@example.com", 
+    "email": "customer@example.com",
     "phone": "+919876543210",
     "name": "Customer Name"
   }'
@@ -1069,7 +1097,7 @@ curl -X POST "https://api.your-domain.com/v1/kyc/documents/upload/customer-123" 
   -F "document=@aadhaar-front.jpg" \
   -F "documentType=AADHAAR_FRONT"
 
-# Check status  
+# Check status
 curl -X GET "https://api.your-domain.com/v1/kyc/status/customer-123" \
   -H "X-API-Key: your-api-key"
 
