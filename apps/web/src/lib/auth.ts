@@ -6,7 +6,7 @@ declare module 'next-auth' {
     user: {
       id: string;
       email: string;
-      clientId: string;
+      clientId: string | null; // null for SUPER_ADMIN
       role: string;
     } & DefaultSession['user'];
   }
@@ -14,7 +14,14 @@ declare module 'next-auth' {
   interface User {
     id: string;
     email: string;
-    clientId: string;
+    clientId: string | null; // null for SUPER_ADMIN
+    role: string;
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    clientId: string | null; // null for SUPER_ADMIN
     role: string;
   }
 }
@@ -198,7 +205,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub!;
-        session.user.clientId = token.clientId as string;
+        session.user.clientId = token.clientId as string | null;
         session.user.role = token.role as string;
       }
       return session;

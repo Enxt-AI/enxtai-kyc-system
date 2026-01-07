@@ -108,19 +108,32 @@ export class SessionAuthGuard implements CanActivate {
       const sessionData = JSON.parse(decoded);
 
       // Validate required fields
+      // Note: clientId can be null for SUPER_ADMIN users (platform administrators)
       if (
         !sessionData.userId ||
-        !sessionData.clientId ||
         !sessionData.role ||
         !sessionData.email
       ) {
         throw new UnauthorizedException('Invalid token structure. Missing required fields.');
       }
 
+      // Validate clientId based on role
+      // SUPER_ADMIN: clientId must be null (platform-level access)
+      // ADMIN/VIEWER: clientId must be a valid UUID (tenant-scoped access)
+      if (sessionData.role === 'SUPER_ADMIN') {
+        if (sessionData.clientId !== null && sessionData.clientId !== undefined) {
+          throw new UnauthorizedException('SUPER_ADMIN must have null clientId');
+        }
+      } else {
+        if (!sessionData.clientId) {
+          throw new UnauthorizedException('Client users must have a valid clientId');
+        }
+      }
+
       // Inject session data into request context
       request.user = {
         userId: sessionData.userId,
-        clientId: sessionData.clientId,
+        clientId: sessionData.clientId, // Can be null for SUPER_ADMIN
         role: sessionData.role,
         email: sessionData.email,
       };

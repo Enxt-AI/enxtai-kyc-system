@@ -2,7 +2,7 @@
 
 // SHARED AUTH, ROLE-BASED REDIRECT: Single backend, separate UIs.
 
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -28,12 +28,28 @@ export default function ClientLoginPage() {
 
       if (result?.error) {
         setError('Invalid email or password');
-      } else {
-        router.push('/client/dashboard');
+        setLoading(false);
+      } else if (result?.ok) {
+        // Force page reload to get fresh session and redirect
+        // NextAuth session cookie is set, but getSession() might be cached
+        // Using window.location.href forces a full page reload with new session
+
+        // Small delay to ensure cookie is set
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Fetch session to determine role
+        const session = await getSession();
+        const role = (session?.user as any)?.role;
+
+        // Hard redirect with window.location (forces full page reload)
+        if (role === 'SUPER_ADMIN') {
+          window.location.href = '/admin/dashboard';
+        } else {
+          window.location.href = '/client/dashboard';
+        }
       }
     } catch (err) {
       setError('An error occurred during login');
-    } finally {
       setLoading(false);
     }
   };
