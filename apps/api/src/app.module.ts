@@ -43,7 +43,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
  * - 100 requests per minute per client (identified by API key)
  * - Future enhancement: Tiered limits (TRIAL: 10/min, ACTIVE: 100/min, PREMIUM: 1000/min)
  * - 429 Too Many Requests response when quota exceeded
- * 
+ *
  * **Webhook Infrastructure**:
  * - WebhookModule provides real-time event notifications to client endpoints
  * - Webhooks triggered after document uploads, verification, and status changes
@@ -150,11 +150,15 @@ export class AppModule implements NestModule {
    * 1. TenantMiddleware (authentication)
    * 2. ThrottlerGuard (rate limiting)
    * 3. Route handlers
+   *
+   * @remarks
+   * TenantMiddleware is applied to /v1/kyc/* routes only.
+   * Client portal routes (/v1/client/*) use SessionAuthGuard instead.
    */
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(TenantMiddleware)
-      .forRoutes({ path: 'v1/*', method: RequestMethod.ALL });
+      .forRoutes({ path: 'v1/kyc/*', method: RequestMethod.ALL });
   }
 }
 

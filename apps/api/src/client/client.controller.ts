@@ -54,7 +54,7 @@ import { randomUUID } from 'crypto';
  * - 16+ character minimum for webhook secrets
  */
 @UseGuards(SessionAuthGuard, ClientThrottlerGuard)
-@Controller('api/v1/client')
+@Controller('v1/client')
 export class ClientController {
   constructor(
     private readonly clientService: ClientService,
@@ -404,12 +404,12 @@ export class ClientController {
 
   /**
    * Get Dashboard Statistics
-   * 
+   *
    * Retrieves aggregated KYC submission metrics for client dashboard.
-   * 
+   *
    * @remarks
    * **Endpoint**: GET /api/v1/client/stats
-   * 
+   *
    * **Response Format**:
    * ```json
    * {
@@ -420,9 +420,9 @@ export class ClientController {
    *   "rejectionRate": 16.9
    * }
    * ```
-   * 
+   *
    * **Caching**: Consider adding Redis cache with 5-minute TTL for performance
-   * 
+   *
    * **Tenant Isolation**: Stats scoped to clientId from session
    */
   @Get('stats')
@@ -438,12 +438,12 @@ export class ClientController {
 
   /**
    * Get Submissions List (Paginated & Filtered)
-   * 
+   *
    * Retrieves KYC submissions for client portal table with filtering and pagination.
-   * 
+   *
    * @remarks
    * **Endpoint**: GET /api/v1/client/submissions?page=1&limit=20&status=VERIFIED&search=user123
-   * 
+   *
    * **Query Parameters**:
    * - `page` (optional): Page number, default 1, 1-indexed
    * - `limit` (optional): Items per page, default 20, max 100
@@ -451,7 +451,7 @@ export class ClientController {
    * - `search` (optional): Search by externalUserId or email (case-insensitive)
    * - `startDate` (optional): Filter by submissionDate >= startDate (ISO 8601)
    * - `endDate` (optional): Filter by submissionDate <= endDate (ISO 8601)
-   * 
+   *
    * **Response Format**:
    * ```json
    * {
@@ -475,9 +475,9 @@ export class ClientController {
    *   "totalPages": 62
    * }
    * ```
-   * 
+   *
    * **Sorting**: Default order by submissionDate DESC (newest first)
-   * 
+   *
    * **Tenant Isolation**: All submissions filtered by clientId from session
    */
   @Get('submissions')
@@ -512,12 +512,12 @@ export class ClientController {
 
   /**
    * Get Submission Detail
-   * 
+   *
    * Retrieves full submission data with presigned URLs for document viewing.
-   * 
+   *
    * @remarks
    * **Endpoint**: GET /api/v1/client/submissions/:id
-   * 
+   *
    * **Response Format**:
    * ```json
    * {
@@ -537,11 +537,11 @@ export class ClientController {
    *   }
    * }
    * ```
-   * 
+   *
    * **Presigned URLs**: Valid for 1 hour, regenerate if expired
-   * 
+   *
    * **Tenant Isolation**: Validates submission belongs to client
-   * 
+   *
    * **Error Scenarios**:
    * - 404 Not Found: Submission doesn't exist or belongs to different client
    */

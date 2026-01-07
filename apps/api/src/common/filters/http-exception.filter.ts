@@ -6,15 +6,15 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import { PinoLogger } from 'nestjs-pino';
 
 /**
  * Global HTTP Exception Filter
- * 
+ *
  * Provides standardized error responses with consistent structure across all endpoints.
  * Maps internal errors to client-safe error codes and logs errors with full context.
- * 
+ *
  * **Error Response Format**:
  * ```json
  * {
@@ -28,7 +28,7 @@ import { PinoLogger } from 'nestjs-pino';
  *   }
  * }
  * ```
- * 
+ *
  * **Error Codes**:
  * - VALIDATION_ERROR: 400 - Invalid request data or missing required fields
  * - UNAUTHORIZED: 401 - Invalid or missing API key
@@ -38,7 +38,7 @@ import { PinoLogger } from 'nestjs-pino';
  * - OCR_EXTRACTION_FAILED: 422 - Unable to extract data from document
  * - FACE_VERIFICATION_FAILED: 422 - Face comparison failed
  * - INTERNAL_ERROR: 500 - Unexpected server error (logs full details)
- * 
+ *
  * **Logging**:
  * - All errors logged with request context (clientId, userId, method, url)
  * - 4xx errors: WARN level with client context
@@ -55,7 +55,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private getErrorCode(exception: HttpException): string {
     const status = exception.getStatus();
     const message = exception.message?.toLowerCase() || '';
-    
+
     // Map by HTTP status code first (preferred over message substrings)
     switch (status) {
       case HttpStatus.UNAUTHORIZED:
@@ -91,27 +91,27 @@ export class HttpExceptionFilter implements ExceptionFilter {
    */
   private getClientMessage(exception: HttpException): string {
     const status = exception.getStatus();
-    
+
     // For client errors (4xx), return the original message
     if (status >= 400 && status < 500) {
       const response = exception.getResponse();
       if (typeof response === 'object' && response !== null && 'message' in response) {
         const message = (response as any).message;
-        return Array.isArray(message) 
+        return Array.isArray(message)
           ? message.join(', ')
           : message;
       }
       return exception.message;
     }
-    
+
     // For server errors (5xx), return generic message to avoid exposing internals
     return 'An internal server error occurred. Please try again later.';
   }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const reply = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     let status: number;
     let httpException: HttpException;
@@ -179,6 +179,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }),
     };
 
-    response.status(status).json(errorResponse);
+    reply.code(status).send(errorResponse);
   }
 }
