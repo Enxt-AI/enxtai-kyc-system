@@ -32,8 +32,9 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside
+      {/* Sidebar - only render when not on login page */}
+      {pathname !== '/admin/login' && (
+        <aside
         className={`${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto`}
@@ -98,7 +99,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           {/* Logout Button */}
           <div className="border-t border-gray-200 p-4">
             <button
-              onClick={() => signOut({ callbackUrl: '/login' })}
+              onClick={() => signOut({ callbackUrl: '/admin/login' })}
               className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition"
             >
               <span className="text-lg">🚪</span>
@@ -107,9 +108,10 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
+      )}
 
-      {/* Mobile Overlay */}
-      {sidebarOpen && (
+      {/* Mobile Overlay - only render when sidebar exists */}
+      {pathname !== '/admin/login' && sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -117,9 +119,10 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3">
+      <div className={`flex flex-1 flex-col overflow-hidden ${pathname !== '/admin/login' ? 'lg:ml-64' : ''}`}>
+        {/* Mobile Header - only render when sidebar exists */}
+        {pathname !== '/admin/login' && (
+          <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -143,6 +146,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
             <div className="w-6" /> {/* Spacer for centering */}
           </div>
         </header>
+        )}
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto bg-gray-100 p-4 lg:p-6">

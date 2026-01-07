@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 /**
@@ -38,9 +38,10 @@ import { useEffect } from 'react';
  * ```
  *
  * **Redirect Flow**:
- * - Unauthenticated → `/login` (Super Admin login page)
+ * - Unauthenticated → `/admin/login` (Super Admin login page)
  * - ADMIN/VIEWER → `/client/dashboard` (their proper portal)
  * - SUPER_ADMIN → Allow access (render children)
+ * - Login pages → Allow rendering (even for unauthenticated users)
  * - Loading state shown during authentication and role checks
  *
  * **Session Structure**:
@@ -55,23 +56,28 @@ import { useEffect } from 'react';
 export default function SuperAdminGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     // Wait for session to load
     if (status === 'loading') return;
 
+    // Skip guard logic for login pages (mirror middleware behavior)
+    if (pathname === '/admin/login') return;
+
+    // HISTORY FIX: Use replace() to avoid polluting browser history with redirect entries
     // Redirect unauthenticated users to login
     if (status === 'unauthenticated') {
-      router.push('/login');
+      router.replace('/admin/login');
       return;
     }
 
     // Check if user is NOT SUPER_ADMIN
     if (session?.user && (session.user as any).role !== 'SUPER_ADMIN') {
       // ADMIN/VIEWER should use their client portal
-      router.push('/client/dashboard');
+      router.replace('/client/dashboard');
     }
-  }, [session, status, router]);
+  }, [session, status, router, pathname]);
 
   // Show loading state while checking authentication and role
   if (status === 'loading') {
@@ -83,6 +89,11 @@ export default function SuperAdminGuard({ children }: { children: React.ReactNod
         </div>
       </div>
     );
+  }
+
+  // Allow login pages to render even for unauthenticated users
+  if (pathname === '/admin/login' || pathname === '/client/login') {
+    return <>{children}</>;
   }
 
   // Block unauthenticated and non-SUPER_ADMIN (redirect in progress)

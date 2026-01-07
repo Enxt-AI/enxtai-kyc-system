@@ -73,14 +73,17 @@ export async function middleware(req: NextRequest) {
   // Protect /admin/* routes (redirect to Super Admin login)
   if (pathname.startsWith('/admin') && !token) {
     const loginUrl = new URL('/admin/login', req.url);
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
   }
+  // Note: NextResponse.redirect() does NOT pollute client-side browser history
+  // Server-side redirects replace the current navigation, unlike client-side router.push()
 
   // Protect /client/* routes (redirect to Client Admin login)
   if (pathname.startsWith('/client') && !token) {
     const loginUrl = new URL('/client/login', req.url);
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
   }
+  // Note: NextResponse.redirect() does NOT pollute client-side browser history
 
   // Allow request to proceed
   return NextResponse.next();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 /**
@@ -50,17 +50,33 @@ import { useEffect } from 'react';
 export default function ClientRoleGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
+  /**
+   * SKIP LOGIN PATHS: Guards don't block login pages
+   *
+   * Rationale:
+   * - Login pages must be accessible to unauthenticated users
+   * - Without this check, guards create circular redirects
+   * - Unauthenticated users visiting /client/login would be blocked
+   * - Guards only protect authenticated routes (dashboard, submissions, settings)
+   */
   useEffect(() => {
     // Wait for session to load
     if (status === 'loading') return;
 
+    // SKIP LOGIN PATHS: Guards don't block login pages
+    if (status === 'unauthenticated' || pathname.includes('/login')) {
+      return; // Allow access to login page
+    }
+
     // Check if user is SUPER_ADMIN
     if (session?.user && (session.user as any).role === 'SUPER_ADMIN') {
+      // HISTORY FIX: Use replace() to avoid polluting browser history with redirect entries
       // SUPER_ADMIN should use admin panel, not client portal
-      router.push('/admin');
+      router.replace('/admin');
     }
-  }, [session, status, router]);
+  }, [session, status, pathname, router]);
 
   // Show loading state while checking role
   if (status === 'loading') {
@@ -72,6 +88,11 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
         </div>
       </div>
     );
+  }
+
+  // Allow login pages to render even for unauthenticated users
+  if (pathname.includes('/login')) {
+    return <>{children}</>;
   }
 
   // Block SUPER_ADMIN (redirect in progress)

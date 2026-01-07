@@ -65,11 +65,12 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Portal Selection Grid */}
+        {/* Portal Selection Grid - prefetch disabled to prevent route preloading issues */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {/* Super Admin Portal */}
           <Link
             href="/admin/login"
+            prefetch={false}
             className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center"
           >
             <div className="space-y-4">
@@ -105,6 +106,7 @@ export default function HomePage() {
           {/* Client Portal */}
           <Link
             href="/client/login"
+            prefetch={false}
             className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center"
           >
             <div className="space-y-4">
@@ -140,6 +142,7 @@ export default function HomePage() {
           {/* KYC Verification */}
           <Link
             href="/kyc/upload"
+            prefetch={false}
             className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center md:col-span-2 lg:col-span-1"
           >
             <div className="space-y-4">

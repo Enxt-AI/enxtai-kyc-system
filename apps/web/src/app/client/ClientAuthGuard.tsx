@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 /**
@@ -48,13 +48,33 @@ import { useEffect } from 'react';
 export function ClientAuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
+  /**
+   * SKIP LOGIN PATHS: Guards don't block login pages
+   *
+   * Rationale:
+   * - Login pages must be accessible to unauthenticated users
+   * - Without this check, guards create circular redirects
+   * - Unauthenticated users visiting /client/login would be blocked
+   * - Guards only protect authenticated routes (dashboard, submissions, settings)
+   */
   // Redirect to login if not authenticated
   useEffect(() => {
+    // SKIP LOGIN PATHS: Don't redirect if already on login page
+    if (pathname.includes('/login')) {
+      return;
+    }
+
     if (status === 'unauthenticated') {
       router.push('/client/login');
     }
-  }, [status, router]);
+  }, [status, pathname, router]);
+
+  // Allow login pages to render even for unauthenticated users
+  if (pathname.includes('/login')) {
+    return <>{children}</>;
+  }
 
   // Show loading state while checking authentication
   if (status === 'loading') {
