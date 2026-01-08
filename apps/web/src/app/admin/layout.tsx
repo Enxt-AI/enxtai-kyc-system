@@ -30,6 +30,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     { name: 'Dashboard', href: '/admin/dashboard', icon: '📊' },
     { name: 'Client Management', href: '/admin/clients', icon: '🏢' },
     { name: 'KYC Review', href: '/admin/kyc-review', icon: '✅' },
+    { name: 'Change Password', href: '/admin/change-password', icon: '🔑' }, // SELF-SERVICE PASSWORD CHANGE: Allows Super Admin to update password anytime (voluntary, not forced)
   ];
 
   return (

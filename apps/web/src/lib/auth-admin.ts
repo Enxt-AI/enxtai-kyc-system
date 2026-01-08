@@ -24,6 +24,7 @@ declare module 'next-auth' {
       clientId: string | null; // null for SUPER_ADMIN
       role: string;
       portal: string;
+      mustChangePassword?: boolean; // Not used for super admins, but included for type consistency
     } & DefaultSession['user'];
   }
 
@@ -33,6 +34,7 @@ declare module 'next-auth' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Not used for super admins, but included for type consistency
   }
 }
 
@@ -41,6 +43,7 @@ declare module 'next-auth/jwt' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Not used for super admins, but included for type consistency
   }
 }
 

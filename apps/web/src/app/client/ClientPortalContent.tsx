@@ -88,6 +88,7 @@ function ClientPortalLayout({
     { href: '/client/dashboard', label: 'Dashboard', icon: '📊' },
     { href: '/client/submissions', label: 'Submissions', icon: '📋' },
     { href: '/client/settings', label: 'Settings', icon: '⚙️' },
+    { href: '/client/change-password', label: 'Change Password', icon: '🔑' }, // Voluntary password changes
   ];
 
   return (

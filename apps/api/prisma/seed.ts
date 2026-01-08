@@ -11,6 +11,7 @@ const prisma = new PrismaClient();
  * 1. SUPER_ADMIN: Platform administrator (admin@enxtai.com) with null clientId
  * 2. Demo Client: TestFinTech organization for end-to-end testing
  * 3. Demo ClientUser: admin@testfintech.com for client portal access
+ * 4. Password Reset: All demo accounts require password change on first login
  *
  * ⚠️ SECURITY WARNING:
  * - Change all passwords before production deployment
@@ -25,11 +26,14 @@ async function main() {
 
   const admin = await prisma.clientUser.upsert({
     where: { email: 'admin@enxtai.com' },
-    update: {},
+    update: {
+      mustChangePassword: true, // Ensure existing users also require password reset
+    },
     create: {
       email: 'admin@enxtai.com',
       password: hashedPassword,
       role: 'SUPER_ADMIN',
+      mustChangePassword: true, // NEW: Force reset on first login
       // clientId is omitted for super admins (defaults to null)
     },
   });
@@ -38,6 +42,7 @@ async function main() {
   console.log('   Email: admin@enxtai.com');
   console.log('   Password: admin123');
   console.log('   Role: SUPER_ADMIN');
+  console.log('   ⚠️  Must change password on first login');
   console.log('');
 
   // DEMO DATA: TestFinTech client for end-to-end testing. Delete in production.
@@ -77,12 +82,15 @@ async function main() {
 
   const demoClientAdmin = await prisma.clientUser.upsert({
     where: { email: 'admin@testfintech.com' },
-    update: {},
+    update: {
+      mustChangePassword: true, // Ensure existing users also require password reset
+    },
     create: {
       email: 'admin@testfintech.com',
       password: clientAdminPassword,
       role: 'ADMIN',
       clientId: demoClient.id,
+      mustChangePassword: true, // NEW: Force reset on first login
     },
   });
 
@@ -91,6 +99,7 @@ async function main() {
   console.log('   Password: client123');
   console.log('   Role: ADMIN');
   console.log('   Client: TestFinTech');
+  console.log('   ⚠️  Must change password on first login');
   console.log('');
   console.log('⚠️  DEMO DATA: Remove TestFinTech and admin@testfintech.com before production deployment!');
   console.log('⚠️  IMPORTANT: Change this password in production!');

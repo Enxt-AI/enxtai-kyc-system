@@ -240,13 +240,18 @@ model Client {
 // - SUPER_ADMIN users have clientId as null (platform administrators)
 // - Each regular user belongs to exactly one client (tenant isolation)
 model ClientUser {
-  id       String @id @default(uuid())
+  id       String  @id @default(uuid())
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   // Authentication
   email    String @unique
   password String // Bcrypt hashed password
+
+  // Password Reset Fields
+  mustChangePassword Boolean   @default(true) // Force password change on first login
+  resetToken         String? // Magic link token (hashed in production)
+  resetTokenExpiry   DateTime? // Token expiration (1 hour from generation)
 
   // Authorization
   role ClientUserRole @default(VIEWER)
@@ -257,6 +262,7 @@ model ClientUser {
 
   @@index([clientId])
   @@index([email])
+  @@index([resetToken])
   @@map("client_users")
 }
 

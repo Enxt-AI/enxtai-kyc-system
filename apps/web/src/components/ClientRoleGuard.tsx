@@ -7,7 +7,8 @@ import { useEffect } from 'react';
 /**
  * ClientRoleGuard Component
  *
- * Authorization guard that prevents SUPER_ADMIN from accessing client portal.
+ * Authorization guard that prevents SUPER_ADMIN from accessing client portal
+ * and enforces forced password reset for newly onboarded clients.
  *
  * @remarks
  * **IMPORTANT: Must be used within ClientSessionProvider context**
@@ -24,16 +25,36 @@ import { useEffect } from 'react';
  * - Enforces role-based access control for tenant-specific pages
  * - SUPER_ADMIN users have `clientId=null` and cannot access tenant-scoped APIs
  * - Redirects SUPER_ADMIN to their proper admin dashboard
+ * - Forces password reset for clients with `mustChangePassword=true`
  *
  * **RBAC Strategy**:
  * - Allowed Roles: ADMIN, VIEWER (tenant users)
  * - Blocked Role: SUPER_ADMIN (platform administrator)
  * - Redirect: SUPER_ADMIN → `/admin`
+ * - Forced Reset: mustChangePassword=true → `/client/change-password`
  *
  * **Security Rationale**:
  * SUPER_ADMIN users manage multiple clients and should not access single-tenant
  * portals. Their `clientId=null` would cause API errors on tenant-scoped endpoints
  * like `/api/v1/client/stats` which require a valid clientId.
+ *
+ * Newly onboarded clients must change their temporary password before accessing
+ * the portal to ensure security compliance.
+ *
+ * **Usage**:
+ * ```tsx
+ * // ✅ CORRECT: Within ClientSessionProvider
+ * <ClientSessionProvider>
+ *   <ClientRoleGuard>
+ *     <YourClientPortalContent />
+ *   </ClientRoleGuard>
+ * </ClientSessionProvider>
+ *
+ * // ❌ WRONG: Outside ClientSessionProvider
+ * <ClientRoleGuard>
+ *   <YourClientPortalContent />
+ * </ClientRoleGuard>  // Will not work properly
+ * ```
  *
  * **Usage**:
  * ```tsx
@@ -53,6 +74,7 @@ import { useEffect } from 'react';
  * **Redirect Flow**:
  * - Unauthenticated detected → Redirect to `/client/login`
  * - SUPER_ADMIN detected → Redirect to `/admin`
+ * - mustChangePassword=true detected → Redirect to `/client/change-password`
  * - ADMIN/VIEWER → Allow access (render children)
  * - Loading state shown during authentication and role checks
  *
@@ -61,6 +83,7 @@ import { useEffect } from 'react';
  * ```typescript
  * session.user.role: 'SUPER_ADMIN' | 'ADMIN' | 'VIEWER'
  * session.user.clientId: string | null
+ * session.user.mustChangePassword: boolean
  * ```
  *
  * @param props.children - React children to render if role check passes
@@ -75,6 +98,15 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
   useEffect(() => {
     // Wait for session to load
     if (status === 'loading') return;
+
+    // Skip guard for change password page (prevent infinite loop)
+    if (pathname === '/client/change-password') return;
+
+    // Force password reset if mustChangePassword flag is true
+    if (session?.user && (session.user as any).mustChangePassword === true) {
+      router.replace('/client/change-password');
+      return;
+    }
 
     // Skip guard logic for login pages (mirror middleware behavior)
     if (pathname === '/client/login') return;
@@ -106,7 +138,7 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
   }
 
   // Allow login pages to render even for unauthenticated users
-  if (pathname === '/client/login') {
+  if (pathname === '/client/login' || pathname === '/client/change-password') {
     return <>{children}</>;
   }
 
@@ -117,6 +149,11 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
 
   // Block SUPER_ADMIN (redirect in progress)
   if (session?.user && (session.user as any).role === 'SUPER_ADMIN') {
+    return null; // Prevent rendering during redirect
+  }
+
+  // Block users who must change password (redirect in progress)
+  if (session?.user && (session.user as any).mustChangePassword === true) {
     return null; // Prevent rendering during redirect
   }
 

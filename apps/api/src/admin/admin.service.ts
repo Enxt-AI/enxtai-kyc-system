@@ -409,6 +409,7 @@ export class AdminService {
           email: dto.email,
           password: hashedPassword,
           role: 'ADMIN',
+          mustChangePassword: true, // Explicit: Force password reset on first login
         },
       });
 

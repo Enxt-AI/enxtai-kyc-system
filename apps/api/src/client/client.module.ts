@@ -4,6 +4,7 @@ import { ClientController } from './client.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WebhookModule } from '../webhooks/webhook.module';
 import { StorageModule } from '../storage/storage.module';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * Client Module
@@ -36,7 +37,7 @@ import { StorageModule } from '../storage/storage.module';
  * - Billing integration
  */
 @Module({
-  imports: [PrismaModule, WebhookModule, StorageModule],
+  imports: [PrismaModule, WebhookModule, StorageModule, AuthModule],
   controllers: [ClientController],
   providers: [ClientService],
   exports: [ClientService],

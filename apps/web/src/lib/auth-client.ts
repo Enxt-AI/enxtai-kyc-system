@@ -24,6 +24,7 @@ declare module 'next-auth' {
       clientId: string | null; // null for SUPER_ADMIN
       role: string;
       portal: string;
+      mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
     } & DefaultSession['user'];
   }
 
@@ -33,6 +34,7 @@ declare module 'next-auth' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
   }
 }
 
@@ -41,6 +43,7 @@ declare module 'next-auth/jwt' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
   }
 }
 
@@ -156,6 +159,7 @@ export const authClientOptions: NextAuthOptions = {
             clientId: user.clientId, // Should be UUID for Client Admin
             role: user.role, // Should be 'ADMIN' or 'VIEWER'
             portal: 'client',
+            mustChangePassword: user.mustChangePassword, // Forces password reset on first login for newly onboarded clients
           };
         } catch (error) {
           console.error('Client Portal authentication error:', error);
@@ -193,13 +197,20 @@ export const authClientOptions: NextAuthOptions = {
    * ```
    */
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         // User object available on signin
         token.clientId = user.clientId;
         token.role = user.role;
         token.portal = 'client';
+        token.mustChangePassword = user.mustChangePassword; // Forces password reset on first login for newly onboarded clients
       }
+
+      // Handle session update (e.g., after password change)
+      if (trigger === 'update' && session?.user) {
+        token.mustChangePassword = session.user.mustChangePassword; // Update mustChangePassword from session
+      }
+
       return token;
     },
 
@@ -236,6 +247,7 @@ export const authClientOptions: NextAuthOptions = {
         session.user.clientId = token.clientId as string | null;
         session.user.role = token.role as string;
         session.user.portal = token.portal as string;
+        session.user.mustChangePassword = token.mustChangePassword as boolean; // Forces password reset on first login for newly onboarded clients
       }
       return session;
     },

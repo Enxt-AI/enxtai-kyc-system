@@ -9,6 +9,7 @@ declare module 'next-auth' {
       clientId: string | null; // null for SUPER_ADMIN
       role: string;
       portal: string;
+      mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
     } & DefaultSession['user'];
   }
 
@@ -18,6 +19,7 @@ declare module 'next-auth' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
   }
 }
 
@@ -26,6 +28,7 @@ declare module 'next-auth/jwt' {
     clientId: string | null; // null for SUPER_ADMIN
     role: string;
     portal: string;
+    mustChangePassword?: boolean; // Forces password reset on first login for newly onboarded clients (client portal only)
   }
 }
 

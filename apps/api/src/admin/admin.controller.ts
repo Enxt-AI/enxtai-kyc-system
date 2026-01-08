@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Param, Post, Put, UseGuards, Req } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ApproveSubmissionDto } from './dto/approve-submission.dto';
 import { RejectSubmissionDto } from './dto/reject-submission.dto';
@@ -7,10 +7,18 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { SessionAuthGuard } from '../common/guards/session-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AuthService } from '../auth/auth.service';
+import { ForgotPasswordDto } from '../auth/dto/forgot-password.dto';
+import { ResetPasswordDto } from '../auth/dto/reset-password.dto';
+import { ChangePasswordDto } from '../auth/dto/change-password.dto';
+import { BadRequestException } from '@nestjs/common';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly authService: AuthService,
+  ) {}
 
   /**
    * Get Pending KYC Reviews
@@ -233,5 +241,155 @@ export class AdminController {
   @Post('clients/:id/regenerate-key')
   async regenerateApiKey(@Param('id') id: string) {
     return this.adminService.regenerateApiKey(id);
+  }
+
+  /**
+   * Admin Forgot Password
+   *
+   * Initiates password reset flow for Super Admin users.
+   * Generates reset token and prepares email with magic link.
+   *
+   * @remarks
+   * **Endpoint**: POST /api/admin/forgot-password
+   * **Authentication**: None required (unauthenticated endpoint)
+   *
+   * **Request Body**:
+   * ```json
+   * {
+   *   "email": "admin@example.com"
+   * }
+   * ```
+   *
+   * **Success Response** (200 OK):
+   * ```json
+   * {
+   *   "success": true
+   * }
+   * ```
+   *
+   * **Security Considerations**:
+   * - Generic success response regardless of email existence (prevents enumeration)
+   * - Rate limited to 3 requests per hour per email
+   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Reset link logged to console (MVP - future: email integration)
+   * - HTTPS enforced by infrastructure
+   *
+   * @param forgotPasswordDto - Email address for password reset
+   * @returns Generic success response
+   */
+  @UseGuards() // Override controller guards - unauthenticated endpoint
+  @Post('forgot-password')
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.requestPasswordReset(forgotPasswordDto.email, 'admin');
+  }
+
+  /**
+   * Admin Reset Password
+   *
+   * Resets Super Admin user password using valid reset token.
+   * Validates token, updates password, and clears reset token.
+   *
+   * @remarks
+   * **Endpoint**: POST /api/admin/reset-password
+   * **Authentication**: None required (token-based flow)
+   *
+   * **Request Body**:
+   * ```json
+   * {
+   *   "token": "550e8400-e29b-41d4-a716-446655440000",
+   *   "password": "NewSecurePassword123!"
+   * }
+   * ```
+   *
+   * **Success Response** (200 OK):
+   * ```json
+   * {
+   *   "success": true,
+   *   "message": "Password reset successfully"
+   * }
+   * ```
+   *
+   * **Security Considerations**:
+   * - Token validated for format (UUID) and expiry (1 hour)
+   * - Single-use tokens (cleared after successful reset)
+   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Password hashed with bcrypt (12 salt rounds)
+   * - mustChangePassword flag cleared
+   * - HTTPS enforced by infrastructure
+   *
+   * @param resetPasswordDto - Token and new password
+   * @returns Success confirmation
+   */
+  @UseGuards() // Override controller guards - unauthenticated endpoint
+  @Post('reset-password')
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    const user = await this.authService.validateResetToken(resetPasswordDto.token);
+    if (!user) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    // Additional validation: ensure user is Super Admin
+    if (user.role !== 'SUPER_ADMIN' || user.clientId !== null) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    await this.authService.updatePassword(user.id, resetPasswordDto.newPassword);
+    return { success: true, message: 'Password reset successfully' };
+  }
+
+  /**
+   * Admin Change Password (Session-Based)
+   *
+   * Allows authenticated Super Admin users to change their password.
+   * Used for voluntary password changes (no forced reset for Super Admin).
+   *
+   * @remarks
+   * **Endpoint**: POST /api/admin/change-password
+   * **Authentication**: Requires valid NextAuth session token with SUPER_ADMIN role
+   *
+   * **Request Body**:
+   * ```json
+   * {
+   *   "newPassword": "NewSecurePassword123!"
+   * }
+   * ```
+   *
+   * **Success Response** (200 OK):
+   * ```json
+   * {
+   *   "success": true,
+   *   "message": "Password changed successfully"
+   * }
+   * ```
+   *
+   * **Security Considerations**:
+   * - Session-based authentication (SessionAuthGuard + RolesGuard)
+   * - Only SUPER_ADMIN role allowed
+   * - Password hashed with bcrypt (12 salt rounds)
+   * - mustChangePassword flag cleared automatically
+   * - No email/forgot-password flow (session-only self-service)
+   *
+   * @param req - Request object with userId from session
+   * @param changePasswordDto - New password with strength validation
+   * @returns Success confirmation
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @Post('change-password')
+  async changePassword(@Req() req: any, @Body() changePasswordDto: ChangePasswordDto) {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new BadRequestException('User ID not found in session');
+    }
+
+    // Validate user is Super Admin (additional safety check)
+    const user = await this.authService.findClientUserById(userId);
+    if (!user || user.role !== 'SUPER_ADMIN') {
+      throw new BadRequestException('Unauthorized: Super Admin access required');
+    }
+
+    await this.authService.updatePassword(userId, changePasswordDto.newPassword, false, changePasswordDto.currentPassword);
+    return { success: true, message: 'Password changed successfully' };
   }
 }
