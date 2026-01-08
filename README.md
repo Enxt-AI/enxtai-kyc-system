@@ -32,6 +32,64 @@ The system implements multi-tenant role-based access control with separate login
 - **New Structure**: `/admin/login` and `/client/login` for better organization
 - **Public Access**: KYC verification flow at `/` requires no authentication
 
+### Multi-Tab Session Isolation
+
+**Isolated Authentication Contexts:**
+- **Super Admin Portal**: Uses `next-auth.super-admin-token` cookie
+- **Client Portal**: Uses `next-auth.client-token` cookie
+- **Public KYC Flow**: No authentication required
+
+**Multi-Tab Capability:**
+```
+Tab 1: Super Admin Login → /admin/dashboard (super-admin-token)
+Tab 2: Client Login → /client/dashboard (client-token)
+✅ Both sessions coexist independently
+✅ Refresh either tab → stays logged in
+✅ Logout Tab 2 → Tab 1 unaffected
+```
+
+**How It Works:**
+1. **Separate NextAuth Handlers:**
+   - `/api/auth/admin/[...nextauth]` → Admin authentication
+   - `/api/auth/client/[...nextauth]` → Client authentication
+
+2. **Isolated Session Providers:**
+   - `AdminSessionProvider` (basePath="/api/auth/admin")
+   - `ClientSessionProvider` (basePath="/api/auth/client")
+
+3. **Path-Based Middleware:**
+   - `/admin/*` → Checks `next-auth.super-admin-token`
+   - `/client/*` → Checks `next-auth.client-token`
+
+**Testing Multi-Tab Isolation:**
+```bash
+# Tab 1: Super Admin
+1. Open http://localhost:3000/admin/login
+2. Login: admin@enxtai.com / admin123
+3. Verify: /admin/dashboard loads
+
+# Tab 2: Client Admin (same browser)
+1. Open http://localhost:3000/client/login
+2. Login: admin@testfintech.com / client123
+3. Verify: /client/dashboard loads
+
+# Verify Isolation
+1. Refresh Tab 1 → Still logged in as Super Admin ✅
+2. Refresh Tab 2 → Still logged in as Client Admin ✅
+3. Logout Tab 2 → Tab 1 remains logged in ✅
+4. DevTools → Application → Cookies:
+   - next-auth.super-admin-token (from Tab 1)
+   - next-auth.client-token (from Tab 2)
+```
+
+**Cookie Details:**
+| Cookie Name | Portal | Path | HttpOnly | SameSite |
+|-------------|--------|------|----------|----------|
+| `next-auth.super-admin-token` | Admin | / | ✅ | lax |
+| `next-auth.client-token` | Client | / | ✅ | lax |
+| `next-auth.super-admin.csrf-token` | Admin | / | ✅ | lax |
+| `next-auth.client.csrf-token` | Client | / | ✅ | lax |
+
 ## 🏗️ Architecture
 
 ```mermaid

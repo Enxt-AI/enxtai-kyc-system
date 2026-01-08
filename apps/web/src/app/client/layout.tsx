@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionProvider } from 'next-auth/react';
+import ClientSessionProvider from '@/components/ClientSessionProvider';
 import ClientPortalContent from './ClientPortalContent';
 import ClientRoleGuard from '@/components/ClientRoleGuard';
 
@@ -52,11 +52,12 @@ export default function ClientLayout({
   children: React.ReactNode;
 }) {
   return (
-    <SessionProvider>
+    // ISOLATED CLIENT AUTH: Uses /api/auth/client handler with client-token cookie
+    <ClientSessionProvider>
       <ClientRoleGuard>
         <ClientPortalContent>{children}</ClientPortalContent>
       </ClientRoleGuard>
-    </SessionProvider>
+    </ClientSessionProvider>
   );
 }
 

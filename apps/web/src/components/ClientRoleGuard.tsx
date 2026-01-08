@@ -7,9 +7,19 @@ import { useEffect } from 'react';
 /**
  * ClientRoleGuard Component
  *
- * Authorization guard that prevents SUPER_ADMIN users from accessing the client portal.
+ * Authorization guard that prevents SUPER_ADMIN from accessing client portal.
  *
  * @remarks
+ * **IMPORTANT: Must be used within ClientSessionProvider context**
+ * - Relies on ClientSessionProvider's basePath="/api/auth/client"
+ * - Checks next-auth.client-token cookie (isolated from admin)
+ * - useSession() automatically uses client session context
+ *
+ * **Multi-Tab Isolation**:
+ * - Admin sessions: next-auth.super-admin-token
+ * - Client sessions: next-auth.client-token
+ * - Both can coexist in different tabs without conflicts
+ *
  * **Purpose**:
  * - Enforces role-based access control for tenant-specific pages
  * - SUPER_ADMIN users have `clientId=null` and cannot access tenant-scoped APIs
@@ -27,16 +37,24 @@ import { useEffect } from 'react';
  *
  * **Usage**:
  * ```tsx
- * // In client portal layout or pages
+ * // ✅ CORRECT: Within ClientSessionProvider
+ * <ClientSessionProvider>
+ *   <ClientRoleGuard>
+ *     <YourClientPortalContent />
+ *   </ClientRoleGuard>
+ * </ClientSessionProvider>
+ *
+ * // ❌ WRONG: Outside ClientSessionProvider
  * <ClientRoleGuard>
  *   <YourClientPortalContent />
- * </ClientRoleGuard>
+ * </ClientRoleGuard>  // Will not work properly
  * ```
  *
  * **Redirect Flow**:
+ * - Unauthenticated detected → Redirect to `/client/login`
  * - SUPER_ADMIN detected → Redirect to `/admin`
  * - ADMIN/VIEWER → Allow access (render children)
- * - Loading state shown during role check to prevent content flash
+ * - Loading state shown during authentication and role checks
  *
  * **Session Structure**:
  * Expects NextAuth session with:
@@ -48,26 +66,23 @@ import { useEffect } from 'react';
  * @param props.children - React children to render if role check passes
  */
 export default function ClientRoleGuard({ children }: { children: React.ReactNode }) {
+  // ISOLATED CLIENT SESSION: useSession() reads next-auth.client-token
+  // via ClientSessionProvider basePath="/api/auth/client"
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
 
-  /**
-   * SKIP LOGIN PATHS: Guards don't block login pages
-   *
-   * Rationale:
-   * - Login pages must be accessible to unauthenticated users
-   * - Without this check, guards create circular redirects
-   * - Unauthenticated users visiting /client/login would be blocked
-   * - Guards only protect authenticated routes (dashboard, submissions, settings)
-   */
   useEffect(() => {
     // Wait for session to load
     if (status === 'loading') return;
 
-    // SKIP LOGIN PATHS: Guards don't block login pages
-    if (status === 'unauthenticated' || pathname.includes('/login')) {
-      return; // Allow access to login page
+    // Skip guard logic for login pages (mirror middleware behavior)
+    if (pathname === '/client/login') return;
+
+    // Redirect unauthenticated users to login
+    if (status === 'unauthenticated') {
+      router.replace('/client/login');
+      return;
     }
 
     // Check if user is SUPER_ADMIN
@@ -91,8 +106,13 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
   }
 
   // Allow login pages to render even for unauthenticated users
-  if (pathname.includes('/login')) {
+  if (pathname === '/client/login') {
     return <>{children}</>;
+  }
+
+  // Block unauthenticated users (redirect in progress)
+  if (status === 'unauthenticated') {
+    return null; // Prevent rendering during redirect
   }
 
   // Block SUPER_ADMIN (redirect in progress)

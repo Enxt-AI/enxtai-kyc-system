@@ -1,5 +1,20 @@
-import NextAuth, { DefaultSession, NextAuthOptions } from 'next-auth';
+import NextAuth, { DefaultSession, NextAuthOptions, getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+
+/**
+ * NEXTAUTH V4 COMPATIBILITY NOTE
+ *
+ * This file uses NextAuth v4 API (not v5):
+ * - `NextAuth(options)` returns a handler function (not { handlers, auth })
+ * - Server-side auth uses `getServerSession(req, res, options)`
+ * - Client-side auth uses `useSession()` hook (unchanged)
+ *
+ * Isolated cookie names prevent session conflicts between portals:
+ * - Super Admin: next-auth.super-admin-token
+ * - Client Portal: next-auth.client-token
+ *
+ * @see {@link https://next-auth.js.org/getting-started/upgrade-v4 NextAuth v4 Documentation}
+ */
 
 declare module 'next-auth' {
   interface Session {
@@ -30,18 +45,19 @@ declare module 'next-auth/jwt' {
 }
 
 /**
- * NextAuth.js Configuration (v4)
+ * NextAuth.js Configuration (v4) - Super Admin Authentication
  *
- * Configures authentication for client portal using credentials provider.
+ * Configures isolated authentication for Super Admin portal using credentials provider.
+ * Uses separate cookie name to prevent session conflicts with client portal.
  *
  * @remarks
  * **Authentication Flow**:
- * 1. User submits email/password via login form
+ * 1. Super Admin submits email/password via admin login form
  * 2. NextAuth calls authorize() function
  * 3. authorize() sends credentials to backend API
- * 4. Backend validates credentials and returns user data
+ * 4. Backend validates credentials and SUPER_ADMIN role
  * 5. NextAuth creates JWT token with user data
- * 6. Session created with clientId and role claims
+ * 6. Session created with clientId=null and SUPER_ADMIN role
  *
  * **Session Structure**:
  * ```typescript
@@ -49,8 +65,8 @@ declare module 'next-auth/jwt' {
  *   user: {
  *     id: string;
  *     email: string;
- *     clientId: string;
- *     role: 'ADMIN' | 'VIEWER';
+ *     clientId: null,      // Always null for Super Admins
+ *     role: 'SUPER_ADMIN';
  *   }
  * }
  * ```
@@ -58,18 +74,19 @@ declare module 'next-auth/jwt' {
  * **Token Claims**:
  * - `sub`: User ID (standard JWT claim)
  * - `email`: User email
- * - `clientId`: Client UUID (for multi-tenancy)
- * - `role`: User role (ADMIN or VIEWER)
+ * - `clientId`: null (Super Admin has no client association)
+ * - `role`: 'SUPER_ADMIN'
  *
  * **Security**:
  * - JWT tokens stored in httpOnly cookies (prevents XSS)
  * - CSRF protection enabled by default
  * - Token expiry: 30 days (configurable)
  * - Automatic token refresh on each request
+ * - Isolated cookie name prevents session conflicts
  *
  * @see {@link https://next-auth.js.org/configuration/options NextAuth Options Documentation}
  */
-export const authOptions: NextAuthOptions = {
+export const authAdminOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       id: 'credentials',
@@ -81,23 +98,24 @@ export const authOptions: NextAuthOptions = {
       /**
        * Authorize Function
        *
-       * Validates user credentials against backend API.
+       * Validates Super Admin credentials against backend API.
        *
-       * @param credentials - Email and password from login form
-       * @returns User object if valid, null if invalid
+       * @param credentials - Email and password from admin login form
+       * @returns User object if valid Super Admin, null if invalid
        *
        * @remarks
        * **Process**:
-       * 1. Send POST request to backend login endpoint
-       * 2. Backend validates credentials (bcrypt)
-       * 3. Returns user data (id, email, clientId, role) if valid
-       * 4. Returns null if invalid (triggers error in login form)
+       * 1. Send POST request to backend admin login endpoint
+       * 2. Backend validates credentials (bcrypt) and SUPER_ADMIN role
+       * 3. Returns user data (id, email, clientId=null, role='SUPER_ADMIN') if valid
+       * 4. Returns null if invalid credentials or not SUPER_ADMIN (triggers error in login form)
        *
-       * **Backend Endpoint**: POST /api/auth/client/login
+       * **Backend Endpoint**: POST /api/auth/admin/login
        *
        * **Error Handling**:
        * - Network errors: Caught and logged
        * - Invalid credentials: Backend returns 401 (returns null)
+       * - Non-Super Admin users: Backend returns 403 (returns null)
        * - Server errors: Backend returns 500 (returns null)
        */
       async authorize(credentials) {
@@ -106,9 +124,9 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          // Call backend login endpoint
+          // Call backend admin login endpoint
           const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/client/login`,
+            `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/admin/login`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -120,7 +138,7 @@ export const authOptions: NextAuthOptions = {
           );
 
           if (!response.ok) {
-            // Invalid credentials or server error
+            // Invalid credentials, not Super Admin, or server error
             return null;
           }
 
@@ -130,12 +148,12 @@ export const authOptions: NextAuthOptions = {
           return {
             id: user.id,
             email: user.email,
-            clientId: user.clientId,
-            role: user.role,
-            portal: 'client',
+            clientId: user.clientId, // Should be null for Super Admin
+            role: user.role, // Should be 'SUPER_ADMIN'
+            portal: 'admin',
           };
         } catch (error) {
-          console.error('Authentication error:', error);
+          console.error('Super Admin authentication error:', error);
           return null;
         }
       },
@@ -145,7 +163,7 @@ export const authOptions: NextAuthOptions = {
   /**
    * JWT Callback
    *
-   * Customizes JWT token structure.
+   * Customizes JWT token structure for Super Admin.
    *
    * @param token - Current JWT token
    * @param user - User object from authorize() (only on signin)
@@ -153,7 +171,7 @@ export const authOptions: NextAuthOptions = {
    *
    * @remarks
    * **Purpose**:
-   * - Add custom claims (clientId, role) to JWT token
+   * - Add custom claims (clientId=null, role='SUPER_ADMIN') to JWT token
    * - Store minimal user data in token (not password)
    * - Token used for session creation
    *
@@ -162,8 +180,8 @@ export const authOptions: NextAuthOptions = {
    * {
    *   sub: string;        // User ID (standard claim)
    *   email: string;
-   *   clientId: string;   // Custom claim
-   *   role: string;       // Custom claim
+   *   clientId: null;     // Always null for Super Admin
+   *   role: 'SUPER_ADMIN'; // Always SUPER_ADMIN
    *   iat: number;        // Issued at (standard claim)
    *   exp: number;        // Expiry (standard claim)
    * }
@@ -175,7 +193,7 @@ export const authOptions: NextAuthOptions = {
         // User object available on signin
         token.clientId = user.clientId;
         token.role = user.role;
-        token.portal = 'client';
+        token.portal = 'admin';
       }
       return token;
     },
@@ -183,7 +201,7 @@ export const authOptions: NextAuthOptions = {
     /**
      * Session Callback
      *
-     * Customizes session structure sent to client.
+     * Customizes session structure sent to client for Super Admin.
      *
      * @param session - Current session
      * @param token - JWT token
@@ -193,7 +211,7 @@ export const authOptions: NextAuthOptions = {
      * **Purpose**:
      * - Extract clientId and role from JWT token
      * - Add to session object for client access
-     * - Used by useSession() hook in frontend
+     * - Used by useSession() hook in admin frontend
      *
      * **Session sent to client**:
      * ```typescript
@@ -201,8 +219,8 @@ export const authOptions: NextAuthOptions = {
      *   user: {
      *     id: string;
      *     email: string;
-     *     clientId: string;   // From JWT token
-     *     role: string;       // From JWT token
+     *     clientId: null;    // Always null for Super Admin
+     *     role: 'SUPER_ADMIN'; // Always SUPER_ADMIN
      *   }
      * }
      * ```
@@ -233,8 +251,8 @@ export const authOptions: NextAuthOptions = {
      *
      * **Role-Based Redirects**:
      * - NOT handled here due to NextAuth v4 limitations
-     * - Primary role logic implemented client-side in login pages
-     * - Login pages use `signIn(redirect: false)` + `getSession()` + `window.location.href`
+     * - Primary role logic implemented client-side in admin login page
+     * - Admin login page uses `signIn(redirect: false)` + `getSession()` + `window.location.href`
      *
      * **When This Callback Runs**:
      * - OAuth/social login callbacks
@@ -261,17 +279,17 @@ export const authOptions: NextAuthOptions = {
   /**
    * Pages Configuration
    *
-   * Custom authentication pages.
+   * Custom authentication pages for Super Admin.
    *
    * @remarks
    * **Login Pages**:
-   * - Super Admin: /login (default sign-in page)
-   * - Client Admin: /client-login (accessed via middleware redirect)
+   * - Super Admin: /admin/login (default sign-in page)
+   * - Client Admin: /client/login (handled by separate auth config)
    *
    * **Rationale**:
-   * - Super Admins use /admin/login for internal access
+   * - Super Admins use /admin/login for platform administration
    * - Client Admins use /client/login for tenant-specific access
-   * - Middleware redirects /client/* routes to /client/login
+   * - Isolated authentication prevents session conflicts
    * - Role-based redirect after login ensures correct dashboard
    */
   pages: {
@@ -300,6 +318,52 @@ export const authOptions: NextAuthOptions = {
   },
 
   /**
+   * Cookies Configuration
+   *
+   * Isolated cookie names for Super Admin authentication.
+   *
+   * @remarks
+   * **Purpose**:
+   * - Prevent session conflicts between Super Admin and Client portals
+   * - Allow simultaneous logins in different tabs
+   * - Separate cookie storage for each authentication context
+   *
+   * **Cookie Names**:
+   * - Session token: next-auth.super-admin-token
+   * - CSRF token: next-auth.super-admin.csrf-token
+   * - PKCE code verifier: next-auth.super-admin.pkce.code_verifier
+   */
+  cookies: {
+    sessionToken: {
+      name: `next-auth.super-admin-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      name: `next-auth.super-admin.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    pkceCodeVerifier: {
+      name: `next-auth.super-admin.pkce.code_verifier`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
+
+  /**
    * Secret
    *
    * Secret key for signing JWT tokens.
@@ -313,4 +377,61 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 };
 
-export default NextAuth(authOptions);
+// NextAuth v4 default export - returns handler function
+export default NextAuth(authAdminOptions);
+
+/**
+ * Server-Side Authentication Helper
+ *
+ * Retrieves session in server contexts (middleware, API routes, server components).
+ *
+ * @param req - Next.js request object
+ * @param res - Next.js response object
+ * @returns Session object or null if unauthenticated
+ *
+ * @example
+ * ```ts
+ * // In middleware.ts
+ * import { getAdminSession } from '@/lib/auth-admin';
+ *
+ * export async function middleware(req) {
+ *   const session = await getAdminSession(req, null);
+ *   if (!session) {
+ *     return NextResponse.redirect('/admin/login');
+ *   }
+ * }
+ * ```
+ *
+ * @remarks
+ * **NextAuth v4 API**:
+ * - Uses `getServerSession` from 'next-auth'
+ * - Requires passing options object (authAdminOptions)
+ * - Returns same session structure as client-side `useSession()`
+ *
+ * **Session Structure**:
+ * ```ts
+ * {
+ *   user: {
+ *     id: string;
+ *     email: string;
+ *     clientId: string | null;
+ *     role: 'SUPER_ADMIN' | 'ADMIN' | 'VIEWER';
+ *     portal: 'admin' | 'client';
+ *   }
+ * }
+ * ```
+ */
+export async function getAdminSession(req: any, res: any) {
+  return await getServerSession(req, res, authAdminOptions);
+}
+
+/**
+ * Server-Side Authentication Helper (alias for getAdminSession)
+ *
+ * Retrieves session in server contexts (middleware, API routes, server components).
+ *
+ * @param req - Next.js request object
+ * @param res - Next.js response object
+ * @returns Session object or null if unauthenticated
+ */
+export const adminAuth = getAdminSession;

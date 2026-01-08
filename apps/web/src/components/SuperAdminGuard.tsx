@@ -1,15 +1,25 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useAdminSession } from '@/lib/use-admin-session';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 /**
  * SuperAdminGuard Component
  *
- * Authorization guard that restricts access to SUPER_ADMIN role only.
+ * Authorization guard for SUPER_ADMIN role only.
  *
  * @remarks
+ * **IMPORTANT: Must be used within AdminSessionProvider context**
+ * - Relies on AdminSessionProvider's basePath="/api/auth/admin"
+ * - Checks next-auth.super-admin-token cookie (isolated from client)
+ * - useSession() automatically uses admin session context
+ *
+ * **Multi-Tab Isolation**:
+ * - Admin sessions: next-auth.super-admin-token
+ * - Client sessions: next-auth.client-token
+ * - Both can coexist in different tabs without conflicts
+ *
  * **Purpose**:
  * - Protects admin panel from unauthorized access
  * - Prevents ADMIN/VIEWER (tenant users) from viewing cross-tenant data
@@ -31,10 +41,17 @@ import { useEffect } from 'react';
  *
  * **Usage**:
  * ```tsx
- * // In admin layout or individual admin pages
+ * // ✅ CORRECT: Within AdminSessionProvider
+ * <AdminSessionProvider>
+ *   <SuperAdminGuard>
+ *     <YourAdminPanelContent />
+ *   </SuperAdminGuard>
+ * </AdminSessionProvider>
+ *
+ * // ❌ WRONG: Outside AdminSessionProvider
  * <SuperAdminGuard>
  *   <YourAdminPanelContent />
- * </SuperAdminGuard>
+ * </SuperAdminGuard>  // Will not work properly
  * ```
  *
  * **Redirect Flow**:
@@ -54,7 +71,9 @@ import { useEffect } from 'react';
  * @param props.children - React children to render if role check passes
  */
 export default function SuperAdminGuard({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
+  // ISOLATED ADMIN SESSION: useAdminSession() reads next-auth.super-admin-token
+  // via AdminSessionProvider basePath="/api/auth/admin"
+  const { data: session, status } = useAdminSession();
   const router = useRouter();
   const pathname = usePathname();
 

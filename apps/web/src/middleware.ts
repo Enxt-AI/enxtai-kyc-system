@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * NextAuth Middleware (v4)
+ * NextAuth Middleware (v4) - Isolated Session Detection
  *
  * Protects client portal and admin panel routes from unauthenticated access.
+ * Uses path-based cookie detection to check appropriate isolated session tokens.
  *
  * @remarks
- * **Protected Route Groups**:
+ * **Isolated Authentication Contexts**:
+ * - **Super Admin Portal**: Uses `next-auth.super-admin-token` cookie
+ * - **Client Portal**: Uses `next-auth.client-token` cookie
+ * - **Multi-Tab Safe**: Both can coexist in different browser tabs
  *
  * **Client Portal** (`/client/*`):
  * - `/client/dashboard` - Client dashboard
@@ -35,10 +39,10 @@ import type { NextRequest } from 'next/server';
  * - Unauthenticated users: Redirect to appropriate login page
  * - Login pages accessible without authentication
  *
- * **How it Works**:
+ * **How It Works**:
  * 1. Middleware intercepts /client/* and /admin/* requests
- * 2. Checks if user has valid JWT token
- * 3. If no token, redirect to appropriate login page
+ * 2. Checks appropriate isolated session cookie based on path using getToken()
+ * 3. If no valid token, redirect to appropriate login page
  * 4. If token exists, allow request to proceed (role check done by guard components)
  *
  * **Note on Root `/` Redirect**:
@@ -53,7 +57,7 @@ import type { NextRequest } from 'next/server';
  *   - SuperAdminGuard: Blocks ADMIN/VIEWER from /admin/*
  *
  * **Session Validation**:
- * - NextAuth checks JWT token validity
+ * - NextAuth checks JWT token validity using getToken() with specified cookie names
  * - Automatic token refresh if expired but within grace period
  * - Invalid/missing token triggers redirect
  *
@@ -62,30 +66,38 @@ import type { NextRequest } from 'next/server';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow access to login pages without authentication
+  // Allow login pages
   if (pathname === '/admin/login' || pathname === '/client/login') {
     return NextResponse.next();
   }
 
-  // Check if user has valid JWT token
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-
-  // Protect /admin/* routes (redirect to Super Admin login)
-  if (pathname.startsWith('/admin') && !token) {
-    const loginUrl = new URL('/admin/login', req.url);
-    return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
+  // ISOLATED SESSIONS: Check appropriate cookie based on path
+  // Admin paths → next-auth.super-admin-token
+  if (pathname.startsWith('/admin')) {
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName: 'next-auth.super-admin-token'
+    });
+    if (!token) {
+      const loginUrl = new URL('/admin/login', req.url);
+      return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
+    }
   }
-  // Note: NextResponse.redirect() does NOT pollute client-side browser history
-  // Server-side redirects replace the current navigation, unlike client-side router.push()
 
-  // Protect /client/* routes (redirect to Client Admin login)
-  if (pathname.startsWith('/client') && !token) {
-    const loginUrl = new URL('/client/login', req.url);
-    return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
+  // Client paths → next-auth.client-token
+  if (pathname.startsWith('/client')) {
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName: 'next-auth.client-token'
+    });
+    if (!token) {
+      const loginUrl = new URL('/client/login', req.url);
+      return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
+    }
   }
-  // Note: NextResponse.redirect() does NOT pollute client-side browser history
 
-  // Allow request to proceed
   return NextResponse.next();
 }
 

@@ -75,6 +75,7 @@ function ClientPortalLayout({
    * Signs out user and redirects to login page.
    */
   const handleLogout = async () => {
+    // ISOLATED CLIENT SIGNOUT: Routes to /api/auth/client/signout (ClientSessionProvider basePath)
     await signOut({ callbackUrl: '/client/login' });
   };
 

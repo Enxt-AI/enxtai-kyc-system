@@ -1,5 +1,20 @@
-import NextAuth, { DefaultSession, NextAuthOptions } from 'next-auth';
+import NextAuth, { DefaultSession, NextAuthOptions, getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+
+/**
+ * NEXTAUTH V4 COMPATIBILITY NOTE
+ *
+ * This file uses NextAuth v4 API (not v5):
+ * - `NextAuth(options)` returns a handler function (not { handlers, auth })
+ * - Server-side auth uses `getServerSession(req, res, options)`
+ * - Client-side auth uses `useSession()` hook (unchanged)
+ *
+ * Isolated cookie names prevent session conflicts between portals:
+ * - Super Admin: next-auth.super-admin-token
+ * - Client Portal: next-auth.client-token
+ *
+ * @see {@link https://next-auth.js.org/getting-started/upgrade-v4 NextAuth v4 Documentation}
+ */
 
 declare module 'next-auth' {
   interface Session {
@@ -30,18 +45,19 @@ declare module 'next-auth/jwt' {
 }
 
 /**
- * NextAuth.js Configuration (v4)
+ * NextAuth.js Configuration (v4) - Client Portal Authentication
  *
- * Configures authentication for client portal using credentials provider.
+ * Configures isolated authentication for Client Portal using credentials provider.
+ * Uses separate cookie name to prevent session conflicts with Super Admin portal.
  *
  * @remarks
  * **Authentication Flow**:
- * 1. User submits email/password via login form
+ * 1. Client Admin submits email/password via client login form
  * 2. NextAuth calls authorize() function
  * 3. authorize() sends credentials to backend API
- * 4. Backend validates credentials and returns user data
+ * 4. Backend validates credentials and Client Admin role (ADMIN/VIEWER)
  * 5. NextAuth creates JWT token with user data
- * 6. Session created with clientId and role claims
+ * 6. Session created with clientId (UUID) and role (ADMIN/VIEWER)
  *
  * **Session Structure**:
  * ```typescript
@@ -49,7 +65,7 @@ declare module 'next-auth/jwt' {
  *   user: {
  *     id: string;
  *     email: string;
- *     clientId: string;
+ *     clientId: string,      // UUID for tenant association
  *     role: 'ADMIN' | 'VIEWER';
  *   }
  * }
@@ -58,18 +74,19 @@ declare module 'next-auth/jwt' {
  * **Token Claims**:
  * - `sub`: User ID (standard JWT claim)
  * - `email`: User email
- * - `clientId`: Client UUID (for multi-tenancy)
- * - `role`: User role (ADMIN or VIEWER)
+ * - `clientId`: Client UUID (tenant association)
+ * - `role`: 'ADMIN' | 'VIEWER'
  *
  * **Security**:
  * - JWT tokens stored in httpOnly cookies (prevents XSS)
  * - CSRF protection enabled by default
  * - Token expiry: 30 days (configurable)
  * - Automatic token refresh on each request
+ * - Isolated cookie name prevents session conflicts
  *
  * @see {@link https://next-auth.js.org/configuration/options NextAuth Options Documentation}
  */
-export const authOptions: NextAuthOptions = {
+export const authClientOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       id: 'credentials',
@@ -81,23 +98,24 @@ export const authOptions: NextAuthOptions = {
       /**
        * Authorize Function
        *
-       * Validates user credentials against backend API.
+       * Validates Client Admin credentials against backend API.
        *
-       * @param credentials - Email and password from login form
-       * @returns User object if valid, null if invalid
+       * @param credentials - Email and password from client login form
+       * @returns User object if valid Client Admin, null if invalid
        *
        * @remarks
        * **Process**:
-       * 1. Send POST request to backend login endpoint
-       * 2. Backend validates credentials (bcrypt)
-       * 3. Returns user data (id, email, clientId, role) if valid
-       * 4. Returns null if invalid (triggers error in login form)
+       * 1. Send POST request to backend client login endpoint
+       * 2. Backend validates credentials (bcrypt) and Client Admin role (ADMIN/VIEWER with non-null clientId)
+       * 3. Returns user data (id, email, clientId=UUID, role='ADMIN'|'VIEWER') if valid
+       * 4. Returns null if invalid credentials or not Client Admin (triggers error in login form)
        *
        * **Backend Endpoint**: POST /api/auth/client/login
        *
        * **Error Handling**:
        * - Network errors: Caught and logged
        * - Invalid credentials: Backend returns 401 (returns null)
+       * - Non-Client Admin users: Backend returns 403 (returns null)
        * - Server errors: Backend returns 500 (returns null)
        */
       async authorize(credentials) {
@@ -106,7 +124,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          // Call backend login endpoint
+          // Call backend client login endpoint
           const response = await fetch(
             `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/client/login`,
             {
@@ -120,22 +138,27 @@ export const authOptions: NextAuthOptions = {
           );
 
           if (!response.ok) {
-            // Invalid credentials or server error
+            // Invalid credentials, not Client Admin, or server error
             return null;
           }
 
           const user = await response.json();
 
+          // Validate Client Admin role and clientId constraints
+          if (!user.role || !['ADMIN', 'VIEWER'].includes(user.role) || !user.clientId) {
+            return null;
+          }
+
           // Return user object (stored in JWT)
           return {
             id: user.id,
             email: user.email,
-            clientId: user.clientId,
-            role: user.role,
+            clientId: user.clientId, // Should be UUID for Client Admin
+            role: user.role, // Should be 'ADMIN' or 'VIEWER'
             portal: 'client',
           };
         } catch (error) {
-          console.error('Authentication error:', error);
+          console.error('Client Portal authentication error:', error);
           return null;
         }
       },
@@ -145,7 +168,7 @@ export const authOptions: NextAuthOptions = {
   /**
    * JWT Callback
    *
-   * Customizes JWT token structure.
+   * Customizes JWT token structure for Client Portal.
    *
    * @param token - Current JWT token
    * @param user - User object from authorize() (only on signin)
@@ -153,7 +176,7 @@ export const authOptions: NextAuthOptions = {
    *
    * @remarks
    * **Purpose**:
-   * - Add custom claims (clientId, role) to JWT token
+   * - Add custom claims (clientId=UUID, role='ADMIN'|'VIEWER') to JWT token
    * - Store minimal user data in token (not password)
    * - Token used for session creation
    *
@@ -162,8 +185,8 @@ export const authOptions: NextAuthOptions = {
    * {
    *   sub: string;        // User ID (standard claim)
    *   email: string;
-   *   clientId: string;   // Custom claim
-   *   role: string;       // Custom claim
+   *   clientId: string;   // Client UUID for tenant association
+   *   role: 'ADMIN' | 'VIEWER'; // Client Admin role
    *   iat: number;        // Issued at (standard claim)
    *   exp: number;        // Expiry (standard claim)
    * }
@@ -183,7 +206,7 @@ export const authOptions: NextAuthOptions = {
     /**
      * Session Callback
      *
-     * Customizes session structure sent to client.
+     * Customizes session structure sent to client for Client Portal.
      *
      * @param session - Current session
      * @param token - JWT token
@@ -193,7 +216,7 @@ export const authOptions: NextAuthOptions = {
      * **Purpose**:
      * - Extract clientId and role from JWT token
      * - Add to session object for client access
-     * - Used by useSession() hook in frontend
+     * - Used by useSession() hook in client frontend
      *
      * **Session sent to client**:
      * ```typescript
@@ -201,8 +224,8 @@ export const authOptions: NextAuthOptions = {
      *   user: {
      *     id: string;
      *     email: string;
-     *     clientId: string;   // From JWT token
-     *     role: string;       // From JWT token
+     *     clientId: string;   // Client UUID for tenant context
+     *     role: 'ADMIN' | 'VIEWER'; // Client Admin role
      *   }
      * }
      * ```
@@ -233,8 +256,8 @@ export const authOptions: NextAuthOptions = {
      *
      * **Role-Based Redirects**:
      * - NOT handled here due to NextAuth v4 limitations
-     * - Primary role logic implemented client-side in login pages
-     * - Login pages use `signIn(redirect: false)` + `getSession()` + `window.location.href`
+     * - Primary role logic implemented client-side in client login page
+     * - Client login page uses `signIn(redirect: false)` + `getSession()` + `window.location.href`
      *
      * **When This Callback Runs**:
      * - OAuth/social login callbacks
@@ -261,21 +284,21 @@ export const authOptions: NextAuthOptions = {
   /**
    * Pages Configuration
    *
-   * Custom authentication pages.
+   * Custom authentication pages for Client Portal.
    *
    * @remarks
    * **Login Pages**:
-   * - Super Admin: /login (default sign-in page)
-   * - Client Admin: /client-login (accessed via middleware redirect)
+   * - Super Admin: /admin/login (handled by separate auth config)
+   * - Client Admin: /client/login (default sign-in page)
    *
    * **Rationale**:
-   * - Super Admins use /admin/login for internal access
+   * - Super Admins use /admin/login for platform administration
    * - Client Admins use /client/login for tenant-specific access
-   * - Middleware redirects /client/* routes to /client/login
+   * - Isolated authentication prevents session conflicts
    * - Role-based redirect after login ensures correct dashboard
    */
   pages: {
-    signIn: '/admin/login',
+    signIn: '/client/login',
   },
 
   /**
@@ -300,6 +323,52 @@ export const authOptions: NextAuthOptions = {
   },
 
   /**
+   * Cookies Configuration
+   *
+   * Isolated cookie names for Client Portal authentication.
+   *
+   * @remarks
+   * **Purpose**:
+   * - Prevent session conflicts between Super Admin and Client portals
+   * - Allow simultaneous logins in different tabs
+   * - Separate cookie storage for each authentication context
+   *
+   * **Cookie Names**:
+   * - Session token: next-auth.client-token
+   * - CSRF token: next-auth.client.csrf-token
+   * - PKCE code verifier: next-auth.client.pkce.code_verifier
+   */
+  cookies: {
+    sessionToken: {
+      name: `next-auth.client-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      name: `next-auth.client.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    pkceCodeVerifier: {
+      name: `next-auth.client.pkce.code_verifier`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
+
+  /**
    * Secret
    *
    * Secret key for signing JWT tokens.
@@ -313,4 +382,61 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 };
 
-export default NextAuth(authOptions);
+// NextAuth v4 default export - returns handler function
+export default NextAuth(authClientOptions);
+
+/**
+ * Server-Side Authentication Helper
+ *
+ * Retrieves session in server contexts (middleware, API routes, server components).
+ *
+ * @param req - Next.js request object
+ * @param res - Next.js response object
+ * @returns Session object or null if unauthenticated
+ *
+ * @example
+ * ```ts
+ * // In middleware.ts
+ * import { getClientSession } from '@/lib/auth-client';
+ *
+ * export async function middleware(req) {
+ *   const session = await getClientSession(req, null);
+ *   if (!session) {
+ *     return NextResponse.redirect('/client/login');
+ *   }
+ * }
+ * ```
+ *
+ * @remarks
+ * **NextAuth v4 API**:
+ * - Uses `getServerSession` from 'next-auth'
+ * - Requires passing options object (authClientOptions)
+ * - Returns same session structure as client-side `useSession()`
+ *
+ * **Session Structure**:
+ * ```ts
+ * {
+ *   user: {
+ *     id: string;
+ *     email: string;
+ *     clientId: string | null;
+ *     role: 'SUPER_ADMIN' | 'ADMIN' | 'VIEWER';
+ *     portal: 'admin' | 'client';
+ *   }
+ * }
+ * ```
+ */
+export async function getClientSession(req: any, res: any) {
+  return await getServerSession(req, res, authClientOptions);
+}
+
+/**
+ * Server-Side Authentication Helper (alias for getClientSession)
+ *
+ * Retrieves session in server contexts (middleware, API routes, server components).
+ *
+ * @param req - Next.js request object
+ * @param res - Next.js response object
+ * @returns Session object or null if unauthenticated
+ */
+export const clientAuth = getClientSession;

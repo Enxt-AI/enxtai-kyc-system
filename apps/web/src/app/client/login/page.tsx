@@ -2,6 +2,10 @@
 // Proper location within client portal structure (/client/*)
 // UTF-8 no BOM encoding to prevent Turbopack parsing errors
 
+'use client';
+
+import ClientSessionProvider from '@/components/ClientSessionProvider';
+
 /**
  * Client Login Page
  *
@@ -17,18 +21,20 @@
  *
  * **Authentication Flow**:
  * 1. User enters email/password
- * 2. NextAuth validates against backend API
+ * 2. NextAuth validates against backend API (/api/auth/client/callback/credentials)
  * 3. Backend checks ClientUser table (role=ADMIN/VIEWER, clientId=valid)
  * 4. On success, creates JWT session with role claim
- * 5. Client-side role check redirects to /client/dashboard
+ * 5. Redirects directly to /client/dashboard (ADMIN/VIEWER only)
  *
- * **Role-Based Redirect**:
- * - Handled client-side after successful authentication
- * - Uses getSession() to verify user role
- * - SUPER_ADMIN redirected to /admin/dashboard
- * - ADMIN/VIEWER redirected to /client/dashboard
- * - window.location.href for hard redirect (avoids session timing issues)
- * - NextAuth redirect callback provides fallback but doesn't do role logic
+ * **Isolated Authentication**:
+ * - Uses ClientSessionProvider with basePath="/api/auth/client"
+ * - Stores session in next-auth.client-token cookie
+ * - Prevents session conflicts with admin portal
+ *
+ * **Direct Redirect**:
+ * - No role checking needed (client login only accepts ADMIN/VIEWER)
+ * - window.location.href for hard redirect (ensures fresh session)
+ * - Isolated from admin portal authentication
  *
  * **Demo Credentials**:
  * - Email: admin@testfintech.com
@@ -36,11 +42,7 @@
  * - Role: ADMIN
  */
 
-'use client';
-
-// SHARED AUTH, ROLE-BASED REDIRECT: Single backend, separate UIs.
-
-import { signIn, getSession } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -62,29 +64,16 @@ export default function ClientLoginPage() {
         email,
         password,
         redirect: false,
+        callbackUrl: '/client/dashboard', // Route to client auth handler
       });
 
       if (result?.error) {
         setError('Invalid email or password');
         setLoading(false);
       } else if (result?.ok) {
-        // Force page reload to get fresh session and redirect
-        // NextAuth session cookie is set, but getSession() might be cached
-        // Using window.location.href forces a full page reload with new session
-
-        // Small delay to ensure cookie is set
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Fetch session to determine role
-        const session = await getSession();
-        const role = (session?.user as any)?.role;
-
-        // Hard redirect with window.location (forces full page reload)
-        if (role === 'SUPER_ADMIN') {
-          window.location.href = '/admin/dashboard';
-        } else {
-          window.location.href = '/client/dashboard';
-        }
+        // Successful login - redirect directly to client dashboard
+        // Client login page only accepts ADMIN/VIEWER users
+        window.location.href = '/client/dashboard';
       }
     } catch (err) {
       setError('An error occurred during login');
@@ -93,19 +82,22 @@ export default function ClientLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Client Login</h1>
-          <p className="mt-2 text-sm text-gray-600">Sign in to access your KYC dashboard</p>
-        </div>
+    // ISOLATED CLIENT AUTH: Login page outside protected layout needs own provider
+    // Routes signIn() to /api/auth/client/callback/credentials
+    <ClientSessionProvider>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900">Client Login</h1>
+            <p className="mt-2 text-sm text-gray-600">Sign in to access your KYC dashboard</p>
+          </div>
 
-        <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
-              </label>
+          <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
               <input
                 id="email"
                 type="email"
@@ -162,5 +154,6 @@ export default function ClientLoginPage() {
         </div>
       </div>
     </div>
+    </ClientSessionProvider>
   );
 }

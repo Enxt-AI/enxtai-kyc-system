@@ -1,5 +1,7 @@
 'use client';
 
+import AdminSessionProvider from '@/components/AdminSessionProvider';
+
 /**
  * Super Admin Login Page
  *
@@ -15,16 +17,20 @@
  *
  * **Authentication Flow**:
  * 1. User enters email/password
- * 2. NextAuth validates against backend API
+ * 2. NextAuth validates against backend API (/api/auth/admin/callback/credentials)
  * 3. Backend checks ClientUser table (role=SUPER_ADMIN, clientId=null)
  * 4. On success, creates JWT session with role claim
- * 5. Client-side role check redirects to /admin/dashboard
+ * 5. Redirects directly to /admin/dashboard (SUPER_ADMIN only)
  *
- * **Role-Based Redirect**:
- * - Handled client-side after successful authentication
- * - Uses getSession() to verify SUPER_ADMIN role
- * - window.location.href for hard redirect (avoids session timing issues)
- * - NextAuth redirect callback provides fallback but doesn't do role logic
+ * **Isolated Authentication**:
+ * - Uses AdminSessionProvider with basePath="/api/auth/admin"
+ * - Stores session in next-auth.super-admin-token cookie
+ * - Prevents session conflicts with client portal
+ *
+ * **Direct Redirect**:
+ * - No role checking needed (admin login only accepts SUPER_ADMIN)
+ * - window.location.href for hard redirect (ensures fresh session)
+ * - Isolated from client portal authentication
  *
  * **Demo Credentials**:
  * - Email: admin@enxtai.com
@@ -42,7 +48,7 @@
 
 // SHARED AUTH, ROLE-BASED REDIRECT: Single backend, separate UIs.
 
-import { signIn, getSession } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -64,29 +70,16 @@ export default function SuperAdminLoginPage() {
         email,
         password,
         redirect: false,
+        callbackUrl: '/admin/dashboard', // Route to admin auth handler
       });
 
       if (result?.error) {
         setError('Invalid email or password');
         setLoading(false);
       } else if (result?.ok) {
-        // Force page reload to get fresh session and redirect
-        // NextAuth session cookie is set, but getSession() might be cached
-        // Using window.location.href forces a full page reload with new session
-
-        // Small delay to ensure cookie is set
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Fetch session to determine role
-        const session = await getSession();
-        const role = (session?.user as any)?.role;
-
-        // Hard redirect with window.location (forces full page reload)
-        if (role === 'SUPER_ADMIN') {
-          window.location.href = '/admin/dashboard';
-        } else {
-          window.location.href = '/client/dashboard';
-        }
+        // Successful login - redirect directly to admin dashboard
+        // Admin login page only accepts SUPER_ADMIN users
+        window.location.href = '/admin/dashboard';
       }
     } catch (err) {
       setError('An error occurred during login');
@@ -95,19 +88,22 @@ export default function SuperAdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Super Admin Login</h1>
-          <p className="mt-2 text-sm text-gray-600">Sign in to your Super Admin account to manage clients and review KYC submissions</p>
-        </div>
+    // ISOLATED ADMIN AUTH: Login page outside protected layout needs own provider
+    // Routes signIn() to /api/auth/admin/callback/credentials
+    <AdminSessionProvider>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900">Super Admin Login</h1>
+            <p className="mt-2 text-sm text-gray-600">Sign in to your Super Admin account to manage clients and review KYC submissions</p>
+          </div>
 
-        <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
-              </label>
+          <div className="bg-white rounded-lg shadow-md p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
               <input
                 id="email"
                 type="email"
@@ -164,5 +160,6 @@ export default function SuperAdminLoginPage() {
         </div>
       </div>
     </div>
+    </AdminSessionProvider>
   );
 }

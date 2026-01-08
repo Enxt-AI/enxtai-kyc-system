@@ -2,7 +2,9 @@
 
 import { SessionProvider } from 'next-auth/react';
 import SuperAdminGuard from '@/components/SuperAdminGuard';
+import AdminSessionProvider from '@/components/AdminSessionProvider';
 import { useSession, signOut } from 'next-auth/react';
+import { useAdminSession } from '@/lib/use-admin-session';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -20,7 +22,7 @@ import { useState } from 'react';
  * - Responsive sidebar with mobile menu
  */
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
+  const { data: session } = useAdminSession();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -97,6 +99,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Logout Button */}
+          {/* ISOLATED ADMIN SIGNOUT: Routes to /api/auth/admin/signout (AdminSessionProvider basePath) */}
           <div className="border-t border-gray-200 p-4">
             <button
               onClick={() => signOut({ callbackUrl: '/admin/login' })}
@@ -206,10 +209,10 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <SessionProvider>
+    <AdminSessionProvider>
       <SuperAdminGuard>
         <AdminLayoutContent>{children}</AdminLayoutContent>
       </SuperAdminGuard>
-    </SessionProvider>
+    </AdminSessionProvider>
   );
 }
