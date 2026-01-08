@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as faceapi from '@vladmandic/face-api';
+import * as faceapi from '@vladmandic/face-api/dist/face-api.node-wasm.js';
+import * as tf from '@tensorflow/tfjs';
+import * as wasm from '@tensorflow/tfjs-backend-wasm';
 import { Canvas, Image, ImageData, createCanvas, loadImage } from 'canvas';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as tf from '@tensorflow/tfjs-node';
 import {
   FaceExtractionResult,
   FaceVerificationResult,
@@ -47,10 +48,12 @@ export class FaceRecognitionService implements OnModuleInit {
         this.modelsPath = defaultModelsPath;
       }
 
-      if (tf.getBackend() !== 'tensorflow') {
-        await tf.setBackend('tensorflow');
-      }
+      // Set up WASM backend for TensorFlow.js
+      const wasmPath = require.resolve('@tensorflow/tfjs-backend-wasm/dist/tfjs-backend-wasm.wasm');
+      wasm.setWasmPaths(path.dirname(wasmPath) + '/');
+      await tf.setBackend('wasm');
       await tf.ready();
+      this.logger.log(`TensorFlow.js backend: ${tf.getBackend()}`);
 
       await this.loadModels();
       this.logger.log(`Loaded face-api models from ${this.modelsPath}`);
