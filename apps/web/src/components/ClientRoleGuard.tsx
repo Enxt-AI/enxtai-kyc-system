@@ -99,11 +99,45 @@ export default function ClientRoleGuard({ children }: { children: React.ReactNod
     // Wait for session to load
     if (status === 'loading') return;
 
+    // LOGOUT CLEANUP: Clear password reset flag on logout
+    // Prevents stale flags from affecting future login sessions
+    if (status === 'unauthenticated') {
+      localStorage.removeItem('passwordResetComplete');
+    }
+
     // Skip guard for change password page (prevent infinite loop)
     if (pathname === '/client/change-password') return;
 
-    // Force password reset if mustChangePassword flag is true
-    if (session?.user && (session.user as any).mustChangePassword === true) {
+    /**
+     * LOCALSTORAGE BYPASS: Check for recent password reset flag
+     *
+     * Prevents race condition where success UI flashes briefly before guard
+     * redirects back to change-password page due to stale session state.
+     *
+     * When password is successfully changed, change-password page sets
+     * 'passwordResetComplete' flag with current timestamp. Guard skips
+     * mustChangePassword check for 5 minutes, allowing success UI to render
+     * and user to navigate to dashboard while session updates propagate.
+     *
+     * Security: Client-side only, doesn't bypass backend validation.
+     * Session mustChangePassword=false is still authoritative source of truth.
+     */
+    const resetFlag = localStorage.getItem('passwordResetComplete');
+    let flagValid = false;
+
+    if (resetFlag) {
+      const resetTime = parseInt(resetFlag, 10);
+      const fiveMinutes = 5 * 60 * 1000; // 300000ms
+      if (!isNaN(resetTime) && Date.now() - resetTime < fiveMinutes) {
+        flagValid = true;
+      } else {
+        // Flag expired or invalid - remove stale flag
+        localStorage.removeItem('passwordResetComplete');
+      }
+    }
+
+    // Force password reset if mustChangePassword flag is true AND bypass flag is not valid
+    if (!flagValid && session?.user && (session.user as any).mustChangePassword === true) {
       router.replace('/client/change-password');
       return;
     }

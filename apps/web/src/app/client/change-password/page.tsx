@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
@@ -62,10 +62,29 @@ function ChangePasswordForm() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [countdown, setCountdown] = useState(3);
+  const [countdown, setCountdown] = useState(5);
 
   // Real-time validation state
   const [passwordMismatch, setPasswordMismatch] = useState(false);
+
+  // Use ref to prevent success state from being reset
+  const successRef = useRef(false);
+
+  // Check if we already completed password reset (persisted)
+  useEffect(() => {
+    const storedTimestamp = localStorage.getItem('passwordResetComplete');
+    if (storedTimestamp) {
+      const elapsed = Date.now() - parseInt(storedTimestamp, 10);
+      // If less than 30 seconds ago, show success UI
+      if (elapsed < 30000) {
+        setSuccess(true);
+        successRef.current = true;
+        // Calculate remaining countdown
+        const remaining = Math.max(0, 5 - Math.floor(elapsed / 1000));
+        setCountdown(remaining);
+      }
+    }
+  }, []);
 
   // Password strength calculation
   const checkPasswordStrength = (password: string) => {
@@ -121,17 +140,24 @@ function ChangePasswordForm() {
 
   // Countdown effect for success message
   useEffect(() => {
-    if (success && countdown > 0) {
+    if ((success || successRef.current) && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (success && countdown === 0) {
-      router.replace('/client/dashboard');
+    } else if ((success || successRef.current) && countdown === 0) {
+      // Clear localStorage flag before redirect
+      localStorage.removeItem('passwordResetComplete');
+      router.push('/client/dashboard');
     }
   }, [success, countdown, router]);
 
   // Handle manual redirect
+  /**
+   * Handle manual redirect via "Okay" button.
+   * Clears countdown timer and navigates to dashboard immediately.
+   */
   const handleManualRedirect = () => {
-    router.replace('/client/dashboard');
+    setCountdown(0); // Stop timer
+    router.push('/client/dashboard');
   };
 
   // Get cookie value by name
@@ -201,19 +227,35 @@ function ChangePasswordForm() {
         throw new Error(errorData.message || 'Failed to change password');
       }
 
-      const result = await response.json();
+      // Parse response (if needed, but success is all we care about)
+      await response.json().catch(() => ({}));
 
-      // Show success message and start countdown
-      setSuccess(true);
-      setCountdown(3);
+      console.log('Password change successful, setting success state...');
 
-      // Clear form
+      // CRITICAL: Set localStorage flag FIRST to prevent guard race condition
+      localStorage.setItem('passwordResetComplete', Date.now().toString());
+
+      // Clear form immediately for security
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setError('');
 
-      // Update session to clear mustChangePassword flag
-      await update({ user: { ...session.user, mustChangePassword: false } });
+      // Update session to clear mustChangePassword flag (do this before setting success)
+      // Note: Using try-catch to ensure success state is set even if session update fails
+      try {
+        await update({ user: { ...session.user, mustChangePassword: false } });
+      } catch (updateErr) {
+        console.warn('Session update warning:', updateErr);
+        // Continue anyway - the password was changed successfully
+      }
+
+      // Show success message and start countdown - SET THIS LAST
+      setCountdown(5);
+      successRef.current = true;
+      setSuccess(true);
+
+      console.log('Success state set to true, ref:', successRef.current);
     } catch (err) {
       console.error('Change password error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
@@ -222,15 +264,15 @@ function ChangePasswordForm() {
     }
   };
 
-  // Handle redirect for unauthenticated users
+  // Handle redirect for unauthenticated users (skip during success state)
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (!success && !successRef.current && status === 'unauthenticated') {
       router.replace('/client/login');
     }
-  }, [status, router]);
+  }, [status, router, success]);
 
-  // Show loading while session loads
-  if (status === 'loading') {
+  // Show loading while session loads (but allow success UI to show)
+  if (!success && !successRef.current && status === 'loading') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -241,8 +283,8 @@ function ChangePasswordForm() {
     );
   }
 
-  // Don't render anything while redirecting
-  if (status === 'unauthenticated') {
+  // Don't render anything while redirecting (but allow success UI to show)
+  if (!success && !successRef.current && status === 'unauthenticated') {
     return null;
   }
 
@@ -250,7 +292,35 @@ function ChangePasswordForm() {
   const isFormValid = newPassword && confirmPassword && currentPassword && !error && !passwordMismatch;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <>
+      {/* Success confirmation - render first to guarantee it shows */}
+      {(success || successRef.current) && (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-md w-full space-y-8">
+            <div className="rounded-md bg-green-50 p-4 animate-fade-in">
+              <div className="text-center">
+                <div className="text-sm text-green-700 mb-4">
+                  ✅ Password changed successfully!
+                </div>
+                <div className="text-sm text-gray-600 mb-4">
+                  Redirecting to dashboard in {countdown} second{countdown !== 1 ? 's' : ''}...
+                </div>
+                <button
+                  type="button"
+                  onClick={handleManualRedirect}
+                  className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  Okay
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main form - only render when not in success state */}
+      {!success && !successRef.current && (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -364,27 +434,6 @@ function ChangePasswordForm() {
             </div>
           )}
 
-          {/* Success Message with Countdown */}
-          {success && (
-            <div className="rounded-md bg-green-50 p-4">
-              <div className="text-center">
-                <div className="text-sm text-green-700 mb-4">
-                  ✅ Password changed successfully!
-                </div>
-                <div className="text-sm text-gray-600 mb-4">
-                  Redirecting to dashboard in {countdown} seconds...
-                </div>
-                <button
-                  type="button"
-                  onClick={handleManualRedirect}
-                  className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  Okay
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Submit Button */}
           <div>
             <button
@@ -420,6 +469,8 @@ function ChangePasswordForm() {
         </form>
       </div>
     </div>
+    )}
+    </>
   );
 }
 

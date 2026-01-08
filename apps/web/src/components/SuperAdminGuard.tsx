@@ -81,8 +81,40 @@ export default function SuperAdminGuard({ children }: { children: React.ReactNod
     // Wait for session to load
     if (status === 'loading') return;
 
+    // LOGOUT CLEANUP: Clear password reset flag on logout
+    // Prevents stale flags from affecting future login sessions
+    // Consistent with ClientRoleGuard behavior
+    if (status === 'unauthenticated') {
+      localStorage.removeItem('passwordResetComplete');
+    }
+
     // Skip guard logic for login pages (mirror middleware behavior)
     if (pathname === '/admin/login') return;
+
+    /**
+     * LOCALSTORAGE BYPASS: Check for recent password reset flag
+     *
+     * Maintains consistency with ClientRoleGuard even though SuperAdminGuard
+     * doesn't currently enforce password resets. Future-proofs code if admin
+     * password reset enforcement is added later.
+     *
+     * When password is successfully changed, change-password page sets
+     * 'passwordResetComplete' flag with current timestamp. Guard handles
+     * flag uniformly across both portals.
+     *
+     * Security: Client-side only, doesn't bypass backend validation.
+     */
+    const resetFlag = localStorage.getItem('passwordResetComplete');
+    if (resetFlag) {
+      const resetTime = parseInt(resetFlag, 10);
+      const fiveMinutes = 5 * 60 * 1000; // 300000ms
+      if (!isNaN(resetTime) && Date.now() - resetTime < fiveMinutes) {
+        // Valid flag exists - continue with normal guard logic
+      } else {
+        // Flag expired - remove stale flag
+        localStorage.removeItem('passwordResetComplete');
+      }
+    }
 
     // HISTORY FIX: Use replace() to avoid polluting browser history with redirect entries
     // Redirect unauthenticated users to login
