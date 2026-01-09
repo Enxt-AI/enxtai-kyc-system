@@ -3,9 +3,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createKYCSubmission, getKYCSubmission, uploadSignature } from '@/lib/api-client';
+import { createKYCSubmission, getKYCSubmission, uploadSignature, getKycApiKey } from '@/lib/api-client';
 
 export default function KycSignaturePage() {
+  const router = useRouter();
+
   // Retrieve userId from localStorage (set during document upload)
   const [userId, setUserId] = useState<string>('11111111-1111-1111-1111-111111111111');
   const [submissionId, setSubmissionId] = useState<string | null>(null);
@@ -17,18 +19,33 @@ export default function KycSignaturePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
 
+  /**
+   * API Key Validation Guard
+   *
+   * Validates API key presence and expiry on component mount.
+   * Redirects to hero page if key missing or expired.
+   */
+  useEffect(() => {
+    const apiKey = getKycApiKey();
+
+    if (!apiKey) {
+      router.replace('/?error=session_expired');
+      return;
+    }
+  }, [router]);
+
   // Load userId from localStorage on client side only
   useEffect(() => {
     const storedUserId = localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
     setUserId(storedUserId);
   }, []);
+
   const [uploadMethod, setUploadMethod] = useState<'draw' | 'upload' | null>(null);
   const [hasDrawnContent, setHasDrawnContent] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
-  const router = useRouter();
 
   const getCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -116,23 +133,23 @@ export default function KycSignaturePage() {
     if (!canvas) return true;
     const ctx = canvas.getContext('2d');
     if (!ctx) return true;
-    
+
     // Get pixel data
     const pixelData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    
+
     // Check if all pixels are white (255, 255, 255, 255)
     for (let i = 0; i < pixelData.length; i += 4) {
       const r = pixelData[i];
       const g = pixelData[i + 1];
       const b = pixelData[i + 2];
       const a = pixelData[i + 3];
-      
+
       // If any pixel is not white, canvas has content
       if (r !== 255 || g !== 255 || b !== 255 || a !== 255) {
         return false;
       }
     }
-    
+
     return true;
   };
 
@@ -149,13 +166,13 @@ export default function KycSignaturePage() {
   const uploadFromCanvas = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     // Validate canvas is not empty
     if (isCanvasEmpty()) {
       setError('Please draw your signature before uploading');
       return;
     }
-    
+
     setUploading(true);
     setError(null);
     setProgress(0);
@@ -198,22 +215,22 @@ export default function KycSignaturePage() {
   const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     // Validate file type
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
       setError('Please select a PNG or JPEG image');
       return;
     }
-    
+
     // Validate file size (5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('File size must be less than 5MB');
       return;
     }
-    
+
     setSelectedFile(file);
     setError(null);
-    
+
     // Create preview
     const url = URL.createObjectURL(file);
     setFilePreview(url);
@@ -317,7 +334,7 @@ export default function KycSignaturePage() {
                   <span className="text-xs text-gray-500">PNG or JPEG, max 5MB</span>
                 </label>
               )}
-              
+
               {selectedFile && (
                 <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
                   <div className="flex items-start gap-3">
@@ -337,11 +354,11 @@ export default function KycSignaturePage() {
                       Remove
                     </button>
                   </div>
-                  
+
                   {filePreview && (
                     <img src={filePreview} alt="Signature preview" className="max-h-48 w-auto rounded border" />
                   )}
-                  
+
                   <button
                     type="button"
                     onClick={uploadSelectedFile}

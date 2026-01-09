@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { clearKycApiKey } from '@/lib/api-client';
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -13,10 +14,30 @@ export default function VerifyPage() {
     setSubmissionId(storedId);
   }, []);
 
+  /**
+   * Handle Starting New KYC Process
+   *
+   * Clears all KYC-related data from storage and redirects to home.
+   *
+   * **Cleanup Actions**:
+   * 1. Clear KYC submission ID (localStorage)
+   * 2. Clear user ID (localStorage)
+   * 3. Clear API key and expiry (sessionStorage) - uses helper function
+   * 4. Redirect to hero page
+   *
+   * **Security**:
+   * - Prevents key reuse across multiple KYC sessions
+   * - Forces re-authentication for new submissions
+   * - Ensures clean state for next user
+   */
   const handleStartNewKYC = () => {
     // Clear localStorage
     localStorage.removeItem('kyc_submission_id');
     localStorage.removeItem('kyc_user_id');
+
+    // Clear API key from sessionStorage using helper
+    clearKycApiKey();
+
     // Redirect to home
     router.push('/');
   };

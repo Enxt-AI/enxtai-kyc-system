@@ -214,6 +214,16 @@ model Client {
   status ClientStatus @default(ACTIVE)
   config Json? // Custom settings: { "requireSignature": true, "faceMatchThreshold": 0.8 }
 
+  // Domain Whitelisting
+  // Array of allowed domains/subdomains for API requests (CORS/origin validation)
+  // Examples: ["fintech.com", "*.smcwealth.com", "localhost:3000"]
+  // Wildcard support: "*.domain.com" matches "sub.domain.com", "api.domain.com", etc.
+  // Purpose:
+  // - Prevent API key abuse from unauthorized domains
+  // - Enforce origin-based access control in TenantMiddleware
+  // - Support both production domains and development environments
+  allowedDomains Json? // Array of strings: ["domain1.com", "*.domain2.com"]
+
   // Relationships
   users          User[]
   kycSubmissions KYCSubmission[]

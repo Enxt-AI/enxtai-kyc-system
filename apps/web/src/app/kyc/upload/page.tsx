@@ -2,13 +2,44 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
+import { getKycApiKey } from '@/lib/api-client';
 
 export default function KycUploadPage() {
+  const router = useRouter();
+
   // Generate userId once and store in localStorage for consistency across KYC flow
   const [userId, setUserId] = useState<string>('');
-  
+
+  /**
+   * API Key Validation Guard
+   *
+   * Validates API key presence and expiry on component mount.
+   * Redirects to hero page if key missing or expired.
+   *
+   * @remarks
+   * **Security Flow**:
+   * 1. Check sessionStorage for kyc_api_key
+   * 2. Validate 30-minute expiry timestamp
+   * 3. Redirect to hero if invalid (with error message)
+   * 4. Allow page render if valid
+   *
+   * **Error Messages**:
+   * - `?error=session_expired`: Key expired (30min TTL)
+   * - `?error=key_required`: Key missing (direct URL access)
+   */
+  useEffect(() => {
+    const apiKey = getKycApiKey();
+
+    if (!apiKey) {
+      // API key missing or expired - redirect to hero
+      router.replace('/?error=session_expired');
+      return;
+    }
+  }, [router]);
+
   useEffect(() => {
     const stored = localStorage.getItem('kyc_user_id');
     if (stored) {
@@ -19,7 +50,7 @@ export default function KycUploadPage() {
       setUserId(newId);
     }
   }, []);
-  
+
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [panUploaded, setPanUploaded] = useState(false);
   const [aadhaarFrontUploaded, setAadhaarFrontUploaded] = useState(false);

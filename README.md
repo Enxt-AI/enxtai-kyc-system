@@ -503,7 +503,243 @@ pnpm prisma studio
 # Opens at http://localhost:5555
 ```
 
-## 🐳 Deployment
+## � Secure KYC Whitelist Demo (ngrok)
+
+This demo proves end-to-end API key authentication and domain whitelisting enforcement using a free ngrok tunnel. You'll test that only whitelisted domains can use a client's API key, while unauthorized origins receive 403 errors.
+
+### Prerequisites
+
+- Docker services running (PostgreSQL, Redis, MinIO)
+- API and Web applications running locally
+- [ngrok](https://ngrok.com/) installed and authenticated (free account)
+
+### Step 1: Start Local Development Environment
+
+```bash
+# Terminal 1: Start Docker backing services
+docker-compose up -d
+
+# Terminal 2: Start API server
+cd apps/api
+pnpm dev
+# API runs on http://localhost:3001
+
+# Terminal 3: Start Web application
+cd apps/web
+pnpm dev
+# Web runs on http://localhost:3000
+```
+
+### Step 2: Configure Client and Whitelist Domains
+
+1. **Super Admin Login:**
+   - Navigate to http://localhost:3000/admin/login
+   - Login: `admin@enxtai.com` / `admin123`
+
+2. **Create or Select Client:**
+   - Go to **Clients** → Select existing client (e.g., TestFinTech) or create new
+   - Copy the **API Key** (shown in client detail page)
+   - Example: `test_abc123def456ghi789`
+
+3. **Configure Domain Whitelist:**
+   - Click **"Manage Domain Whitelist"** button
+   - Add the following domains:
+     ```
+     localhost:3000
+     *.ngrok-free.app
+     ```
+   - **Explanation:**
+     - `localhost:3000` - Local development (exact match)
+     - `*.ngrok-free.app` - Wildcard for any ngrok subdomain (wildcard match)
+   - Click **"Save Changes"**
+
+**Why Wildcard?** Free ngrok rotates subdomains on restart. Using `*.ngrok-free.app` whitelists all ngrok tunnels.
+
+### Step 3: Start ngrok Tunnel
+
+```bash
+# Terminal 4: Start ngrok tunnel to local web app
+ngrok http 3000
+
+# Output example:
+# Session Status: online
+# Forwarding: https://abc123def456.ngrok-free.app -> http://localhost:3000
+```
+
+**Copy the ngrok URL** (e.g., `https://abc123def456.ngrok-free.app`)
+
+### Step 4: Positive Test - Complete KYC Flow from ngrok URL
+
+1. **Access via ngrok:**
+   - Open browser → Navigate to `https://abc123def456.ngrok-free.app`
+   - Click "Begin KYC Verification"
+
+2. **Enter API Key:**
+   - Paste the API key from Step 2 (e.g., `test_abc123def456ghi789`)
+   - Click "Validate & Continue"
+   - **Expected:** ✅ Redirect to `/kyc/upload`
+
+3. **Upload Documents:**
+   - Upload PAN card (any JPEG/PNG image)
+   - Upload Aadhaar front and back
+   - **Expected:** ✅ Successful uploads with progress indicators
+
+4. **Capture Live Photo:**
+   - Click "Continue to Live Photo"
+   - Allow camera permissions
+   - Capture photo
+   - **Expected:** ✅ Photo uploaded successfully
+
+5. **Verify in MinIO:**
+   - Open MinIO Console: http://localhost:9001
+   - Login: `minioadmin` / `minioadmin`
+   - Navigate to buckets:
+     - `kyc-testfintech-pan` - Contains PAN card
+     - `kyc-testfintech-aadhaar` - Contains Aadhaar cards
+     - `kyc-testfintech-live-photos` - Contains selfie
+   - **Expected:** ✅ All documents stored in client-isolated buckets
+
+**✅ Result:** KYC flow completes successfully from whitelisted ngrok domain.
+
+### Step 5: Negative Test - localhost with Origin Header Spoofing
+
+Test that domain whitelisting is enforced server-side (not bypassable from client):
+
+```bash
+# Terminal 5: Test from localhost:3000 with spoofed origin
+curl -X POST http://localhost:3001/api/v1/kyc/initiate \
+  -H "X-API-Key: test_abc123def456ghi789" \
+  -H "Origin: https://evil.com" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test-user-123"}'
+
+# Expected Response:
+# HTTP 403 Forbidden
+# {
+#   "statusCode": 403,
+#   "message": "Origin domain not whitelisted for this client",
+#   "error": "Forbidden"
+# }
+```
+
+**Why 403?** TenantMiddleware extracts origin from `Origin` header and validates against client's `allowedDomains`. `evil.com` is not whitelisted → request rejected.
+
+### Step 6: Negative Test - Postman with Unauthorized Origin
+
+```bash
+# Postman Request Configuration:
+# Method: POST
+# URL: http://localhost:3001/api/v1/kyc/initiate
+# Headers:
+#   - X-API-Key: test_abc123def456ghi789
+#   - Origin: https://attacker.com
+# Body (JSON):
+#   { "userId": "attacker-123" }
+
+# Expected Response:
+# 403 Forbidden - Origin not whitelisted
+```
+
+**Security Validation:** Even with valid API key, requests from non-whitelisted origins are rejected.
+
+### Step 7: Negative Test - Invalid API Key from Whitelisted Domain
+
+```bash
+# Test from localhost:3000 (whitelisted) with invalid key
+curl -X POST http://localhost:3001/api/v1/kyc/initiate \
+  -H "X-API-Key: invalid_key_xyz" \
+  -H "Origin: http://localhost:3000" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test-user-456"}'
+
+# Expected Response:
+# HTTP 401 Unauthorized
+# {
+#   "statusCode": 401,
+#   "message": "Invalid API key",
+#   "error": "Unauthorized"
+# }
+```
+
+**Key Validation:** API key hash must match active client record. Invalid keys → 401 error.
+
+### Verification Checklist
+
+| Test Case | Origin | API Key | Expected Result | ✅ |
+|-----------|--------|---------|----------------|---|
+| ngrok URL → KYC flow | `https://*.ngrok-free.app` | Valid | 200 Success | ✅ |
+| localhost → KYC flow | `http://localhost:3000` | Valid | 200 Success | ✅ |
+| localhost + evil origin | `https://evil.com` | Valid | 403 Forbidden | ✅ |
+| Postman + attacker origin | `https://attacker.com` | Valid | 403 Forbidden | ✅ |
+| Whitelisted domain | `http://localhost:3000` | Invalid | 401 Unauthorized | ✅ |
+| Non-whitelisted domain | `https://random.com` | Valid | 403 Forbidden | ✅ |
+
+### Multi-Tenant Isolation Verification
+
+Check that uploads are isolated per client:
+
+```bash
+# Super Admin: Check buckets in MinIO
+# http://localhost:9001 → minioadmin / minioadmin
+
+# Expected Bucket Structure:
+# kyc-testfintech-pan/          (TestFinTech client uploads)
+# kyc-testfintech-aadhaar/
+# kyc-testfintech-live-photos/
+# kyc-anotherclient-pan/        (Another client's uploads)
+# kyc-anotherclient-aadhaar/
+# ...
+
+# Each client's data is isolated by clientId prefix
+```
+
+### Troubleshooting
+
+**Issue: ngrok URL returns 403 after restart**
+- **Cause:** Free ngrok changes subdomain on restart (e.g., `abc123.ngrok-free.app` → `xyz789.ngrok-free.app`)
+- **Solution:** Update client's allowed domains with new subdomain OR use wildcard `*.ngrok-free.app`
+
+**Issue: "Invalid API key" error**
+- **Cause:** API key not copied correctly or client is inactive
+- **Solution:** Copy key from client detail page, ensure client status is ACTIVE
+
+**Issue: Origin header not sent from browser**
+- **Cause:** Same-origin requests may omit Origin header
+- **Solution:** Use different domain (ngrok) or test with curl/Postman with explicit Origin header
+
+**Issue: 403 on localhost:3000**
+- **Cause:** `localhost:3000` not whitelisted
+- **Solution:** Add exact domain `localhost:3000` to client's allowed domains (no protocol prefix)
+
+### Security Considerations
+
+**What This Demo Proves:**
+1. ✅ **Server-side validation:** TenantMiddleware enforces domain whitelist (not bypassable from client)
+2. ✅ **Multi-factor auth:** Both API key AND origin domain must be valid
+3. ✅ **Multi-tenant isolation:** Each client's uploads go to isolated MinIO buckets
+4. ✅ **Attack prevention:** Stolen API keys can't be used from unauthorized domains
+
+**Production Recommendations:**
+1. Use **paid ngrok** or custom domain for stable subdomains
+2. Whitelist **exact domains** in production (avoid wildcards like `*.com`)
+3. Enable **HTTPS** and set `MINIO_USE_SSL="true"`
+4. Implement **rate limiting** to prevent abuse
+5. Monitor **failed authentication attempts** for security alerts
+6. Rotate API keys regularly (e.g., every 90 days)
+
+### Free ngrok Limitations
+
+- **Hostname Rotation:** Free tier changes subdomain on restart → re-whitelist required
+- **Session Timeout:** Tunnels expire after 2 hours → restart ngrok
+- **Request Limits:** 40 requests/minute on free tier
+- **No Custom Domains:** Use paid plan for stable domains like `kyc.yourdomain.com`
+
+**Recommendation:** For production, use:
+- **ngrok Paid Plan:** Persistent subdomains ($8/month)
+- **Custom Domain:** Point your domain to server IP (no ngrok needed)
+- **Cloud Hosting:** Deploy to AWS/Azure/GCP with SSL certificates
+
+## �🐳 Deployment
 
 ### Docker Build
 

@@ -4,21 +4,37 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { WebcamCapture } from '@/components/WebcamCapture';
-import { createKYCSubmission, getKYCSubmission } from '@/lib/api-client';
+import { createKYCSubmission, getKYCSubmission, getKycApiKey } from '@/lib/api-client';
 
 export default function KycPhotoPage() {
+  const router = useRouter();
+
   // Retrieve userId from localStorage (set during document upload)
   const [userId, setUserId] = useState<string>('11111111-1111-1111-1111-111111111111');
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * API Key Validation Guard
+   *
+   * Validates API key presence and expiry on component mount.
+   * Redirects to hero page if key missing or expired.
+   */
+  useEffect(() => {
+    const apiKey = getKycApiKey();
+
+    if (!apiKey) {
+      router.replace('/?error=session_expired');
+      return;
+    }
+  }, [router]);
 
   // Load userId from localStorage on client side only
   useEffect(() => {
     const storedUserId = localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
     setUserId(storedUserId);
   }, []);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     async function init() {

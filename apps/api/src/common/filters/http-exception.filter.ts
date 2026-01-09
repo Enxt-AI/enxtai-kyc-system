@@ -179,6 +179,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }),
     };
 
-    reply.code(status).send(errorResponse);
+    // Check if response was already sent
+    if (!reply.sent) {
+      reply.code(status).send(errorResponse);
+    }
   }
 }

@@ -4,6 +4,7 @@ import { ApproveSubmissionDto } from './dto/approve-submission.dto';
 import { RejectSubmissionDto } from './dto/reject-submission.dto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { UpdateClientDomainsDto } from './dto/update-client-domains.dto';
 import { SessionAuthGuard } from '../common/guards/session-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -241,6 +242,46 @@ export class AdminController {
   @Post('clients/:id/regenerate-key')
   async regenerateApiKey(@Param('id') id: string) {
     return this.adminService.regenerateApiKey(id);
+  }
+
+  /**
+   * Update Client Domains
+   *
+   * Endpoint: PUT /api/admin/clients/:id/domains
+   *
+   * @param id - Client UUID
+   * @param body - { domains: string[] } array of allowed domains/subdomains
+   * @returns Updated AdminClientDetail
+   *
+   * @remarks
+   * **Purpose**: Manage domain whitelist for API request origin validation
+   * **Response**: Updated client detail with new allowedDomains
+   * **Authentication**: Requires SUPER_ADMIN role
+   *
+   * **Domain Format**:
+   * - Standard: "fintech.com", "localhost:3000"
+   * - Wildcard: "*.smcwealth.com" (matches sub.smcwealth.com, api.smcwealth.com)
+   *
+   * **Validation**:
+   * - Each domain must be valid URL format or wildcard pattern
+   * - Duplicates automatically removed
+   * - Empty array allowed (disables domain whitelist)
+   *
+   * **Request Body**:
+   * ```json
+   * {
+   *   "domains": ["fintech.com", "*.smcwealth.com", "localhost:3000"]
+   * }
+   * ```
+   */
+  @UseGuards(SessionAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @Put('clients/:id/domains')
+  async updateClientDomains(
+    @Param('id') id: string,
+    @Body() dto: UpdateClientDomainsDto
+  ) {
+    return this.adminService.updateClientDomains(id, dto.domains);
   }
 
   /**

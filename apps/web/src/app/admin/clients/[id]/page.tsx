@@ -7,9 +7,9 @@ import { getClientDetail, updateClient, regenerateApiKey } from '@/lib/api-clien
 
 /**
  * Edit Client Page
- * 
+ *
  * View and edit client details, regenerate API key, view usage stats.
- * 
+ *
  * @remarks
  * **Features**:
  * - View client details (name, status, API key, webhook config)
@@ -17,12 +17,12 @@ import { getClientDetail, updateClient, regenerateApiKey } from '@/lib/api-clien
  * - Regenerate API key (with confirmation)
  * - View usage statistics (total/verified/rejected KYCs)
  * - Suspend/activate client
- * 
+ *
  * **Actions**:
  * - Update Name: Text input with save button
  * - Change Status: Dropdown (ACTIVE, SUSPENDED, TRIAL)
  * - Regenerate API Key: Button with confirmation modal
- * 
+ *
  * **Security**:
  * - API key masked (first 10 chars + '...')
  * - Regenerated key shown once in modal
@@ -209,14 +209,24 @@ export default function EditClientPage() {
       {/* Actions */}
       <div className="rounded-lg border border-slate-200 p-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Actions</h2>
-        <button
-          onClick={() => setShowRegenerateModal(true)}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-        >
-          Regenerate API Key
-        </button>
+        <div className="space-y-2">
+          {/* Manage Domain Whitelist button */}
+          <button
+            onClick={() => router.push(`/admin/clients/${clientId}/domains`)}
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-left"
+          >
+            Manage Domain Whitelist
+          </button>
+          {/* Regenerate API Key button */}
+          <button
+            onClick={() => setShowRegenerateModal(true)}
+            className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left"
+          >
+            Regenerate API Key
+          </button>
+        </div>
         <p className="mt-2 text-xs text-slate-500">
-          Warning: This will invalidate the current API key immediately
+          Warning: Regenerating API key will invalidate the current key immediately
         </p>
       </div>
 

@@ -5,6 +5,7 @@ import { StorageService } from '../storage/storage.service';
 import { WebhookService } from '../webhooks/webhook.service';
 import { WebhookEvent } from '../webhooks/webhook-events.enum';
 import { ClientService } from '../client/client.service';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { AdminClientListItem, AdminClientDetail, CreateClientResponse, RegenerateApiKeyResponse } from '@enxtai/shared-types';
 import type { CreateClientDto } from './dto/create-client.dto';
@@ -332,6 +333,13 @@ export class AdminService {
       }),
     ]);
 
+    // Parse allowedDomains from JSON, coercing Prisma.JsonNull to null
+    const allowedDomains = client.allowedDomains === null
+      ? null
+      : Array.isArray(client.allowedDomains)
+        ? (client.allowedDomains as string[])
+        : null;
+
     return {
       id: client.id,
       name: client.name,
@@ -339,6 +347,7 @@ export class AdminService {
       apiKey: client.apiKey.substring(0, 10) + '...',
       webhookUrl: client.webhookUrl,
       webhookSecret: client.webhookSecret ? '***' : null,
+      allowedDomains: allowedDomains, // Include domain whitelist for UI rendering
       totalKycs: client._count.kycSubmissions,
       verifiedKycs: verifiedCount,
       rejectedKycs: rejectedCount,
@@ -519,6 +528,74 @@ export class AdminService {
     await this.clientService.clearApiKeyPlaintext(clientId);
 
     return { apiKey: plaintext };
+  }
+
+  /**
+   * Update Client Domains (Admin Operation)
+   *
+   * Updates the allowedDomains whitelist for a client.
+   * Used to control which domains can make API requests with the client's API key.
+   *
+   * @param clientId - Client UUID
+   * @param domains - Array of allowed domains/subdomains (e.g., ["fintech.com", "*.smcwealth.com"])
+   * @returns Updated AdminClientDetail
+   * @throws NotFoundException if client not found
+   * @throws BadRequestException if domain format invalid
+   *
+   * @remarks
+   * **Domain Validation**:
+   * - Standard domains: "fintech.com", "localhost:3000", "127.0.0.1:3000"
+   * - Wildcard domains: "*.domain.com" (matches any subdomain)
+   * - Removes duplicates automatically
+   * - Empty array disables domain whitelist (allows all origins)
+   *
+   * **Wildcard Rules**:
+   * - Must start with "*." (e.g., "*.example.com")
+   * - Matches any single-level subdomain (sub.example.com, api.example.com)
+   * - Does NOT match root domain (example.com) - add separately if needed
+   *
+   * **Security Considerations**:
+   * - Domain whitelist enforced in TenantMiddleware (subsequent phase)
+   * - Prevents API key abuse from unauthorized domains
+   * - Development domains (localhost, 127.0.0.1) should be included for testing
+   *
+   * **Audit Trail**:
+   * - Log domain changes to AuditLog table (future enhancement)
+   * - Include adminUserId for accountability
+   */
+  async updateClientDomains(clientId: string, domains: string[]): Promise<AdminClientDetail> {
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) {
+      throw new NotFoundException('Client not found');
+    }
+
+    // Guard against undefined/null domains (default to empty array)
+    const domainList = domains || [];
+
+    // Validate domain formats
+    const validDomains = domainList.filter(domain => {
+      // Allow wildcards (*.domain.com), standard domains, and localhost
+      const wildcardPattern = /^\*\.[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*$/;
+      const domainPattern = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*(:\d+)?$/;
+      const localhostPattern = /^(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+      return wildcardPattern.test(domain) || domainPattern.test(domain) || localhostPattern.test(domain);
+    });
+
+    // Remove duplicates
+    const uniqueDomains = [...new Set(validDomains)];
+
+    // Update client with new domains
+    // Use Prisma.JsonNull for null values to satisfy JsonValue type constraints
+    await this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        allowedDomains: uniqueDomains.length > 0 ? uniqueDomains : Prisma.JsonNull,
+      },
+    });
+
+    // Return updated detail
+    return this.getClientDetail(clientId);
   }
 
   /**

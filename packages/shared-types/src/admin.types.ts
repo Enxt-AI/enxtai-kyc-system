@@ -86,6 +86,7 @@ export interface AdminClientListItem {
  * @property apiKey - Masked API key
  * @property webhookUrl - Webhook endpoint URL (null if not configured)
  * @property webhookSecret - Masked webhook secret ('***' or null)
+ * @property allowedDomains - Domain whitelist for API request origin validation (optional)
  * @property totalKycs - Total KYC submissions count
  * @property verifiedKycs - Count of verified submissions
  * @property rejectedKycs - Count of rejected submissions
@@ -99,6 +100,7 @@ export interface AdminClientDetail {
   apiKey: string; // Masked
   webhookUrl: string | null;
   webhookSecret: string | null; // Masked
+  allowedDomains?: string[] | null; // Domain whitelist (optional)
   totalKycs: number;
   verifiedKycs: number;
   rejectedKycs: number;

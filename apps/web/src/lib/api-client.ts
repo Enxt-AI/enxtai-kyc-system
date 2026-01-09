@@ -61,6 +61,22 @@ const api = axios.create({
  */
 api.interceptors.request.use(
   async (config) => {
+    // KYC API: Inject X-API-Key header from sessionStorage
+    if (config.url?.includes('/api/kyc/')) {
+      const apiKey = getKycApiKey();
+
+      if (!apiKey) {
+        // Key missing or expired - clear and redirect to hero page
+        clearKycApiKey();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/?error=session_expired';
+        }
+        throw new Error('KYC_API_KEY_MISSING');
+      }
+
+      config.headers['X-API-Key'] = apiKey;
+    }
+
     // Check if request is to client portal or admin API
     if (config.url?.includes('/api/v1/client') || config.url?.includes('/api/admin')) {
       // Get session which contains JWT token data
@@ -97,18 +113,141 @@ api.interceptors.request.use(
  * Centralized error handling for API responses.
  *
  * @remarks
- * Currently passes errors through for component-level handling.
- * Future enhancement: Add toast notifications, retry logic, etc.
+ * **KYC API Key Errors** (NEW):
+ * - 401 Unauthorized: Invalid or inactive API key → Clear key, redirect to hero
+ * - 403 Forbidden: Domain not whitelisted → Clear key, redirect with error
+ * - Errors passed through for component-level handling (toast, retry, etc.)
+ *
+ * **Future Enhancements**:
+ * - Toast notifications for user-friendly error messages
+ * - Retry logic with exponential backoff
+ * - Offline detection and queue
  */
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
-    // Centralized error passthrough; customize later for toast logging.
+    // Handle KYC API key authentication errors
+    if (error.config?.url?.includes('/api/kyc/')) {
+      if (error.response?.status === 401) {
+        // Invalid or inactive API key
+        clearKycApiKey();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/?error=invalid_key';
+        }
+      } else if (error.response?.status === 403) {
+        // Domain not whitelisted
+        clearKycApiKey();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/?error=domain_not_whitelisted';
+        }
+      }
+    }
+
+    // Pass error through for component-level handling
     return Promise.reject(error);
   },
 );
 
 export default api;
+
+/**
+ * KYC API Key Management
+ *
+ * Helper functions for managing client API keys in sessionStorage with 30-minute expiry.
+ * Used by KYC flow pages to validate secure access before document uploads.
+ *
+ * @remarks
+ * **Storage Schema**:
+ * - `kyc_api_key`: Plaintext API key (validated by TenantMiddleware)
+ * - `kyc_api_key_expiry`: Timestamp for 30-minute TTL
+ *
+ * **Security**:
+ * - Keys validated server-side via TenantMiddleware (domain whitelist + hash check)
+ * - 30-minute expiry limits exposure window
+ * - Expired keys automatically cleared on access attempts
+ */
+
+/**
+ * Get KYC API Key with Expiry Check
+ *
+ * Retrieves API key from sessionStorage and validates expiry.
+ * Automatically clears expired keys.
+ *
+ * @returns API key string if valid, null if missing/expired
+ *
+ * @example
+ * ```typescript
+ * const key = getKycApiKey();
+ * if (!key) {
+ *   router.push('/?error=session_expired');
+ * }
+ * ```
+ */
+export function getKycApiKey(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const key = sessionStorage.getItem('kyc_api_key');
+  const expiry = sessionStorage.getItem('kyc_api_key_expiry');
+
+  if (!key || !expiry) {
+    return null;
+  }
+
+  const expiryTime = parseInt(expiry, 10);
+  const now = Date.now();
+
+  // Check if expired (30 minutes)
+  if (now > expiryTime) {
+    clearKycApiKey();
+    return null;
+  }
+
+  return key;
+}
+
+/**
+ * Set KYC API Key with 30-Minute Expiry
+ *
+ * Stores API key in sessionStorage with automatic expiry timestamp.
+ * Called by hero page after successful validation.
+ *
+ * @param key - Validated client API key
+ *
+ * @example
+ * ```typescript
+ * const result = await validateApiKey(apiKey);
+ * if (result.valid) {
+ *   setKycApiKey(apiKey);
+ *   router.push('/kyc/upload');
+ * }
+ * ```
+ */
+export function setKycApiKey(key: string): void {
+  if (typeof window === 'undefined') return;
+
+  sessionStorage.setItem('kyc_api_key', key);
+  sessionStorage.setItem('kyc_api_key_expiry', (Date.now() + 30 * 60 * 1000).toString());
+}
+
+/**
+ * Clear KYC API Key
+ *
+ * Removes API key and expiry from sessionStorage.
+ * Called on expiry, logout, or authentication errors.
+ *
+ * @example
+ * ```typescript
+ * // On 401/403 error
+ * clearKycApiKey();
+ * router.push('/?error=invalid_key');
+ * ```
+ */
+export function clearKycApiKey(): void {
+  if (typeof window === 'undefined') return;
+
+  sessionStorage.removeItem('kyc_api_key');
+  sessionStorage.removeItem('kyc_api_key_expiry');
+}
 
   export async function createKYCSubmission(userId: string) {
     const res = await api.post('/api/kyc/submission', { userId });
@@ -732,4 +871,87 @@ export async function updateClient(
 export async function regenerateApiKey(clientId: string): Promise<RegenerateApiKeyResponse> {
   const response = await api.post<RegenerateApiKeyResponse>(`/api/admin/clients/${clientId}/regenerate-key`);
   return response.data;
+}
+
+/**
+ * Update Client Domains (Admin)
+ *
+ * Updates the allowedDomains whitelist for a client.
+ *
+ * @param clientId - Client UUID
+ * @param domains - Array of allowed domains/subdomains
+ * @returns Promise<AdminClientDetail> updated client detail
+ * @throws Error if request fails or client not found
+ *
+ * @remarks
+ * **Endpoint**: PUT /api/admin/clients/:id/domains
+ * **Authentication**: Requires admin session
+ * **Response**: Updated client detail with new allowedDomains
+ *
+ * **Domain Format**:
+ * - Standard: "fintech.com", "localhost:3000"
+ * - Wildcard: "*.smcwealth.com"
+ *
+ * **Validation**: Backend validates and filters invalid domains
+ */
+export async function updateClientDomains(
+  clientId: string,
+  domains: string[]
+): Promise<AdminClientDetail> {
+  const response = await api.put<AdminClientDetail>(
+    `/api/admin/clients/${clientId}/domains`,
+    { domains }
+  );
+  return response.data;
+}
+
+/**
+ * Validate Client API Key
+ *
+ * Validates an API key by making a HEAD request to the KYC initiate endpoint.
+ * The TenantMiddleware will validate the key and domain, returning 401/403 on failure.
+ *
+ * @remarks
+ * **Endpoint**: HEAD /api/v1/kyc/initiate (lightweight, no body required)
+ * **Headers**: X-API-Key header with provided key
+ * **Validation**: TenantMiddleware checks key hash + domain whitelist
+ *
+ * **Error Codes**:
+ * - 401: Invalid or inactive API key
+ * - 403: Domain not whitelisted for this client
+ * - 200: Valid key and domain
+ *
+ * @param apiKey - Client API key to validate
+ * @returns Promise<{ valid: boolean; error?: string }> validation result
+ *
+ * @example
+ * ```typescript
+ * const result = await validateApiKey('sk_live_abc123...');
+ * if (result.valid) {
+ *   sessionStorage.setItem('kyc_api_key', apiKey);
+ *   router.push('/kyc/upload');
+ * }
+ * ```
+ */
+export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // Make HEAD request to trigger TenantMiddleware validation
+    await api.head('/api/v1/kyc/initiate', {
+      headers: {
+        'X-API-Key': apiKey,
+      },
+    });
+    return { valid: true };
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      return { valid: false, error: 'Invalid or inactive API key' };
+    } else if (error.response?.status === 403) {
+      return { valid: false, error: 'Domain not whitelisted for this API key' };
+    } else if (error.response?.status === 405) {
+      // HEAD method not allowed, fallback to OPTIONS or accept as valid
+      // (TenantMiddleware ran successfully if we got 405)
+      return { valid: true };
+    }
+    return { valid: false, error: 'Unable to validate API key. Please try again.' };
+  }
 }

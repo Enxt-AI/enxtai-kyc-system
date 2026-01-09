@@ -65,6 +65,10 @@ async function main() {
       apiKey: hashedApiKey,
       apiKeyPlaintext: plaintextApiKey,
       status: 'ACTIVE',
+      // Domain Whitelisting: Only allow API requests from these origins
+      // - localhost:3000: Local development environment
+      // - demo-client.ngrok.io: Demo ngrok tunnel for testing
+      allowedDomains: ['localhost:3000', 'demo-client.ngrok.io'],
       // webhookUrl, webhookSecret, and config are optional and default to null
     },
   });
@@ -73,6 +77,7 @@ async function main() {
   console.log('   Name: TestFinTech');
   console.log('   API Key: ' + plaintextApiKey);
   console.log('   Status: ACTIVE');
+  console.log('   Allowed Domains: localhost:3000, demo-client.ngrok.io');
   console.log('');
 
   // DEMO DATA: Client admin user for TestFinTech portal access
