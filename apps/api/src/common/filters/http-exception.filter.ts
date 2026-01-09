@@ -179,6 +179,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }),
     };
 
+    // Guard: Ensure reply is a valid Fastify reply object with required methods
+    // This prevents crashes when exception is thrown from non-HTTP contexts
+    // (e.g., async middleware initialization, TensorFlow WASM backend errors)
+    if (!reply || typeof reply.code !== 'function' || typeof reply.send !== 'function') {
+      // Log the error but can't send response (non-HTTP context)
+      this.logger.error(
+        { errorCode, clientMessage, status },
+        'Exception in non-HTTP context - cannot send response',
+      );
+      return;
+    }
+
     // Check if response was already sent
     if (!reply.sent) {
       reply.code(status).send(errorResponse);

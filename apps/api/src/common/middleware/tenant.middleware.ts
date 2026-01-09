@@ -121,6 +121,12 @@ export class TenantMiddleware implements NestMiddleware {
     res: FastifyReply,
     next: () => void,
   ): Promise<void> {
+    // Skip CORS preflight requests - they don't carry X-API-Key header
+    // CORS middleware handles OPTIONS requests before this middleware
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     // Extract API key from header
     const apiKey = req.headers['x-api-key'] as string;
 
@@ -182,10 +188,10 @@ export class TenantMiddleware implements NestMiddleware {
    * - Does NOT match `domain.com` itself (subdomain required)
    * - Uses regex pattern: `^[a-zA-Z0-9-]+\.domain\.com$`
    *
-   * **Development Whitelisting**:
-   * - Always allow: `localhost:3000`, `127.0.0.1:3000`, `localhost:3001`, `127.0.0.1:3001`
-   * - Enables local testing without configuring allowedDomains
-   * - Production deployments should explicitly whitelist domains
+   * **Development/Local Testing**:
+   * - Dev domains (localhost, 127.0.0.1) must be explicitly added to allowedDomains
+   * - Add "localhost:3000" and "127.0.0.1:3000" to whitelist for local testing
+   * - This ensures domain validation is properly tested before production
    *
    * **Empty Whitelist Behavior**:
    * - If `allowedDomains` is null or empty array → Allow all domains
@@ -201,15 +207,16 @@ export class TenantMiddleware implements NestMiddleware {
    * @example
    * ```typescript
    * // Exact match
-   * client.allowedDomains = ["fintech.com"];
+   * client.allowedDomains = ["fintech.com", "localhost:3000"];
    * validateDomain(req, client); // true if Origin: https://fintech.com
    *
    * // Wildcard match
    * client.allowedDomains = ["*.smcwealth.com"];
    * validateDomain(req, client); // true if Origin: https://api.smcwealth.com
    *
-   * // Dev environment
-   * validateDomain(req, client); // true if Host: localhost:3000
+   * // Empty whitelist (no restrictions)
+   * client.allowedDomains = []; // or null
+   * validateDomain(req, client); // true for any domain
    * ```
    */
   private validateDomain(req: FastifyRequest, client: Client): boolean {
@@ -224,20 +231,15 @@ export class TenantMiddleware implements NestMiddleware {
     // Parse domain from origin (remove protocol and path)
     const domain = this.extractDomain(origin);
 
-    // Development environment whitelist (always allow)
-    const devDomains = ['localhost:3000', '127.0.0.1:3000', 'localhost:3001', '127.0.0.1:3001'];
-    if (devDomains.includes(domain)) {
-      this.logger.debug(`Dev domain whitelisted: ${domain}`);
-      return true;
-    }
-
     // If no allowedDomains configured, allow all (backward compatibility)
+    // NOTE: Clients MUST configure allowedDomains to enforce domain restrictions
     if (!client.allowedDomains || (Array.isArray(client.allowedDomains) && client.allowedDomains.length === 0)) {
-      this.logger.debug(`No domain restrictions for client ${client.name}`);
+      this.logger.debug(`No domain restrictions for client ${client.name} - allowing all`);
       return true;
     }
 
     // Check against allowedDomains (exact match or wildcard)
+    // Dev domains (localhost, 127.0.0.1) must be explicitly added to whitelist
     const allowedDomains = client.allowedDomains as string[];
     for (const allowedDomain of allowedDomains) {
       if (this.matchDomain(domain, allowedDomain)) {

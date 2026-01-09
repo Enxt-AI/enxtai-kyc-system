@@ -2,11 +2,13 @@ import {
   Controller,
   Post,
   Get,
+  Head,
   Body,
   Param,
   Req,
   BadRequestException,
   UseInterceptors,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -60,6 +62,46 @@ import {
 @Controller('v1/kyc')
 export class ClientKycController {
   constructor(private readonly clientKycService: ClientKycService) {}
+
+  /**
+   * HEAD /v1/kyc/validate
+   *
+   * Lightweight endpoint for validating API key without processing a full request.
+   * TenantMiddleware validates the X-API-Key header and domain whitelist.
+   * Returns 200 if valid, 401 if invalid, or 403 if domain not whitelisted.
+   *
+   * **Request Headers:**
+   * - `X-API-Key`: Client's API key (required)
+   *
+   * **Use Case:**
+   * - Secure entry page validates API key before showing KYC form
+   * - Client integrations can verify API key is active
+   *
+   * **Response Codes:**
+   * - 200: API key is valid and domain is whitelisted
+   * - 401: Invalid or inactive API key
+   * - 403: Domain not whitelisted for this API key
+   *
+   * **cURL Example:**
+   * ```bash
+   * curl -I https://api.example.com/api/v1/kyc/validate \
+   *   -H "X-API-Key: your-api-key-here"
+   * ```
+   */
+  @Head('validate')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Validate API Key',
+    description: 'Validates X-API-Key header. Returns 200 if valid, 401 if invalid, 403 if domain not whitelisted.',
+  })
+  @ApiResponse({ status: 200, description: 'API key is valid' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
+  @ApiResponse({ status: 403, description: 'Domain not whitelisted for this API key' })
+  async validateApiKey(): Promise<void> {
+    // TenantMiddleware has already validated API key and domain
+    // If we reach here, the key is valid
+    return;
+  }
 
   /**
    * POST /v1/kyc/initiate
@@ -582,7 +624,7 @@ export class ClientKycController {
     // Extract externalUserId from form fields
     const externalUserIdField = (data.fields as any)['externalUserId'];
     const externalUserId = externalUserIdField?.value || externalUserIdField;
-    
+
     if (!externalUserId || typeof externalUserId !== 'string') {
       throw new BadRequestException('Missing or invalid externalUserId field');
     }

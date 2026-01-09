@@ -433,13 +433,18 @@ export class AdminService {
       console.error(`Failed to create MinIO buckets for client ${client.id}:`, error);
     }
 
-    // Clear plaintext API key from database
-    await this.clientService.clearApiKeyPlaintext(client.id);
+    // NOTE: In production, you should clear the plaintext API key for security:
+    // await this.clientService.clearApiKeyPlaintext(client.id);
+    //
+    // For development/testing, we keep apiKeyPlaintext in the database
+    // so developers can easily verify and copy keys from Prisma Studio.
+    // The plaintext is what clients should use in the X-API-Key header.
+    // The apiKey field contains the SHA-256 hash (used for DB lookups).
 
     return {
       id: client.id,
       name: client.name,
-      apiKey, // Plaintext (show once)
+      apiKey, // Plaintext (show once) - use this for API calls
       defaultAdminEmail: dto.email,
       defaultAdminPassword: tempPassword, // Temporary password (show once)
     };
@@ -520,12 +525,12 @@ export class AdminService {
       where: { id: clientId },
       data: {
         apiKey: hashed,
-        apiKeyPlaintext: plaintext, // Temporary
+        apiKeyPlaintext: plaintext, // Keep for development (see createClient notes)
       },
     });
 
-    // Clear plaintext after returning
-    await this.clientService.clearApiKeyPlaintext(clientId);
+    // NOTE: In production, clear plaintext after returning:
+    // await this.clientService.clearApiKeyPlaintext(clientId);
 
     return { apiKey: plaintext };
   }

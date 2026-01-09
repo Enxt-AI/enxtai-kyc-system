@@ -8,14 +8,14 @@ import { AppModule } from './app.module';
 
 /**
  * Pino Logger Configuration
- * 
+ *
  * Structured logging with request context for production observability.
- * 
+ *
  * @remarks
  * **Log Levels**:
  * - Development: debug (verbose output with pretty printing)
  * - Production: info (JSON format for log aggregation)
- * 
+ *
  * **Request Context**:
  * - clientId: Tenant identifier (from TenantMiddleware)
  * - userId: End-user identifier
@@ -23,11 +23,11 @@ import { AppModule } from './app.module';
  * - url: Request path
  * - statusCode: Response status
  * - duration: Request processing time (ms)
- * 
+ *
  * **Log Aggregation**:
  * - JSON format compatible with ELK Stack, CloudWatch, Datadog
  * - Structured fields enable efficient querying and alerting
- * 
+ *
  * @example
  * ```typescript
  * this.logger.log({
@@ -55,7 +55,14 @@ async function bootstrap() {
     },
   });
 
-  app.enableCors();
+  // Configure CORS with explicit methods for Fastify
+  app.enableCors({
+    origin: true, // Allow all origins (use specific origins in production)
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With'],
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({

@@ -935,8 +935,9 @@ export async function updateClientDomains(
  */
 export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    // Make HEAD request to trigger TenantMiddleware validation
-    await api.head('/api/v1/kyc/initiate', {
+    // Make HEAD request to dedicated validation endpoint
+    // TenantMiddleware validates key + domain, returns 200 if valid
+    await api.head('/api/v1/kyc/validate', {
       headers: {
         'X-API-Key': apiKey,
       },
@@ -947,10 +948,6 @@ export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; 
       return { valid: false, error: 'Invalid or inactive API key' };
     } else if (error.response?.status === 403) {
       return { valid: false, error: 'Domain not whitelisted for this API key' };
-    } else if (error.response?.status === 405) {
-      // HEAD method not allowed, fallback to OPTIONS or accept as valid
-      // (TenantMiddleware ran successfully if we got 405)
-      return { valid: true };
     }
     return { valid: false, error: 'Unable to validate API key. Please try again.' };
   }
