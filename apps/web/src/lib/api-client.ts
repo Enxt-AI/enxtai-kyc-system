@@ -61,20 +61,22 @@ const api = axios.create({
  */
 api.interceptors.request.use(
   async (config) => {
-    // KYC API: Inject X-API-Key header from sessionStorage
-    if (config.url?.includes('/api/kyc/')) {
-      const apiKey = getKycApiKey();
-
-      if (!apiKey) {
-        // Key missing or expired - clear and redirect to hero page
-        clearKycApiKey();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/?error=session_expired';
+    // KYC API: Inject X-API-Key header from sessionStorage if not already provided
+    if (config.url?.includes('/api/v1/kyc/')) {
+      // Skip if X-API-Key is already set (e.g., from validateApiKey())
+      if (!config.headers['X-API-Key']) {
+        try {
+          const apiKey = getKycApiKey();
+          config.headers['X-API-Key'] = apiKey;
+        } catch (error) {
+          // API key missing or invalid - redirect to hero page
+          clearKycApiKey();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?error=session_expired';
+          }
+          throw error;
         }
-        throw new Error('KYC_API_KEY_MISSING');
       }
-
-      config.headers['X-API-Key'] = apiKey;
     }
 
     // Check if request is to client portal or admin API
@@ -127,7 +129,7 @@ api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
     // Handle KYC API key authentication errors
-    if (error.config?.url?.includes('/api/kyc/')) {
+    if (error.config?.url?.includes('/api/v1/kyc/')) {
       if (error.response?.status === 401) {
         // Invalid or inactive API key
         clearKycApiKey();
@@ -153,62 +155,56 @@ export default api;
 /**
  * KYC API Key Management
  *
- * Helper functions for managing client API keys in sessionStorage with 30-minute expiry.
+ * Helper functions for managing client API keys in sessionStorage.
  * Used by KYC flow pages to validate secure access before document uploads.
  *
  * @remarks
  * **Storage Schema**:
- * - `kyc_api_key`: Plaintext API key (validated by TenantMiddleware)
- * - `kyc_api_key_expiry`: Timestamp for 30-minute TTL
+ * - `kycApiKey`: Plaintext API key (validated by TenantMiddleware)
  *
  * **Security**:
  * - Keys validated server-side via TenantMiddleware (domain whitelist + hash check)
- * - 30-minute expiry limits exposure window
- * - Expired keys automatically cleared on access attempts
+ * - Throws error if key is missing when accessed
+ * - Cleared on logout or authentication errors
  */
 
 /**
- * Get KYC API Key with Expiry Check
+ * Get KYC API Key
  *
- * Retrieves API key from sessionStorage and validates expiry.
- * Automatically clears expired keys.
+ * Retrieves API key from sessionStorage.
+ * Throws error if key is missing or falsy.
  *
- * @returns API key string if valid, null if missing/expired
+ * @returns API key string
+ * @throws Error if API key is not found in sessionStorage
  *
  * @example
  * ```typescript
- * const key = getKycApiKey();
- * if (!key) {
+ * try {
+ *   const key = getKycApiKey();
+ *   // Use key for KYC requests
+ * } catch (error) {
  *   router.push('/?error=session_expired');
  * }
  * ```
  */
-export function getKycApiKey(): string | null {
-  if (typeof window === 'undefined') return null;
-
-  const key = sessionStorage.getItem('kyc_api_key');
-  const expiry = sessionStorage.getItem('kyc_api_key_expiry');
-
-  if (!key || !expiry) {
-    return null;
+export function getKycApiKey(): string {
+  if (typeof window === 'undefined') {
+    throw new Error('API key required for KYC');
   }
 
-  const expiryTime = parseInt(expiry, 10);
-  const now = Date.now();
+  const key = sessionStorage.getItem('kycApiKey');
 
-  // Check if expired (30 minutes)
-  if (now > expiryTime) {
-    clearKycApiKey();
-    return null;
+  if (!key) {
+    throw new Error('API key required for KYC');
   }
 
   return key;
 }
 
 /**
- * Set KYC API Key with 30-Minute Expiry
+ * Set KYC API Key
  *
- * Stores API key in sessionStorage with automatic expiry timestamp.
+ * Stores API key in sessionStorage.
  * Called by hero page after successful validation.
  *
  * @param key - Validated client API key
@@ -225,15 +221,14 @@ export function getKycApiKey(): string | null {
 export function setKycApiKey(key: string): void {
   if (typeof window === 'undefined') return;
 
-  sessionStorage.setItem('kyc_api_key', key);
-  sessionStorage.setItem('kyc_api_key_expiry', (Date.now() + 30 * 60 * 1000).toString());
+  sessionStorage.setItem('kycApiKey', key);
 }
 
 /**
  * Clear KYC API Key
  *
- * Removes API key and expiry from sessionStorage.
- * Called on expiry, logout, or authentication errors.
+ * Removes API key from sessionStorage.
+ * Called on logout or authentication errors.
  *
  * @example
  * ```typescript
@@ -245,10 +240,59 @@ export function setKycApiKey(key: string): void {
 export function clearKycApiKey(): void {
   if (typeof window === 'undefined') return;
 
-  sessionStorage.removeItem('kyc_api_key');
-  sessionStorage.removeItem('kyc_api_key_expiry');
+  sessionStorage.removeItem('kycApiKey');
 }
 
+  /**
+   * KYC Flow API Functions (Multi-Tenant v1 Endpoints)
+   *
+   * All KYC upload/delete/verify functions use /api/v1/kyc/* endpoints
+   * with API key authentication and domain whitelisting.
+   *
+   * @remarks
+   * **Authentication Flow**:
+   * 1. Hero page validates API key via validateApiKey()
+   * 2. Key stored in sessionStorage with 30-minute expiry
+   * 3. Interceptor injects X-API-Key header for all /api/v1/kyc/* requests
+   * 4. TenantMiddleware validates key + domain, injects clientId into request context
+   * 5. Backend uses clientId for tenant-isolated storage (kyc-{clientId}-* buckets)
+   *
+   * **Error Handling**:
+   * - 401: Invalid/inactive API key → Clear key, redirect to hero with error
+   * - 403: Domain not whitelisted → Clear key, redirect to hero with error
+   * - 500: Server error → Component-level error handling (toast/retry)
+   *
+   * **Migration Note**: Migrated from legacy /api/kyc/* endpoints (no auth)
+   * to secure /api/v1/kyc/* endpoints (API key + domain whitelist required).
+   */
+
+  /**
+   * Initiate KYC Session
+   *
+   * Creates a new KYC verification session for the given user. Must be called
+   * before uploading any documents.
+   *
+   * @param externalUserId - Client's user identifier (UUID from localStorage)
+   * @param email - Optional user email
+   * @param phone - Optional user phone
+   * @returns Session ID and status
+   */
+  export async function initiateKyc(
+    externalUserId: string,
+    email?: string,
+    phone?: string,
+  ): Promise<{ kycSessionId: string; status: string; externalUserId: string }> {
+    const res = await api.post('/api/v1/kyc/initiate', {
+      externalUserId,
+      email,
+      phone,
+    });
+    return res.data;
+  }
+
+  /**
+   * @deprecated Use initiateKyc() instead for v1 API
+   */
   export async function createKYCSubmission(userId: string) {
     const res = await api.post('/api/kyc/submission', { userId });
     return res.data as { id: string };
@@ -265,10 +309,12 @@ export function clearKycApiKey(): void {
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
+    // IMPORTANT: externalUserId must come BEFORE file for Fastify multipart parsing
+    // Fields after the file may not be available when req.file() returns
+    formData.append('externalUserId', userId);
     formData.append('file', file);
-    formData.append('userId', userId);
 
-    const res = await api.post('/api/kyc/upload/pan', formData, {
+    const res = await api.post('/api/v1/kyc/upload/pan', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!event.total || !onUploadProgress) return;
@@ -279,24 +325,15 @@ export function clearKycApiKey(): void {
     return res.data as UploadDocumentResponse;
   }
 
+  /**
+   * @deprecated Use uploadAadhaarFront() or uploadAadhaarBack() instead
+   */
   export async function uploadAadhaarDocument(
     userId: string,
     file: File,
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
-    const formData = new FormData();
-    formData.append('userId', userId);
-    formData.append('file', file);
-
-    const res = await api.post('/api/kyc/upload/aadhaar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (event) => {
-        if (!event.total || !onUploadProgress) return;
-        const percent = Math.round((event.loaded * 100) / event.total);
-        onUploadProgress(percent);
-      },
-    });
-    return res.data as UploadDocumentResponse;
+    throw new Error('uploadAadhaarDocument is deprecated. Use uploadAadhaarFront() or uploadAadhaarBack() instead.');
   }
 
   export async function uploadAadhaarFront(
@@ -305,10 +342,10 @@ export function clearKycApiKey(): void {
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
-    formData.append('userId', userId);
-    formData.append('front', file);
+    formData.append('externalUserId', userId);
+    formData.append('file', file);
 
-    const res = await api.post('/api/kyc/upload/aadhaar', formData, {
+    const res = await api.post('/api/v1/kyc/upload/aadhaar/front', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!event.total || !onUploadProgress) return;
@@ -316,7 +353,7 @@ export function clearKycApiKey(): void {
         onUploadProgress(percent);
       },
     });
-    return (res.data as any).front as UploadDocumentResponse;
+    return res.data as UploadDocumentResponse;
   }
 
   export async function uploadAadhaarBack(
@@ -325,10 +362,10 @@ export function clearKycApiKey(): void {
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
-    formData.append('userId', userId);
-    formData.append('back', file);
+    formData.append('externalUserId', userId);
+    formData.append('file', file);
 
-    const res = await api.post('/api/kyc/upload/aadhaar', formData, {
+    const res = await api.post('/api/v1/kyc/upload/aadhaar/back', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!event.total || !onUploadProgress) return;
@@ -336,7 +373,7 @@ export function clearKycApiKey(): void {
         onUploadProgress(percent);
       },
     });
-    return (res.data as any).back as UploadDocumentResponse;
+    return res.data as UploadDocumentResponse;
   }
 
   export async function uploadLivePhoto(
@@ -345,10 +382,11 @@ export function clearKycApiKey(): void {
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
+    // IMPORTANT: externalUserId must come BEFORE file for Fastify multipart parsing
+    formData.append('externalUserId', userId);
     formData.append('file', file);
-    formData.append('userId', userId);
 
-    const res = await api.post('/api/kyc/upload/live-photo', formData, {
+    const res = await api.post('/api/v1/kyc/upload/live-photo', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!event.total || !onUploadProgress) return;
@@ -365,10 +403,11 @@ export function clearKycApiKey(): void {
     onUploadProgress?: (progress: number) => void,
   ): Promise<UploadDocumentResponse> {
     const formData = new FormData();
+    // IMPORTANT: externalUserId must come BEFORE file for Fastify multipart parsing
+    formData.append('externalUserId', userId);
     formData.append('file', file);
-    formData.append('userId', userId);
 
-    const res = await api.post('/api/kyc/upload/signature', formData, {
+    const res = await api.post('/api/v1/kyc/upload/signature', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!event.total || !onUploadProgress) return;
@@ -380,22 +419,22 @@ export function clearKycApiKey(): void {
   }
 
   export async function deletePanDocument(userId: string, submissionId?: string) {
-    const res = await api.post('/api/kyc/delete/pan', { userId, submissionId });
+    const res = await api.post('/api/v1/kyc/delete/pan', { externalUserId: userId, submissionId });
     return res.data;
   }
 
   export async function deleteAadhaarFront(userId: string, submissionId?: string) {
-    const res = await api.post('/api/kyc/delete/aadhaar/front', { userId, submissionId });
+    const res = await api.post('/api/v1/kyc/delete/aadhaar/front', { externalUserId: userId, submissionId });
     return res.data;
   }
 
   export async function deleteAadhaarBack(userId: string, submissionId?: string) {
-    const res = await api.post('/api/kyc/delete/aadhaar/back', { userId, submissionId });
+    const res = await api.post('/api/v1/kyc/delete/aadhaar/back', { externalUserId: userId, submissionId });
     return res.data;
   }
 
   export async function verifyFace(submissionId: string) {
-    const res = await api.post('/api/kyc/verify/face', { submissionId });
+    const res = await api.post('/api/v1/kyc/verify/face', { submissionId });
     return res.data as {
       success: boolean;
       submissionId: string;
@@ -408,7 +447,7 @@ export function clearKycApiKey(): void {
   }
 
   export async function getKycStatus(userId: string) {
-    const res = await api.get(`/api/kyc/status/${userId}`);
+    const res = await api.get(`/api/v1/kyc/status/${userId}`);
     return res.data;
   }
 

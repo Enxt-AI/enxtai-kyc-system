@@ -5,13 +5,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
-import { getKycApiKey } from '@/lib/api-client';
+import { getKycApiKey, initiateKyc } from '@/lib/api-client';
 
 export default function KycUploadPage() {
   const router = useRouter();
 
   // Generate userId once and store in localStorage for consistency across KYC flow
   const [userId, setUserId] = useState<string>('');
+  const [isReady, setIsReady] = useState(false);
+  const [kycInitiated, setKycInitiated] = useState(false);
 
   /**
    * API Key Validation Guard
@@ -31,12 +33,12 @@ export default function KycUploadPage() {
    * - `?error=key_required`: Key missing (direct URL access)
    */
   useEffect(() => {
-    const apiKey = getKycApiKey();
-
-    if (!apiKey) {
-      // API key missing or expired - redirect to hero
+    try {
+      const apiKey = getKycApiKey();
+      // Key is valid, proceed with page
+    } catch (error) {
+      // API key missing or invalid - redirect to hero
       router.replace('/?error=session_expired');
-      return;
     }
   }, [router]);
 
@@ -49,7 +51,39 @@ export default function KycUploadPage() {
       localStorage.setItem('kyc_user_id', newId);
       setUserId(newId);
     }
+    setIsReady(true);
   }, []);
+
+  // Initialize KYC session when userId is ready
+  useEffect(() => {
+    if (!userId || kycInitiated) return;
+
+    const initSession = async () => {
+      try {
+        // Check if session already exists in localStorage
+        const existingSessionId = localStorage.getItem('kyc_submission_id');
+        if (existingSessionId) {
+          setSubmissionId(existingSessionId);
+          setKycInitiated(true);
+          return;
+        }
+
+        // Create new KYC session
+        const result = await initiateKyc(userId);
+        setSubmissionId(result.kycSessionId);
+        localStorage.setItem('kyc_submission_id', result.kycSessionId);
+        setKycInitiated(true);
+      } catch (error: any) {
+        console.error('Failed to initiate KYC session:', error);
+        // If initiate fails due to user already existing, that's fine - proceed
+        if (error?.response?.status === 409) {
+          setKycInitiated(true);
+        }
+      }
+    };
+
+    initSession();
+  }, [userId, kycInitiated]);
 
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [panUploaded, setPanUploaded] = useState(false);
@@ -100,6 +134,18 @@ export default function KycUploadPage() {
       setUploadingAll(false);
     }
   };
+
+  // Show loading state until userId is ready
+  if (!isReady) {
+    return (
+      <main className="min-h-screen bg-gray-50 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-8">

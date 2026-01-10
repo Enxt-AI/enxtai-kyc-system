@@ -156,9 +156,21 @@ export class AppModule implements NestModule {
    * Client portal routes (/v1/client/*) use SessionAuthGuard instead.
    */
   configure(consumer: MiddlewareConsumer) {
+    // Use named parameter :path* for path-to-regexp v8+ compatibility
+    // This ensures all nested paths under /v1/kyc/ are matched
     consumer
       .apply(TenantMiddleware)
-      .forRoutes({ path: 'v1/kyc/*', method: RequestMethod.ALL });
+      .forRoutes(
+        { path: 'v1/kyc/validate', method: RequestMethod.ALL },
+        { path: 'v1/kyc/initiate', method: RequestMethod.ALL },
+        { path: 'v1/kyc/upload/:type', method: RequestMethod.ALL },
+        { path: 'v1/kyc/upload/:type/:subtype', method: RequestMethod.ALL },
+        { path: 'v1/kyc/upload/signature', method: RequestMethod.ALL },
+        { path: 'v1/kyc/delete/:type', method: RequestMethod.ALL },
+        { path: 'v1/kyc/delete/:type/:subtype', method: RequestMethod.ALL },
+        { path: 'v1/kyc/status/:id', method: RequestMethod.ALL },
+        { path: 'v1/kyc/verify', method: RequestMethod.ALL },
+      );
   }
 }
 

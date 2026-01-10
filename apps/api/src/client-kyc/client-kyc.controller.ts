@@ -238,6 +238,9 @@ export class ClientKycController {
   @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
   @ApiResponse({ status: 413, description: 'File size exceeds 5MB limit' })
   async uploadPan(@Client() client: any, @Req() req: FastifyRequest): Promise<UploadResponseDto> {
+    if (!client) {
+      throw new BadRequestException('Client not authenticated - middleware may not be applied to this route');
+    }
     const { externalUserId, file } = await this.parseMultipartUpload(req);
     return await this.clientKycService.uploadPan(client.id, externalUserId, file);
   }
@@ -305,6 +308,9 @@ export class ClientKycController {
     @Client() client: any,
     @Req() req: FastifyRequest,
   ): Promise<UploadResponseDto> {
+    if (!client) {
+      throw new BadRequestException('Client not authenticated - middleware may not be applied to this route');
+    }
     const { externalUserId, file } = await this.parseMultipartUpload(req);
     return await this.clientKycService.uploadAadhaarFront(client.id, externalUserId, file);
   }
@@ -442,6 +448,58 @@ export class ClientKycController {
   ): Promise<UploadResponseDto> {
     const { externalUserId, file } = await this.parseMultipartUpload(req);
     return await this.clientKycService.uploadLivePhoto(client.id, externalUserId, file);
+  }
+
+  /**
+   * POST /v1/kyc/upload/signature
+   *
+   * Uploads user's signature image for verification.
+   *
+   * **Request Headers:**
+   * - `X-API-Key`: Client's API key (required)
+   * - `Content-Type`: multipart/form-data
+   *
+   * **Multipart Fields:**
+   * - `externalUserId` (string, required): Client's user identifier
+   * - `file` (binary, required): Signature image file (JPEG/PNG)
+   *
+   * **cURL Example:**
+   * ```bash
+   * curl -X POST https://api.example.com/api/v1/kyc/upload/signature \
+   *   -H "X-API-Key: your-api-key-here" \
+   *   -F "externalUserId=customer-12345" \
+   *   -F "file=@/path/to/signature.png"
+   * ```
+   *
+   * @param client - Authenticated client object
+   * @param req - Fastify request (for multipart parsing)
+   * @returns Upload success response
+   */
+  @Post('upload/signature')
+  @ApiOperation({
+    summary: 'Upload Signature',
+    description: 'Uploads user signature image for verification.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['externalUserId', 'file'],
+      properties: {
+        externalUserId: { type: 'string', example: 'customer-12345' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Signature uploaded successfully', type: UploadResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid file type or missing fields' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
+  async uploadSignature(
+    @Client() client: any,
+    @Req() req: FastifyRequest,
+  ): Promise<UploadResponseDto> {
+    const { externalUserId, file } = await this.parseMultipartUpload(req);
+    return await this.clientKycService.uploadSignature(client.id, externalUserId, file);
   }
 
   /**
@@ -599,6 +657,105 @@ export class ClientKycController {
   }
 
   /**
+   * POST /v1/kyc/delete/pan
+   *
+   * Deletes PAN card document from storage and clears URL in database.
+   *
+   * @param client - Authenticated client object
+   * @param body - Request body with externalUserId
+   * @returns Success response
+   */
+  @Post('delete/pan')
+  @ApiOperation({
+    summary: 'Delete PAN Document',
+    description: 'Deletes PAN card document from storage and database.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['externalUserId'],
+      properties: {
+        externalUserId: { type: 'string', example: 'customer-12345' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'PAN document deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deletePan(
+    @Client() client: any,
+    @Body() body: { externalUserId: string },
+  ): Promise<{ success: boolean; message: string }> {
+    return await this.clientKycService.deletePan(client.id, body.externalUserId);
+  }
+
+  /**
+   * POST /v1/kyc/delete/aadhaar/front
+   *
+   * Deletes Aadhaar front document from storage and clears URL in database.
+   *
+   * @param client - Authenticated client object
+   * @param body - Request body with externalUserId
+   * @returns Success response
+   */
+  @Post('delete/aadhaar/front')
+  @ApiOperation({
+    summary: 'Delete Aadhaar Front Document',
+    description: 'Deletes Aadhaar front document from storage and database.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['externalUserId'],
+      properties: {
+        externalUserId: { type: 'string', example: 'customer-12345' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Aadhaar front document deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deleteAadhaarFront(
+    @Client() client: any,
+    @Body() body: { externalUserId: string },
+  ): Promise<{ success: boolean; message: string }> {
+    return await this.clientKycService.deleteAadhaarFront(client.id, body.externalUserId);
+  }
+
+  /**
+   * POST /v1/kyc/delete/aadhaar/back
+   *
+   * Deletes Aadhaar back document from storage and clears URL in database.
+   *
+   * @param client - Authenticated client object
+   * @param body - Request body with externalUserId
+   * @returns Success response
+   */
+  @Post('delete/aadhaar/back')
+  @ApiOperation({
+    summary: 'Delete Aadhaar Back Document',
+    description: 'Deletes Aadhaar back document from storage and database.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['externalUserId'],
+      properties: {
+        externalUserId: { type: 'string', example: 'customer-12345' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Aadhaar back document deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deleteAadhaarBack(
+    @Client() client: any,
+    @Body() body: { externalUserId: string },
+  ): Promise<{ success: boolean; message: string }> {
+    return await this.clientKycService.deleteAadhaarBack(client.id, body.externalUserId);
+  }
+
+  /**
    * Parse Multipart Upload (Helper)
    *
    * Extracts `externalUserId` field and `file` attachment from multipart/form-data request.
@@ -622,6 +779,8 @@ export class ClientKycController {
     }
 
     // Extract externalUserId from form fields
+    // NOTE: externalUserId MUST be sent before file in the multipart request
+    // because Fastify streams fields in order, and req.file() returns when file is found
     const externalUserIdField = (data.fields as any)['externalUserId'];
     const externalUserId = externalUserIdField?.value || externalUserIdField;
 

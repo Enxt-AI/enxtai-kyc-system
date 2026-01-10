@@ -8,6 +8,7 @@ import {
   UploadResponseDto,
 } from './dto/client-kyc-response.dto';
 import { InternalStatus } from '@enxtai/shared-types';
+import { DocumentSource } from '@prisma/client';
 import type { MultipartFile } from '@fastify/multipart';
 
 /**
@@ -69,8 +70,8 @@ export class ClientKycService {
    *
    * @example
    * const userId = await getOrCreateUserByExternalId(
-   *   'abc-123-def', 
-   *   'customer-456', 
+   *   'abc-123-def',
+   *   'customer-456',
    *   'john@example.com',
    *   '+919876543210'
    * );
@@ -160,7 +161,7 @@ export class ClientKycService {
         userId,
         clientId,
         internalStatus: InternalStatus.PENDING,
-        documentSource: 'API' as any,
+        documentSource: DocumentSource.MANUAL_UPLOAD,
       },
     });
 
@@ -308,6 +309,36 @@ export class ClientKycService {
       success: true,
       kycSessionId: submission.id,
       documentUrl: submission.livePhotoUrl || '',
+    };
+  }
+
+  /**
+   * Upload Signature Document
+   *
+   * Uploads user's signature image for verification.
+   *
+   * **Document Requirements:**
+   * - Clear signature on white background preferred
+   * - Stored in: `kyc-{clientId}-signatures` bucket
+   *
+   * @param clientId - UUID of client organization
+   * @param externalUserId - Client's user identifier
+   * @param file - Multipart file upload
+   * @returns Upload success response
+   * @throws NotFoundException if user not found
+   */
+  async uploadSignature(
+    clientId: string,
+    externalUserId: string,
+    file: MultipartFile,
+  ): Promise<UploadResponseDto> {
+    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
+    const submission = await this.kycService.uploadSignatureDocument(userId, file, clientId);
+
+    return {
+      success: true,
+      kycSessionId: submission.id,
+      documentUrl: submission.signatureUrl || '',
     };
   }
 
@@ -556,5 +587,65 @@ export class ClientKycService {
       .toString()
       .padStart(3, '0');
     return `999${ts.slice(-7)}${rand}`;
+  }
+
+  /**
+   * Delete PAN Document
+   *
+   * Deletes PAN card document from storage and clears URL in database.
+   * Tenant-isolated: only deletes if user belongs to specified client.
+   *
+   * @param clientId - Authenticated client ID
+   * @param externalUserId - Client's user identifier
+   * @returns Success response
+   * @throws NotFoundException if user not found
+   */
+  async deletePan(
+    clientId: string,
+    externalUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
+    await this.kycService.deletePanDocument(userId);
+    return { success: true, message: 'PAN document deleted successfully' };
+  }
+
+  /**
+   * Delete Aadhaar Front Document
+   *
+   * Deletes Aadhaar front document from storage and clears URL in database.
+   * Tenant-isolated: only deletes if user belongs to specified client.
+   *
+   * @param clientId - Authenticated client ID
+   * @param externalUserId - Client's user identifier
+   * @returns Success response
+   * @throws NotFoundException if user not found
+   */
+  async deleteAadhaarFront(
+    clientId: string,
+    externalUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
+    await this.kycService.deleteAadhaarFront(userId);
+    return { success: true, message: 'Aadhaar front document deleted successfully' };
+  }
+
+  /**
+   * Delete Aadhaar Back Document
+   *
+   * Deletes Aadhaar back document from storage and clears URL in database.
+   * Tenant-isolated: only deletes if user belongs to specified client.
+   *
+   * @param clientId - Authenticated client ID
+   * @param externalUserId - Client's user identifier
+   * @returns Success response
+   * @throws NotFoundException if user not found
+   */
+  async deleteAadhaarBack(
+    clientId: string,
+    externalUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
+    await this.kycService.deleteAadhaarBack(userId);
+    return { success: true, message: 'Aadhaar back document deleted successfully' };
   }
 }

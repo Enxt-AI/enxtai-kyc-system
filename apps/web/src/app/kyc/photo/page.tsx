@@ -10,7 +10,8 @@ export default function KycPhotoPage() {
   const router = useRouter();
 
   // Retrieve userId from localStorage (set during document upload)
-  const [userId, setUserId] = useState<string>('11111111-1111-1111-1111-111111111111');
+  const [userId, setUserId] = useState<string>('');
+  const [isReady, setIsReady] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,11 +23,11 @@ export default function KycPhotoPage() {
    * Redirects to hero page if key missing or expired.
    */
   useEffect(() => {
-    const apiKey = getKycApiKey();
-
-    if (!apiKey) {
+    try {
+      const apiKey = getKycApiKey();
+      // Key is valid, proceed with page
+    } catch (error) {
       router.replace('/?error=session_expired');
-      return;
     }
   }, [router]);
 
@@ -34,6 +35,7 @@ export default function KycPhotoPage() {
   useEffect(() => {
     const storedUserId = localStorage.getItem('kyc_user_id') ?? process.env.NEXT_PUBLIC_TEST_USER_ID ?? '11111111-1111-1111-1111-111111111111';
     setUserId(storedUserId);
+    setIsReady(true);
   }, []);
 
   useEffect(() => {
@@ -53,8 +55,22 @@ export default function KycPhotoPage() {
         setError(message);
       }
     }
-    void init();
+    if (userId) {
+      void init();
+    }
   }, [userId]);
+
+  // Show loading state until userId is ready
+  if (!isReady) {
+    return (
+      <main className="min-h-screen bg-gray-50 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 via-white to-gray-50 p-6 sm:p-10">
