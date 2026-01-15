@@ -16,19 +16,21 @@ import { CreateKYCSubmissionDto } from './dto/create-kyc-submission.dto';
 import { ExtractAadhaarDto, ExtractPanDto } from '../ocr/dto/extract-document.dto';
 import { VerifyFaceDto } from './dto/verify-face.dto';
 import { DeleteDocumentDto } from './dto/delete-document.dto';
+import { FetchDigiLockerDocumentsDto } from './dto/fetch-digilocker-documents.dto';
+import { ProcessDigiLockerDocumentsDto } from './dto/process-digilocker-documents.dto';
 
 /**
  * KYC Controller
- * 
+ *
  * Handles all KYC-related HTTP endpoints including document uploads (PAN, Aadhaar front/back, live photo),
  * OCR data extraction, and face verification. Uses Fastify's multipart stream handling for file uploads.
- * 
+ *
  * @remarks
  * - All file uploads buffer streams immediately to prevent Fastify stream closure issues
  * - Supports both single-file (PAN, live photo) and multi-file (Aadhaar front/back) uploads
  * - Auto-creates users and submissions if they don't exist (for MVP convenience)
  * - Fastify multipart streams must be consumed during the `req.parts()` iteration
- * 
+ *
  * @see {@link KycService} for business logic implementation
  */
 @Controller('kyc')
@@ -37,14 +39,14 @@ export class KycController {
 
   /**
    * Create KYC Submission
-   * 
+   *
    * Creates a new KYC submission for the given user. Auto-creates the user if they don't exist.
    * This endpoint is typically called by the frontend before document uploads.
-   * 
+   *
    * @param dto - Contains userId (UUID v4)
    * @returns Created submission object with id and status
    * @throws BadRequestException if userId is invalid
-   * 
+   *
    * @example
    * POST /api/kyc/submission
    * Body: { userId: "550e8400-e29b-41d4-a716-446655440000" }
@@ -57,14 +59,14 @@ export class KycController {
 
   /**
    * Get KYC Status
-   * 
+   *
    * Retrieves the current KYC verification status for a user, including progress percentage
    * and status label. Used by the frontend to display status indicators.
-   * 
+   *
    * @param userId - UUID of the user
    * @returns Object containing submission details, progress (0-100), and status label
    * @throws NotFoundException if user has no KYC submission
-   * 
+   *
    * @example
    * GET /api/kyc/status/550e8400-e29b-41d4-a716-446655440000
    * Response: { submission: {...}, progress: 66, statusLabel: "OCR_COMPLETED" }
@@ -76,14 +78,14 @@ export class KycController {
 
   /**
    * Get KYC Submission
-   * 
+   *
    * Retrieves the full KYC submission details for a user, including all document URLs,
    * extracted data, and verification scores.
-   * 
+   *
    * @param userId - UUID of the user
    * @returns Full KYC submission object
    * @throws HttpException with 404 status if submission not found
-   * 
+   *
    * @example
    * GET /api/kyc/submission/550e8400-e29b-41d4-a716-446655440000
    * Response: { id: "...", panDocumentUrl: "...", aadhaarFrontUrl: "...", ... }
@@ -99,20 +101,20 @@ export class KycController {
 
   /**
    * Upload PAN Card Document
-   * 
+   *
    * Accepts a single image file (JPEG/PNG) and stores it in MinIO. Creates a new KYC submission
    * if one doesn't exist for the user. Updates submission status to DOCUMENTS_UPLOADED.
-   * 
+   *
    * **Important**: Buffers the file stream immediately during multipart parsing to prevent
    * Fastify stream closure issues. Fastify closes streams after `req.parts()` iteration completes.
-   * 
+   *
    * @param req - Fastify request with multipart form data containing:
    *   - 'userId' field: UUID v4 string
    *   - 'file' attachment: JPEG/PNG image (max 5MB, 300x300 to 8192x8192 pixels)
    * @returns Object with success flag, submissionId (UUID), and MinIO document URL
    * @throws BadRequestException if userId or file is missing, or file validation fails
    * @throws HttpException if upload fails or storage service errors
-   * 
+   *
    * @example
    * POST /api/kyc/upload/pan
    * Content-Type: multipart/form-data
@@ -171,14 +173,14 @@ export class KycController {
 
   /**
    * Upload Aadhaar Card Document (Front and/or Back)
-   * 
+   *
    * Accepts one or both sides of Aadhaar card (front contains photo, back contains address).
    * Supports uploading both simultaneously or separately. Creates submission if doesn't exist.
-   * 
+   *
    * **Aadhaar Card Structure**:
    * - Front: Contains photo, name, DOB, Aadhaar number (used for face matching)
    * - Back: Contains address details
-   * 
+   *
    * @param req - Fastify request with multipart form data containing:
    *   - 'userId' field: UUID v4 string
    *   - 'front' attachment (optional): Front side image (JPEG/PNG, max 5MB)
@@ -186,13 +188,13 @@ export class KycController {
    * @returns Object with success flag, submissionId, and separate front/back URLs
    * @throws BadRequestException if userId missing or both files missing
    * @throws HttpException if upload fails
-   * 
+   *
    * @example
    * POST /api/kyc/upload/aadhaar
    * Content-Type: multipart/form-data
    * Body: { userId: "550e...", front: <binary>, back: <binary> }
-   * Response: { 
-   *   success: true, 
+   * Response: {
+   *   success: true,
    *   submissionId: "abc123",
    *   front: { submissionId: "abc123", documentUrl: "kyc-aadhaar/user-id/AADHAAR_CARD_FRONT_123.jpg" },
    *   back: { submissionId: "abc123", documentUrl: "kyc-aadhaar/user-id/AADHAAR_CARD_BACK_456.jpg" }
@@ -294,20 +296,20 @@ export class KycController {
 
   /**
    * Upload Live Photo (Selfie)
-   * 
+   *
    * Accepts a live photo captured from webcam for face verification. Photo must contain
    * the user's face and is used to compare against the photo on PAN/Aadhaar documents.
-   * 
+   *
    * **Prerequisites**: PAN or Aadhaar document must be uploaded first (face verification
    * requires a reference photo from identity documents).
-   * 
+   *
    * @param req - Fastify request with multipart form data containing:
    *   - 'userId' field: UUID v4 string
    *   - 'file' attachment: Live photo image (JPEG/PNG, max 5MB, min 300x300 pixels)
    * @returns Object with success flag, submissionId, and MinIO document URL
    * @throws BadRequestException if userId/file missing, or no Aadhaar/PAN uploaded yet
    * @throws HttpException if upload fails
-   * 
+   *
    * @example
    * POST /api/kyc/upload/live-photo
    * Content-Type: multipart/form-data
@@ -419,29 +421,29 @@ export class KycController {
 
   /**
    * Trigger Face Verification
-   * 
+   *
    * Initiates face verification workflow: downloads documents from MinIO, extracts faces
    * using face-api.js, calculates similarity score (Euclidean distance), and performs
    * basic liveness detection. Updates submission with scores and status.
-   * 
+   *
    * **Verification Logic**:
    * 1. Face Extraction: Extracts largest face from live photo and PAN/Aadhaar (fallback order)
    * 2. Face Matching: Computes descriptor distance (threshold: 0.6 = 60% similarity)
    * 3. Liveness Detection: Basic landmark analysis (MVP - will be enhanced)
    * 4. Combined Score: Both face match and liveness must be ≥80% to auto-approve
    * 5. Status Update: FACE_VERIFIED if passed, PENDING_REVIEW if failed
-   * 
+   *
    * @param dto - Contains submissionId (UUID)
    * @returns Object with success flag, submissionId, and verification results (scores, status)
    * @throws NotFoundException if submission not found or documents missing
    * @throws BadRequestException if face not detected in images
    * @throws HttpException if verification process fails
-   * 
+   *
    * @example
    * POST /api/kyc/verify/face
    * Body: { submissionId: "abc123" }
-   * Response: { 
-   *   success: true, 
+   * Response: {
+   *   success: true,
    *   submissionId: "abc123",
    *   verificationResults: { faceMatchScore: 0.87, livenessScore: 0.92, internalStatus: "FACE_VERIFIED" }
    * }
@@ -470,27 +472,27 @@ export class KycController {
 
   /**
    * Extract PAN Card Data (OCR)
-   * 
+   *
    * Uses Tesseract.js to perform OCR on uploaded PAN card image. Extracts PAN number
    * (regex: [A-Z]{5}[0-9]{4}[A-Z]), name, and date of birth. Preprocesses image
    * (grayscale, normalize, sharpen) for better accuracy.
-   * 
+   *
    * **Extraction Logic**:
    * - PAN Number: 10-character alphanumeric (e.g., ABCDE1234F)
    * - Name: Heuristic-based extraction with blacklist filtering
    * - DOB: Date pattern matching (DD/MM/YYYY, DD-MM-YYYY, etc.)
    * - Confidence Threshold: 60% minimum for OCR results
-   * 
+   *
    * @param dto - Contains submissionId (UUID)
    * @returns Object with success flag, submissionId, and extracted data (panNumber, fullName, dateOfBirth)
    * @throws NotFoundException if submission not found or PAN document not uploaded
    * @throws HttpException if OCR fails
-   * 
+   *
    * @example
    * POST /api/kyc/extract/pan
    * Body: { submissionId: "abc123" }
-   * Response: { 
-   *   success: true, 
+   * Response: {
+   *   success: true,
    *   submissionId: "abc123",
    *   extractedData: { panNumber: "ABCDE1234F", fullName: "John Doe", dateOfBirth: "1990-01-15" }
    * }
@@ -516,28 +518,28 @@ export class KycController {
 
   /**
    * Extract Aadhaar Card Data (OCR)
-   * 
+   *
    * Uses Tesseract.js to perform OCR on uploaded Aadhaar card images (front/back or legacy single image).
    * Extracts Aadhaar number (12 digits), name, and address. **Important**: Aadhaar number is masked
    * to show only last 4 digits per UIDAI compliance (e.g., "XXXX XXXX 1234").
-   * 
+   *
    * **Extraction Logic**:
    * - Aadhaar Number: 12 digits with optional spaces (regex: /\\b\\d{4}\\s?\\d{4}\\s?\\d{4}\\b/)
    * - Masking: Only last 4 digits stored (UIDAI guideline to protect privacy)
    * - Name: Extracted from front side
    * - Address: Extracted from back side (if available)
    * - Confidence Threshold: 60% minimum for OCR results
-   * 
+   *
    * @param dto - Contains submissionId (UUID)
    * @returns Object with success flag, submissionId, and extracted data (aadhaarNumber masked, fullName, address)
    * @throws NotFoundException if submission not found or Aadhaar document not uploaded
    * @throws HttpException if OCR fails
-   * 
+   *
    * @example
    * POST /api/kyc/extract/aadhaar
    * Body: { submissionId: "abc123" }
-   * Response: { 
-   *   success: true, 
+   * Response: {
+   *   success: true,
    *   submissionId: "abc123",
    *   extractedData: { aadhaarNumber: "XXXX XXXX 1234", fullName: "John Doe", address: "123 Main St..." }
    * }
@@ -558,6 +560,136 @@ export class KycController {
     } catch (err: any) {
       if (err instanceof HttpException) throw err;
       throw new HttpException(err?.message ?? 'Aadhaar extraction failed', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Fetch Documents from DigiLocker
+   *
+   * Initiates document fetch from DigiLocker for the specified user and document types.
+   * Documents are automatically stored in MinIO and the submission is updated.
+   *
+   * @param dto - Request body with userId and documentTypes
+   * @returns Success response with submission details and fetched document URLs
+   * @throws BadRequestException if user not authorized with DigiLocker
+   * @throws NotFoundException if requested documents not available
+   *
+   * @example
+   * POST /api/kyc/digilocker/fetch
+   * Body: { userId: "550e8400-e29b-41d4-a716-446655440000", documentTypes: ["PAN", "AADHAAR"] }
+   *
+   * Response:
+   * {
+   *   success: true,
+   *   submissionId: "sub_123abc-456def-789ghi",
+   *   documentsFetched: ["PAN", "AADHAAR"],
+   *   documentUrls: {
+   *     panDocumentUrl: "minio://kyc/pan-123.jpg",
+   *     aadhaarFrontUrl: "minio://kyc/aadhaar-456.jpg"
+   *   }
+   * }
+   */
+  @Post('digilocker/fetch')
+  async fetchDigiLockerDocuments(@Body() dto: FetchDigiLockerDocumentsDto) {
+    try {
+      const result = await this.kycService.fetchDocumentsFromDigiLocker(dto.userId, dto.documentTypes);
+      return {
+        success: true,
+        submissionId: result.submission.id,
+        documentsFetched: result.fetchedDocuments,
+        documentUrls: {
+          panDocumentUrl: result.submission.panDocumentUrl,
+          aadhaarFrontUrl: result.submission.aadhaarFrontUrl,
+        },
+      };
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException(err?.message ?? 'DigiLocker fetch failed', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Get DigiLocker Fetch Status
+   *
+   * Checks DigiLocker authorization status and available documents for a user.
+   *
+   * @param userId - User UUID from path parameter
+   * @returns Status object with authorization and document availability
+   *
+   * @example
+   * GET /api/kyc/digilocker/status/550e8400-e29b-41d4-a716-446655440000
+   *
+   * Response:
+   * {
+   *   authorized: true,
+   *   documentsFetched: false,
+   *   documentSource: "MANUAL_UPLOAD",
+   *   availableDocuments: ["PAN", "AADHAAR"],
+   *   submission: { ... }
+   * }
+   */
+  @Get('digilocker/status/:userId')
+  async getDigiLockerStatus(@Param('userId') userId: string) {
+    try {
+      return await this.kycService.getDigiLockerFetchStatus(userId);
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException(err?.message ?? 'Failed to get DigiLocker status', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Process DigiLocker Documents
+   *
+   * Triggers OCR extraction and face verification for DigiLocker-fetched documents.
+   *
+   * @param dto - Request body with submissionId
+   * @returns Success response with OCR results and verification scores
+   * @throws BadRequestException if submission has no documents to process
+   *
+   * @example
+   * POST /api/kyc/digilocker/process
+   * Body: { submissionId: "sub_123abc-456def-789ghi" }
+   *
+   * Response:
+   * {
+   *   success: true,
+   *   submissionId: "sub_123abc-456def-789ghi",
+   *   ocrCompleted: true,
+   *   faceVerified: true,
+   *   extractedData: {
+   *     panNumber: "ABCDE1234F",
+   *     aadhaarNumber: "XXXX XXXX 1234",
+   *     fullName: "John Doe"
+   *   },
+   *   verificationScores: {
+   *     faceMatchScore: 0.87,
+   *     livenessScore: 0.92
+   *   }
+   * }
+   */
+  @Post('digilocker/process')
+  async processDigiLockerDocuments(@Body() dto: ProcessDigiLockerDocumentsDto) {
+    try {
+      const submission = await this.kycService.processDigiLockerDocuments(dto.submissionId);
+      return {
+        success: true,
+        submissionId: submission.id,
+        ocrCompleted: Boolean(submission.panNumber || submission.aadhaarNumber),
+        faceVerified: Boolean(submission.faceMatchScore),
+        extractedData: {
+          panNumber: submission.panNumber,
+          aadhaarNumber: submission.aadhaarNumber,
+          fullName: submission.fullName,
+        },
+        verificationScores: {
+          faceMatchScore: submission.faceMatchScore,
+          livenessScore: submission.livenessScore,
+        },
+      };
+    } catch (err: any) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException(err?.message ?? 'DigiLocker processing failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

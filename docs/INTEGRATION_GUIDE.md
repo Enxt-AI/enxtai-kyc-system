@@ -424,16 +424,16 @@ const crypto = require('crypto');
 function verifyWebhookSignature(req, webhookSecret) {
   const receivedSignature = req.headers['x-signature'];
   const payload = JSON.stringify(req.body);
-  
+
   const expectedSignature = crypto
     .createHmac('sha256', webhookSecret)
     .update(payload)
     .digest('hex');
-  
+
   if (receivedSignature !== expectedSignature) {
     throw new Error('Invalid webhook signature');
   }
-  
+
   return true;
 }
 
@@ -441,9 +441,9 @@ function verifyWebhookSignature(req, webhookSecret) {
 app.post('/webhooks/kyc', (req, res) => {
   try {
     verifyWebhookSignature(req, process.env.WEBHOOK_SECRET);
-    
+
     const { event, data } = req.body;
-    
+
     switch (event) {
       case 'kyc.verification_completed':
         console.log(`KYC completed for user ${data.externalUserId}`);
@@ -453,7 +453,7 @@ app.post('/webhooks/kyc', (req, res) => {
         console.log(`KYC status changed to ${data.status}`);
         break;
     }
-    
+
     res.status(200).send('OK');
   } catch (error) {
     console.error('Webhook verification failed:', error);
@@ -471,16 +471,16 @@ import json
 def verify_webhook_signature(request, webhook_secret):
     received_signature = request.headers.get('X-Signature')
     payload = request.get_data(as_text=True)
-    
+
     expected_signature = hmac.new(
         webhook_secret.encode('utf-8'),
         payload.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    
+
     if received_signature != expected_signature:
         raise ValueError('Invalid webhook signature')
-    
+
     return True
 
 # Flask webhook handler
@@ -488,14 +488,14 @@ def verify_webhook_signature(request, webhook_secret):
 def handle_webhook():
     try:
         verify_webhook_signature(request, os.environ['WEBHOOK_SECRET'])
-        
+
         data = request.json
         event = data['event']
-        
+
         if event == 'kyc.verification_completed':
             print(f"KYC completed for user {data['data']['externalUserId']}")
             # Update database, send notification, etc.
-        
+
         return 'OK', 200
     except ValueError as e:
         print(f'Webhook verification failed: {e}')
@@ -628,7 +628,7 @@ async function uploadPan(externalUserId, filePath) {
   const form = new FormData();
   form.append('externalUserId', externalUserId);
   form.append('file', fs.createReadStream(filePath));
-  
+
   const response = await client.post('/v1/kyc/upload/pan', form, {
     headers: form.getHeaders(),
   });
@@ -640,7 +640,7 @@ async function uploadAadhaarFront(externalUserId, filePath) {
   const form = new FormData();
   form.append('externalUserId', externalUserId);
   form.append('file', fs.createReadStream(filePath));
-  
+
   const response = await client.post('/v1/kyc/upload/aadhaar/front', form, {
     headers: form.getHeaders(),
   });
@@ -652,7 +652,7 @@ async function uploadAadhaarBack(externalUserId, filePath) {
   const form = new FormData();
   form.append('externalUserId', externalUserId);
   form.append('file', fs.createReadStream(filePath));
-  
+
   const response = await client.post('/v1/kyc/upload/aadhaar/back', form, {
     headers: form.getHeaders(),
   });
@@ -664,7 +664,7 @@ async function uploadLivePhoto(externalUserId, filePath) {
   const form = new FormData();
   form.append('externalUserId', externalUserId);
   form.append('file', fs.createReadStream(filePath));
-  
+
   const response = await client.post('/v1/kyc/upload/live-photo', form, {
     headers: form.getHeaders(),
   });
@@ -683,20 +683,20 @@ async function performKyc(userId, email, phone, documents) {
     // Initiate KYC
     const sessionId = await initiateKyc(userId, email, phone);
     console.log(`KYC session created: ${sessionId}`);
-    
+
     // Upload documents
     await uploadPan(userId, documents.panPath);
     console.log('PAN uploaded');
-    
+
     await uploadAadhaarFront(userId, documents.aadhaarFrontPath);
     console.log('Aadhaar front uploaded');
-    
+
     await uploadAadhaarBack(userId, documents.aadhaarBackPath);
     console.log('Aadhaar back uploaded');
-    
+
     await uploadLivePhoto(userId, documents.livePhotoPath);
     console.log('Live photo uploaded - verification started');
-    
+
     // Poll status (or wait for webhook)
     let status;
     do {
@@ -704,7 +704,7 @@ async function performKyc(userId, email, phone, documents) {
       status = await getKycStatus(sessionId);
       console.log(`Status: ${status.status} (${status.progress}%)`);
     } while (!['FACE_VERIFIED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED'].includes(status.status));
-    
+
     console.log('Final status:', status);
     return status;
   } catch (error) {
@@ -819,30 +819,30 @@ def perform_kyc(user_id, email, phone, documents):
         # Initiate KYC
         session_id = initiate_kyc(user_id, email, phone)
         print(f'KYC session created: {session_id}')
-        
+
         # Upload documents
         upload_pan(user_id, documents['pan_path'])
         print('PAN uploaded')
-        
+
         upload_aadhaar_front(user_id, documents['aadhaar_front_path'])
         print('Aadhaar front uploaded')
-        
+
         upload_aadhaar_back(user_id, documents['aadhaar_back_path'])
         print('Aadhaar back uploaded')
-        
+
         upload_live_photo(user_id, documents['live_photo_path'])
         print('Live photo uploaded - verification started')
-        
+
         # Poll status (or wait for webhook)
         final_statuses = ['FACE_VERIFIED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED']
         while True:
             time.sleep(5)  # Wait 5 seconds
             status = get_kyc_status(session_id)
             print(f"Status: {status['status']} ({status['progress']}%)")
-            
+
             if status['status'] in final_statuses:
                 break
-        
+
         print('Final status:', status)
         return status
     except requests.exceptions.HTTPError as e:
@@ -919,6 +919,471 @@ curl -X POST https://api.enxtai.com/api/v1/kyc/verify \
 curl -X GET https://api.enxtai.com/api/v1/kyc/status/a1b2c3d4-... \
   -H "X-API-Key: your-api-key-here"
 ```
+
+---
+
+## DigiLocker Integration
+
+### Overview
+
+DigiLocker is India's government-issued document repository that allows users to securely store and share official documents digitally. The EnxtAI KYC API integrates with DigiLocker to enable seamless document fetching, reducing user friction and improving verification accuracy.
+
+**Benefits:**
+- **Faster KYC**: Skip manual document uploads
+- **Higher Accuracy**: Government-verified documents
+- **Better UX**: One-click document access
+- **Reduced Fraud**: Official document sources
+
+**Supported Documents:**
+- PAN Card (Permanent Account Number)
+- Aadhaar Card (National ID)
+
+**Security Features:**
+- OAuth 2.0 with PKCE (Proof Key for Code Exchange)
+- State parameter validation prevents CSRF attacks
+- Secure token storage and automatic refresh
+- Tenant isolation ensures data privacy
+
+### Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as Your Backend
+    participant API as EnxtAI KYC API
+    participant User as End User
+    participant DL as DigiLocker
+
+    Client->>API: POST /v1/kyc/initiate
+    API-->>Client: kycSessionId
+
+    Client->>API: POST /v1/kyc/{sessionId}/digilocker/initiate
+    API-->>Client: authorizationUrl
+
+    Client->>User: Redirect to authorizationUrl
+    User->>DL: Authorize EnxtAI KYC
+    DL->>API: OAuth callback with code
+    API->>DL: Exchange code for token
+
+    Client->>API: POST /v1/kyc/{sessionId}/digilocker/fetch
+    API->>DL: Fetch documents
+    DL-->>API: Document files
+    API->>API: Store in MinIO + OCR
+    API-->>Client: Webhook: digilocker_fetch_completed
+
+    Client->>API: GET /v1/kyc/status/{sessionId}
+    API-->>Client: Extracted data + verification scores
+```
+
+### API Endpoints
+
+#### 1. Initiate DigiLocker Authorization
+
+**Endpoint:** `POST /v1/kyc/{submissionId}/digilocker/initiate`
+
+**Description:** Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access.
+
+**Request Headers:**
+```
+X-API-Key: your-api-key-here
+Content-Type: application/json
+```
+
+**Response (200 OK):**
+```json
+{
+  "authorizationUrl": "https://digilocker.gov.in/public/oauth2/1/authorize?...",
+  "instructions": "Redirect user to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.",
+  "expiresIn": 600
+}
+```
+
+**cURL Example:**
+```bash
+curl -X POST "https://api.enxtai.com/api/v1/kyc/sub_123/digilocker/initiate" \
+  -H "X-API-Key: your-api-key-here" \
+  -H "Content-Type: application/json"
+```
+
+#### 2. Fetch Documents from DigiLocker
+
+**Endpoint:** `POST /v1/kyc/{submissionId}/digilocker/fetch`
+
+**Description:** Downloads specified documents from user's DigiLocker account and triggers automatic OCR processing.
+
+**Request Body:**
+```json
+{
+  "documentTypes": ["PAN", "AADHAAR"]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "kycSessionId": "sub_123...",
+  "documentsFetched": ["PAN", "AADHAAR"],
+  "documentUrls": {
+    "panDocumentUrl": "kyc-client-pan/user-uuid/pan.jpg",
+    "aadhaarFrontUrl": "kyc-client-aadhaar/user-uuid/aadhaar.jpg"
+  },
+  "processingStatus": "OCR and face verification processing initiated"
+}
+```
+
+**cURL Example:**
+```bash
+curl -X POST "https://api.enxtai.com/api/v1/kyc/sub_123/digilocker/fetch" \
+  -H "X-API-Key: your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"documentTypes": ["PAN", "AADHAAR"]}'
+```
+
+#### 3. Get DigiLocker Status
+
+**Endpoint:** `GET /v1/kyc/{submissionId}/digilocker/status`
+
+**Description:** Retrieves DigiLocker authorization status and available documents for a KYC session.
+
+**Response (200 OK):**
+```json
+{
+  "authorized": true,
+  "documentsFetched": false,
+  "documentSource": "DIGILOCKER",
+  "availableDocuments": ["PAN", "AADHAAR"],
+  "submission": {
+    "kycSessionId": "sub_123...",
+    "externalUserId": "customer-456",
+    "status": "DOCUMENTS_UPLOADED",
+    "progress": 33
+  }
+}
+```
+
+**cURL Example:**
+```bash
+curl -X GET "https://api.enxtai.com/api/v1/kyc/sub_123/digilocker/status" \
+  -H "X-API-Key: your-api-key-here"
+```
+
+### Webhook Events
+
+DigiLocker operations trigger specific webhook events:
+
+#### Event: `kyc.digilocker_fetch_initiated`
+
+**Triggered when:** Client calls the fetch endpoint
+
+**Payload:**
+```json
+{
+  "id": "evt_...",
+  "event": "kyc.digilocker_fetch_initiated",
+  "timestamp": "2026-01-14T10:30:00.000Z",
+  "data": {
+    "kycSessionId": "sub_...",
+    "externalUserId": "customer-456",
+    "documentTypes": ["PAN", "AADHAAR"]
+  }
+}
+```
+
+#### Event: `kyc.digilocker_fetch_completed`
+
+**Triggered when:** Documents successfully fetched and stored
+
+**Payload:**
+```json
+{
+  "id": "evt_...",
+  "event": "kyc.digilocker_fetch_completed",
+  "timestamp": "2026-01-14T10:35:00.000Z",
+  "data": {
+    "kycSessionId": "sub_...",
+    "externalUserId": "customer-456",
+    "documentsFetched": ["PAN", "AADHAAR"],
+    "documentUrls": {
+      "panDocumentUrl": "kyc-client-pan/user-uuid/...",
+      "aadhaarFrontUrl": "kyc-client-aadhaar/user-uuid/..."
+    }
+  }
+}
+```
+
+#### Event: `kyc.digilocker_fetch_failed`
+
+**Triggered when:** Document fetch fails
+
+**Payload:**
+```json
+{
+  "id": "evt_...",
+  "event": "kyc.digilocker_fetch_failed",
+  "timestamp": "2026-01-14T10:32:00.000Z",
+  "data": {
+    "kycSessionId": "sub_...",
+    "externalUserId": "customer-456",
+    "documentTypes": ["PAN", "AADHAAR"],
+    "error": "Documents not found in DigiLocker account"
+  }
+}
+```
+
+### Complete Integration Example
+
+#### Node.js Example
+
+```javascript
+const axios = require('axios');
+
+const API_BASE_URL = 'https://api.enxtai.com/api';
+const API_KEY = process.env.ENXTAI_API_KEY;
+
+const client = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { 'X-API-Key': API_KEY },
+});
+
+// Step 1: Initiate KYC
+async function initiateKyc(externalUserId) {
+  const response = await client.post('/v1/kyc/initiate', {
+    externalUserId,
+    email: `${externalUserId}@example.com`,
+    phone: '+919876543210',
+  });
+  return response.data.kycSessionId;
+}
+
+// Step 2: Initiate DigiLocker Authorization
+async function initiateDigiLockerAuth(kycSessionId) {
+  const response = await client.post(`/v1/kyc/${kycSessionId}/digilocker/initiate`);
+  return response.data.authorizationUrl;
+}
+
+// Step 3: Fetch Documents from DigiLocker
+async function fetchDigiLockerDocuments(kycSessionId, documentTypes) {
+  const response = await client.post(`/v1/kyc/${kycSessionId}/digilocker/fetch`, {
+    documentTypes,
+  });
+  return response.data;
+}
+
+// Step 4: Get DigiLocker Status
+async function getDigiLockerStatus(kycSessionId) {
+  const response = await client.get(`/v1/kyc/${kycSessionId}/digilocker/status`);
+  return response.data;
+}
+
+// Step 5: Upload Live Photo (required for verification)
+async function uploadLivePhoto(externalUserId, filePath) {
+  const FormData = require('form-data');
+  const fs = require('fs');
+
+  const form = new FormData();
+  form.append('externalUserId', externalUserId);
+  form.append('file', fs.createReadStream(filePath));
+
+  const response = await client.post('/v1/kyc/upload/live-photo', form, {
+    headers: form.getHeaders(),
+  });
+  return response.data;
+}
+
+// Complete DigiLocker workflow
+async function performKycWithDigiLocker(userId, livePhotoPath) {
+  try {
+    // Initiate KYC
+    const sessionId = await initiateKyc(userId);
+    console.log(`KYC session created: ${sessionId}`);
+
+    // Get DigiLocker authorization URL
+    const authUrl = await initiateDigiLockerAuth(sessionId);
+    console.log(`DigiLocker auth URL: ${authUrl}`);
+
+    // In a real app, redirect user to authUrl here
+    // User completes OAuth flow in DigiLocker
+    // Then continue with document fetching...
+
+    // Simulate user authorization (in real app, wait for callback/webhook)
+    console.log('Waiting for user to authorize DigiLocker...');
+
+    // Fetch documents
+    const fetchResult = await fetchDigiLockerDocuments(sessionId, ['PAN', 'AADHAAR']);
+    console.log('Documents fetched:', fetchResult.documentsFetched);
+
+    // Upload live photo to complete verification
+    await uploadLivePhoto(userId, livePhotoPath);
+    console.log('Live photo uploaded - verification started');
+
+    // Poll status or wait for webhook
+    let status;
+    do {
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      status = await getDigiLockerStatus(sessionId);
+      console.log(`Status: ${status.submission.status} (${status.submission.progress}%)`);
+    } while (!['FACE_VERIFIED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED'].includes(status.submission.status));
+
+    console.log('Final status:', status);
+    return status;
+  } catch (error) {
+    console.error('DigiLocker KYC failed:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Usage
+performKycWithDigiLocker('customer-12345', './live-photo.jpg');
+```
+
+#### Python Example
+
+```python
+import requests
+import time
+
+API_BASE_URL = 'https://api.enxtai.com/api'
+API_KEY = 'your-api-key-here'
+
+headers = {'X-API-Key': API_KEY}
+
+# Step 1: Initiate KYC
+def initiate_kyc(external_user_id):
+    response = requests.post(
+        f'{API_BASE_URL}/v1/kyc/initiate',
+        headers=headers,
+        json={
+            'externalUserId': external_user_id,
+            'email': f'{external_user_id}@example.com',
+            'phone': '+919876543210',
+        }
+    )
+    response.raise_for_status()
+    return response.json()['kycSessionId']
+
+# Step 2: Initiate DigiLocker Authorization
+def initiate_digilocker_auth(kyc_session_id):
+    response = requests.post(
+        f'{API_BASE_URL}/v1/kyc/{kyc_session_id}/digilocker/initiate',
+        headers=headers
+    )
+    response.raise_for_status()
+    return response.json()['authorizationUrl']
+
+# Step 3: Fetch Documents from DigiLocker
+def fetch_digilocker_documents(kyc_session_id, document_types):
+    response = requests.post(
+        f'{API_BASE_URL}/v1/kyc/{kyc_session_id}/digilocker/fetch',
+        headers=headers,
+        json={'documentTypes': document_types}
+    )
+    response.raise_for_status()
+    return response.json()
+
+# Step 4: Get DigiLocker Status
+def get_digilocker_status(kyc_session_id):
+    response = requests.get(
+        f'{API_BASE_URL}/v1/kyc/{kyc_session_id}/digilocker/status',
+        headers=headers
+    )
+    response.raise_for_status()
+    return response.json()
+
+# Step 5: Upload Live Photo
+def upload_live_photo(external_user_id, file_path):
+    with open(file_path, 'rb') as f:
+        files = {'file': f}
+        data = {'externalUserId': external_user_id}
+        response = requests.post(
+            f'{API_BASE_URL}/v1/kyc/upload/live-photo',
+            headers=headers,
+            data=data,
+            files=files
+        )
+        response.raise_for_status()
+        return response.json()
+
+# Complete DigiLocker workflow
+def perform_kyc_with_digilocker(user_id, live_photo_path):
+    try:
+        # Initiate KYC
+        session_id = initiate_kyc(user_id)
+        print(f'KYC session created: {session_id}')
+
+        # Get DigiLocker authorization URL
+        auth_url = initiate_digilocker_auth(session_id)
+        print(f'DigiLocker auth URL: {auth_url}')
+
+        # In a real app, redirect user to auth_url here
+        # User completes OAuth flow in DigiLocker
+        print('Waiting for user to authorize DigiLocker...')
+
+        # Fetch documents
+        fetch_result = fetch_digilocker_documents(session_id, ['PAN', 'AADHAAR'])
+        print('Documents fetched:', fetch_result['documentsFetched'])
+
+        # Upload live photo to complete verification
+        upload_live_photo(user_id, live_photo_path)
+        print('Live photo uploaded - verification started')
+
+        # Poll status
+        final_statuses = ['FACE_VERIFIED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED']
+        while True:
+            time.sleep(5)
+            status = get_digilocker_status(session_id)
+            print(f"Status: {status['submission']['status']} ({status['submission']['progress']}%)")
+
+            if status['submission']['status'] in final_statuses:
+                break
+
+        print('Final status:', status)
+        return status
+    except requests.exceptions.HTTPError as e:
+        print(f'DigiLocker KYC failed: {e.response.json()}')
+        raise
+
+# Usage
+perform_kyc_with_digilocker('customer-12345', './live-photo.jpg')
+```
+
+### Error Handling
+
+DigiLocker-specific errors:
+
+| Error | HTTP Code | Description | Action |
+|-------|-----------|-------------|--------|
+| `USER_NOT_AUTHORIZED` | 400 | User hasn't completed OAuth flow | Redirect to authorization URL |
+| `DOCUMENTS_NOT_FOUND` | 404 | Requested documents not in DigiLocker | Ask user to upload manually |
+| `TOKEN_EXPIRED` | 401 | OAuth token expired | Re-authorization needed |
+| `RATE_LIMIT_EXCEEDED` | 429 | DigiLocker API rate limit hit | Retry with backoff |
+| `INVALID_DOCUMENT_TYPE` | 400 | Unsupported document type requested | Check supported types |
+
+### Best Practices
+
+1. **Always check DigiLocker status** before fetching documents
+2. **Handle OAuth callback securely** - validate state parameter
+3. **Implement webhook handlers** for real-time updates
+4. **Provide fallback to manual upload** if DigiLocker fails
+5. **Cache authorization status** to avoid repeated checks
+6. **Display clear instructions** to users during OAuth flow
+7. **Handle rate limits** with exponential backoff
+
+### Testing
+
+**Sandbox Environment:**
+- Use DigiLocker sandbox for development
+- Test OAuth flow with test accounts
+- Verify webhook signature validation
+
+**Test Checklist:**
+1. Generate authorization URL via API
+2. Complete OAuth flow in DigiLocker sandbox
+3. Fetch documents via API
+4. Verify documents stored in MinIO
+5. Verify OCR extraction triggered
+6. Verify webhooks delivered with correct payloads
+7. Test error scenarios (missing documents, expired tokens)
+8. Verify tenant isolation (different clients can't access each other's data)
 
 ---
 

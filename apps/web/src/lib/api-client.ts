@@ -472,6 +472,98 @@ export function clearKycApiKey(): void {
   }
 
 /**
+ * Initiate DigiLocker Authorization
+ *
+ * Generates DigiLocker OAuth authorization URL for user to authorize access.
+ *
+ * @param userId - User UUID
+ * @param state - Optional state parameter for CSRF protection
+ * @returns Authorization URL and metadata
+ */
+export async function initiateDigiLockerAuth(userId: string, state?: string) {
+  const params = new URLSearchParams({ userId });
+  if (state) params.append('state', state);
+
+  const res = await api.get(`/api/digilocker/auth/initiate?${params.toString()}`);
+  return res.data as {
+    authorizationUrl: string;
+    userId: string;
+    message: string;
+  };
+}
+
+/**
+ * Fetch Documents from DigiLocker
+ *
+ * Fetches specified documents from DigiLocker and stores in MinIO.
+ *
+ * @param userId - User UUID
+ * @param documentTypes - Array of document types to fetch (e.g., ['PAN', 'AADHAAR'])
+ * @returns Submission details and fetched document URLs
+ */
+export async function fetchDigiLockerDocuments(userId: string, documentTypes: string[]) {
+  const res = await api.post('/api/kyc/digilocker/fetch', {
+    userId,
+    documentTypes,
+  });
+  return res.data as {
+    success: boolean;
+    submissionId: string;
+    documentsFetched: string[];
+    documentUrls: {
+      panDocumentUrl?: string;
+      aadhaarFrontUrl?: string;
+    };
+  };
+}
+
+/**
+ * Check DigiLocker Status
+ *
+ * Checks DigiLocker authorization status and available documents for user.
+ *
+ * @param userId - User UUID
+ * @returns DigiLocker status and document availability
+ */
+export async function checkDigiLockerStatus(userId: string) {
+  const res = await api.get(`/api/kyc/digilocker/status/${userId}`);
+  return res.data as {
+    authorized: boolean;
+    documentsFetched: boolean;
+    documentSource: 'MANUAL_UPLOAD' | 'DIGILOCKER';
+    availableDocuments: string[];
+    submission: any;
+  };
+}
+
+/**
+ * Process DigiLocker Documents
+ *
+ * Triggers OCR extraction and face verification for DigiLocker-fetched documents.
+ *
+ * @param submissionId - Submission UUID
+ * @returns Processing results with extracted data and verification scores
+ */
+export async function processDigiLockerDocuments(submissionId: string) {
+  const res = await api.post('/api/kyc/digilocker/process', { submissionId });
+  return res.data as {
+    success: boolean;
+    submissionId: string;
+    ocrCompleted: boolean;
+    faceVerified: boolean;
+    extractedData: {
+      panNumber?: string;
+      aadhaarNumber?: string;
+      fullName?: string;
+    };
+    verificationScores: {
+      faceMatchScore?: number;
+      livenessScore?: number;
+    };
+  };
+}
+
+/**
  * Client Portal API Functions
  *
  * Functions for client portal endpoints (/api/v1/client/*).

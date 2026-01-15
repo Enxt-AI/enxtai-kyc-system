@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getKycStatus } from '@/lib/api-client';
+import { getKycStatus, checkDigiLockerStatus } from '@/lib/api-client';
 import KycStatusIndicator from '@/components/KycStatusIndicator';
 
 function StatusPageContent() {
@@ -13,6 +13,7 @@ function StatusPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
+  const [documentSource, setDocumentSource] = useState<'MANUAL_UPLOAD' | 'DIGILOCKER' | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -20,8 +21,14 @@ function StatusPageContent() {
       setLoading(true);
       setError(null);
       try {
-        const res = await getKycStatus(userId);
-        setData(res);
+        const [statusRes, digiLockerStatus] = await Promise.all([
+          getKycStatus(userId),
+          checkDigiLockerStatus(userId).catch(() => null),
+        ]);
+        setData(statusRes);
+        if (digiLockerStatus) {
+          setDocumentSource(digiLockerStatus.documentSource);
+        }
       } catch (err: any) {
         setError(err?.response?.data?.message || err?.message || 'Failed to load status');
       } finally {
@@ -76,6 +83,28 @@ function StatusPageContent() {
           livenessScore={data.submission.livenessScore}
           rejectionReason={data.submission.rejectionReason}
         />
+      )}
+
+      {data && documentSource && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-600">Document Source</p>
+          <div className="mt-2 flex items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                documentSource === 'DIGILOCKER'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {documentSource === 'DIGILOCKER' ? '📱 DigiLocker' : '📤 Manual Upload'}
+            </span>
+            {documentSource === 'DIGILOCKER' && (
+              <p className="text-xs text-slate-500">
+                Documents fetched automatically from DigiLocker
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

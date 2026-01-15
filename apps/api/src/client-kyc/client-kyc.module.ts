@@ -4,6 +4,7 @@ import { ClientKycService } from './client-kyc.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { KycModule } from '../kyc/kyc.module';
 import { ClientModule } from '../client/client.module';
+import { DigiLockerModule } from '../digilocker/digilocker.module';
 
 /**
  * Client KYC Module
@@ -40,6 +41,7 @@ import { ClientModule } from '../client/client.module';
     PrismaModule,
     KycModule,
     ClientModule,
+    DigiLockerModule,
   ],
   controllers: [ClientKycController],
   providers: [ClientKycService],
