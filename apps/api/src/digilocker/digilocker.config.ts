@@ -10,7 +10,9 @@ export interface DigiLockerConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  apiBaseUrl: string;
+  authorizeUrl: string;
+  tokenUrl: string;
+  documentsUrl: string;
   scope: string;
 }
 
@@ -25,8 +27,10 @@ export interface DigiLockerConfig {
  * - DIGILOCKER_CLIENT_ID: OAuth client ID from API Setu
  * - DIGILOCKER_CLIENT_SECRET: OAuth client secret
  * - DIGILOCKER_REDIRECT_URI: OAuth callback URL
- * - DIGILOCKER_API_BASE_URL: DigiLocker API base URL
- * - DIGILOCKER_SCOPE: OAuth scopes (space-separated)
+ * - DIGILOCKER_AUTHORIZE_URL: DigiLocker authorization endpoint URL
+ * - DIGILOCKER_TOKEN_URL: DigiLocker token exchange endpoint URL
+ * - DIGILOCKER_DOCUMENTS_URL: DigiLocker documents API endpoint URL
+ * - DIGILOCKER_SCOPE: OAuth scopes (space-separated, must include 'openid')
  *
  * **Validation**:
  * - Throws error if required variables are missing
@@ -42,13 +46,21 @@ export class DigiLockerConfigService {
       clientId: this.configService.get<string>('DIGILOCKER_CLIENT_ID', ''),
       clientSecret: this.configService.get<string>('DIGILOCKER_CLIENT_SECRET', ''),
       redirectUri: this.configService.get<string>('DIGILOCKER_REDIRECT_URI', ''),
-      apiBaseUrl: this.configService.get<string>(
-        'DIGILOCKER_API_BASE_URL',
-        'https://api.digitallocker.gov.in/public/oauth2/1'
+      authorizeUrl: this.configService.get<string>(
+        'DIGILOCKER_AUTHORIZE_URL',
+        'https://digilocker.meripehchaan.gov.in/public/oauth2/1/authorize'
+      ),
+      tokenUrl: this.configService.get<string>(
+        'DIGILOCKER_TOKEN_URL',
+        'https://api.digitallocker.gov.in/public/oauth2/1/token'
+      ),
+      documentsUrl: this.configService.get<string>(
+        'DIGILOCKER_DOCUMENTS_URL',
+        'https://digilocker.meripehchaan.gov.in/public/oauth2/1'
       ),
       scope: this.configService.get<string>(
         'DIGILOCKER_SCOPE',
-        'openid profile aadhaar pan'
+        'openid'
       ),
     };
 
@@ -86,12 +98,10 @@ export class DigiLockerConfigService {
     if (!this.config.scope) {
       throw new Error('DIGILOCKER_SCOPE is required');
     }
-    // Ensure scope contains required permissions for DigiLocker integration
-    const requiredScopes = ['openid', 'profile', 'aadhaar', 'pan'];
+    // Ensure scope contains required 'openid' permission for OAuth 2.0 compliance
     const scopeArray = this.config.scope.split(' ');
-    const missingScopes = requiredScopes.filter(scope => !scopeArray.includes(scope));
-    if (missingScopes.length > 0) {
-      throw new Error(`DIGILOCKER_SCOPE must include required permissions: ${missingScopes.join(', ')}`);
+    if (!scopeArray.includes('openid')) {
+      throw new Error('DIGILOCKER_SCOPE must include required permission: openid');
     }
   }
 }

@@ -86,7 +86,7 @@ export class DigiLockerAuthService {
         code_challenge_method: 'S256',
       });
 
-      const authorizationUrl = `${config.apiBaseUrl}/authorize?${params.toString()}`;
+      const authorizationUrl = `${config.authorizeUrl}?${params.toString()}`;
 
       this.logger.log(`Generated authorization URL for user ${userId}`);
       return authorizationUrl;
@@ -137,9 +137,8 @@ export class DigiLockerAuthService {
       });
 
       // Exchange code for tokens
-      const tokenUrl = `${config.apiBaseUrl}/token`;
       const response = await firstValueFrom(
-        this.httpService.post(tokenUrl, tokenRequestBody.toString(), {
+        this.httpService.post(config.tokenUrl, tokenRequestBody.toString(), {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
@@ -227,9 +226,8 @@ export class DigiLockerAuthService {
       });
 
       // Refresh tokens
-      const tokenUrl = `${config.apiBaseUrl}/token`;
       const response = await firstValueFrom(
-        this.httpService.post(tokenUrl, refreshRequestBody.toString(), {
+        this.httpService.post(config.tokenUrl, refreshRequestBody.toString(), {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },

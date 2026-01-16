@@ -70,7 +70,7 @@ export class DigiLockerDocumentService {
       const accessToken = await this.digiLockerAuthService.getValidToken(userId);
 
       const response = await firstValueFrom(
-        this.httpService.get(`${config.apiBaseUrl}/files/issued`, {
+        this.httpService.get(`${config.documentsUrl}/files/issued`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
@@ -134,7 +134,7 @@ export class DigiLockerDocumentService {
 
       // Download document from DigiLocker
       const response = await firstValueFrom(
-        this.httpService.get(`${config.apiBaseUrl}/file`, {
+        this.httpService.get(`${config.documentsUrl}/file`, {
           params: { uri: documentUri },
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -244,7 +244,7 @@ export class DigiLockerDocumentService {
       const accessToken = await this.digiLockerAuthService.getValidToken(userId);
 
       const response = await firstValueFrom(
-        this.httpService.get(`${config.apiBaseUrl}/aadhaar`, {
+        this.httpService.get(`${config.documentsUrl}/aadhaar`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
