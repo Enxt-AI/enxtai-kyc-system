@@ -322,7 +322,22 @@ export class DigiLockerAuthService {
       this.logger.log(`Successfully refreshed access token for user ${userId}`);
       return tokenData;
     } catch (error) {
-      this.logger.error(`Failed to refresh access token for user ${userId}`, error);
+      const status = (error as any)?.response?.status;
+      const data = (error as any)?.response?.data;
+      const axiosCode = (error as any)?.code;
+      const axiosMessage = (error as any)?.message;
+      const requestUrl = (error as any)?.config?.url;
+
+      this.logger.error(
+        `Failed to refresh access token for user ${userId}`,
+        {
+          status,
+          data,
+          axiosCode,
+          axiosMessage,
+          requestUrl,
+        }
+      );
 
       // If refresh fails, delete the token (user needs to re-authorize)
       if ((error as any).response?.data?.error === 'invalid_grant') {
@@ -372,6 +387,25 @@ export class DigiLockerAuthService {
     const expiryBuffer = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes buffer
 
     if (token.expiresAt <= expiryBuffer) {
+      if (!token.refreshToken) {
+        // If there is no refresh token, we can keep using the current access token until it truly expires.
+        // Once expired, force re-authorization and clear the stored token to avoid loops.
+        if (token.expiresAt <= now) {
+          await this.prisma.digiLockerToken.deleteMany({ where: { userId } });
+          throw new DigiLockerException(
+            'DigiLocker token has expired and no refresh token is available. Please re-authorize DigiLocker.',
+            401,
+            { userId }
+          );
+        }
+
+        this.logger.warn(`DigiLocker token is nearing expiry but no refresh token is available; using access token as-is`, {
+          userId,
+          expiresAt: token.expiresAt,
+        });
+        return token.accessToken;
+      }
+
       // Token is expired or will expire soon, refresh it
       await this.refreshAccessToken(userId);
 

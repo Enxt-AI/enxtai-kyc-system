@@ -1063,25 +1063,45 @@ export class KycService {
       const availableDocuments = await this.digiLockerDocumentService.listAvailableDocuments(userId);
 
       // Filter and map document types
-      const documentsToFetch: { type: string; digiLockerType: string; documentType: DocumentType }[] = [];
+      const documentsToFetch: { type: string; uri: string; documentType: DocumentType }[] = [];
+
+      const extractType = (doc: any) => {
+        const raw = doc?.doctype ?? doc?.docType ?? doc?.doc_type ?? doc?.documentType ?? doc?.document_type ?? doc?.type ?? '';
+        return String(raw).toUpperCase();
+      };
+      const extractUri = (doc: any) => String(doc?.uri ?? doc?.URI ?? doc?.docUri ?? doc?.documentUri ?? doc?.document_uri ?? '').trim();
 
       if (documentTypes.includes('PAN')) {
-        const panDoc = availableDocuments.find(doc => doc.type === 'PANCR');
+        const panDoc = availableDocuments.find((doc: any) => {
+          const t = extractType(doc);
+          return t === 'PANCR' || t === 'PAN';
+        });
         if (panDoc) {
+          const uri = extractUri(panDoc);
+          if (!uri) {
+            throw new BadRequestException('PAN document found in DigiLocker but missing URI');
+          }
           documentsToFetch.push({
             type: 'PAN',
-            digiLockerType: panDoc.type,
+            uri,
             documentType: DocumentType.PAN_CARD,
           });
         }
       }
 
       if (documentTypes.includes('AADHAAR')) {
-        const aadhaarDoc = availableDocuments.find(doc => doc.type === 'ADHAR');
+        const aadhaarDoc = availableDocuments.find((doc: any) => {
+          const t = extractType(doc);
+          return t === 'ADHAR' || t === 'AADHAAR' || t === 'ADHAAR';
+        });
         if (aadhaarDoc) {
+          const uri = extractUri(aadhaarDoc);
+          if (!uri) {
+            throw new BadRequestException('Aadhaar document found in DigiLocker but missing URI');
+          }
           documentsToFetch.push({
             type: 'AADHAAR',
-            digiLockerType: aadhaarDoc.type,
+            uri,
             documentType: DocumentType.AADHAAR_CARD,
           });
         }
@@ -1097,8 +1117,7 @@ export class KycService {
         try {
           const objectPath = await this.digiLockerDocumentService.fetchDocument(
             userId,
-            doc.digiLockerType === 'PANCR' ? availableDocuments.find(d => d.type === 'PANCR')!.uri :
-            availableDocuments.find(d => d.type === 'ADHAR')!.uri,
+            doc.uri,
             doc.documentType
           );
 
@@ -1272,7 +1291,15 @@ export class KycService {
         where: { userId },
       });
 
-      const authorized = Boolean(digiLockerToken);
+      let authorized = Boolean(digiLockerToken);
+      if (digiLockerToken) {
+        const now = new Date();
+        if (!digiLockerToken.refreshToken && digiLockerToken.expiresAt <= now) {
+          // Token is no longer usable; clear it so the UI can prompt re-authorization.
+          await this.prisma.digiLockerToken.deleteMany({ where: { userId } });
+          authorized = false;
+        }
+      }
 
       // Get latest submission
       const submission = await this.prisma.kYCSubmission.findFirst({

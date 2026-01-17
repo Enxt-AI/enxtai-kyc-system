@@ -15,10 +15,15 @@ import {
 import { OcrErrorCode, OcrException } from './exceptions/ocr.exception';
 import { AadhaarOcrResult, PanOcrResult } from './interfaces/ocr-result.interface';
 
+// Helper to dynamically import ESM modules from CommonJS
+// Uses Function constructor to prevent TypeScript from transpiling to require()
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private readonly minConfidence: number;
+  private mupdfModule: any = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -28,6 +33,83 @@ export class OcrService {
     this.minConfidence = Number(
       this.configService.get<string>('OCR_MIN_CONFIDENCE', String(MIN_CONFIDENCE_DEFAULT)),
     );
+  }
+
+  /**
+   * Lazily loads the mupdf module (ESM) using dynamic import.
+   */
+  private async getMupdf(): Promise<any> {
+    if (!this.mupdfModule) {
+      this.mupdfModule = await dynamicImport('mupdf');
+    }
+    return this.mupdfModule;
+  }
+
+  /**
+   * Checks if a buffer contains PDF data by examining magic bytes.
+   * @param buffer Buffer to check.
+   * @returns True if buffer starts with PDF magic bytes (%PDF-).
+   */
+  private isPdf(buffer: Buffer): boolean {
+    // PDF files start with "%PDF-"
+    return buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+  }
+
+  /**
+   * Converts a PDF buffer to a PNG image buffer by rendering the first page.
+   * Uses mupdf which has native Node.js bindings (no browser dependencies).
+   * @param pdfBuffer PDF file buffer.
+   * @returns PNG image buffer of the first page.
+   */
+  async convertPdfToImage(pdfBuffer: Buffer): Promise<Buffer> {
+    try {
+      const mupdf = await this.getMupdf();
+
+      // Open PDF document with mupdf
+      const doc = mupdf.Document.openDocument(pdfBuffer, 'application/pdf');
+
+      // Get first page
+      const page = doc.loadPage(0);
+
+      // Get page bounds and calculate scale for good OCR quality (target ~2000px width)
+      const bounds = page.getBounds();
+      const pageWidth = bounds[2] - bounds[0];
+      const pageHeight = bounds[3] - bounds[1];
+      const scale = Math.min(2000 / pageWidth, 2000 / pageHeight, 3.0); // Max 3x scale
+
+      // Create transformation matrix for scaling
+      const matrix = mupdf.Matrix.scale(scale, scale);
+
+      // Render page to pixmap (RGBA)
+      const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
+
+      // Get PNG buffer
+      const pngBuffer = pixmap.asPNG();
+
+      this.logger.debug(`Converted PDF to image: ${Math.round(pageWidth * scale)}x${Math.round(pageHeight * scale)}px`);
+
+      return Buffer.from(pngBuffer);
+    } catch (error: any) {
+      this.logger.error(`PDF to image conversion failed: ${error?.message}`);
+      throw new OcrException(
+        'Failed to convert PDF document to image for OCR processing',
+        OcrErrorCode.VALIDATION_FAILED,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+  }
+
+  /**
+   * Prepares a document buffer for OCR, converting PDF to image if necessary.
+   * @param buffer Raw document buffer (image or PDF).
+   * @returns Image buffer ready for preprocessing.
+   */
+  async prepareDocumentForOcr(buffer: Buffer): Promise<Buffer> {
+    if (this.isPdf(buffer)) {
+      this.logger.debug('Detected PDF document, converting to image for OCR');
+      return await this.convertPdfToImage(buffer);
+    }
+    return buffer;
   }
 
   /**
@@ -57,6 +139,27 @@ export class OcrService {
   }
 
   /**
+   * Extracts PAN number from DigiLocker document URI.
+   * DigiLocker URIs often contain the PAN: in.gov.pan-PANCR-ASZPT9709Q
+   * @param objectName Storage object name/path
+   * @returns PAN number if found in path, null otherwise
+   */
+  private extractPanFromDocumentPath(objectName: string): string | null {
+    // DigiLocker URIs contain PAN in format: in.gov.pan-PANCR-{PAN_NUMBER}
+    // The objectName may contain this URI pattern
+    const uriMatch = objectName.match(/PANCR[_-]([A-Z]{5}[0-9]{4}[A-Z])/i);
+    if (uriMatch) {
+      return uriMatch[1].toUpperCase();
+    }
+    // Also try direct PAN pattern in filename
+    const directMatch = objectName.match(/([A-Z]{5}[0-9]{4}[A-Z])/);
+    if (directMatch) {
+      return directMatch[1].toUpperCase();
+    }
+    return null;
+  }
+
+  /**
    * Extracts PAN data from a submission's uploaded document and returns structured OCR output.
    * @param submissionId Unique submission identifier.
    * @returns PAN OCR result including number, optional name, date of birth, raw text, and confidence.
@@ -73,10 +176,14 @@ export class OcrService {
     }
 
     const { bucket, objectName } = this.parseObjectPath(submission.panDocumentUrl);
-    this.ensureNotPdf(objectName, 'PAN');
     const { stream } = await this.storageService.downloadDocument(bucket, objectName);
-    const buffer = await this.streamToBuffer(stream as unknown as NodeJS.ReadableStream);
-    const processed = await this.preprocessImage(buffer);
+    const rawBuffer = await this.streamToBuffer(stream as unknown as NodeJS.ReadableStream);
+
+    // Convert PDF to image if necessary (DigiLocker often returns PDFs)
+    const imageBuffer = await this.prepareDocumentForOcr(rawBuffer);
+    const processed = await this.preprocessImage(imageBuffer);
+
+    this.logger.debug(`PAN OCR: image prepared, size=${processed.length} bytes`);
 
     let ocrText = '';
     let confidence = 0;
@@ -84,6 +191,7 @@ export class OcrService {
       const result = await Tesseract.recognize(processed, TESSERACT_CONFIG.lang);
       ocrText = result?.data?.text ?? '';
       confidence = result?.data?.confidence ?? 0;
+      this.logger.debug(`PAN OCR: recognized text length=${ocrText.length} confidence=${confidence}`);
     } catch (err: any) {
       this.logger.error(`PAN OCR failed for submission ${submissionId}: ${err?.message}`);
       throw new OcrException('OCR processing failed', OcrErrorCode.OCR_FAILED, HttpStatus.BAD_GATEWAY);
@@ -91,8 +199,23 @@ export class OcrService {
 
     this.ensureConfidence(confidence, submissionId, 'PAN');
     const lines = this.normalizeLines(ocrText);
-    const panNumber = this.findFirstMatch(lines, PAN_REGEX);
+    this.logger.debug(`PAN OCR: extracted ${lines.length} lines`);
+
+    // Try to find PAN number from OCR text first
+    let panNumber: string | undefined = this.findFirstMatch(lines, PAN_REGEX);
+
+    // DigiLocker "PAN Verification Record" documents don't show the PAN number,
+    // but the PAN is embedded in the document URI/filename
     if (!panNumber) {
+      this.logger.debug('PAN OCR: PAN not found in text, checking document path/URI');
+      panNumber = this.extractPanFromDocumentPath(objectName) ?? undefined;
+      if (panNumber) {
+        this.logger.debug(`PAN OCR: Extracted PAN from document path: ${panNumber}`);
+      }
+    }
+
+    if (!panNumber) {
+      this.logger.warn(`PAN OCR: PAN number not found in text or path. First 500 chars: ${ocrText.slice(0, 500)}`);
       throw new OcrException('PAN number not detected', OcrErrorCode.DATA_EXTRACTION_FAILED);
     }
     const fullName = this.deriveNameFromLines(lines);
@@ -137,10 +260,12 @@ export class OcrService {
     submissionId: string,
   ): Promise<AadhaarOcrResult> {
     const { bucket, objectName } = this.parseObjectPath(documentUrl);
-    this.ensureNotPdf(objectName, 'AADHAAR');
     const { stream } = await this.storageService.downloadDocument(bucket, objectName);
-    const buffer = await this.streamToBuffer(stream as unknown as NodeJS.ReadableStream);
-    const processed = await this.preprocessImage(buffer);
+    const rawBuffer = await this.streamToBuffer(stream as unknown as NodeJS.ReadableStream);
+
+    // Convert PDF to image if necessary (DigiLocker often returns PDFs)
+    const imageBuffer = await this.prepareDocumentForOcr(rawBuffer);
+    const processed = await this.preprocessImage(imageBuffer);
 
     let ocrText = '';
     let confidence = 0;
@@ -202,22 +327,22 @@ export class OcrService {
 
   /**
    * Parse MinIO Object Path for OCR Document Access
-   * 
+   *
    * Extracts bucket and object name from stored document URLs for OCR processing.
    * Similar to KycService.parseObjectPath but throws OCR-specific exceptions.
-   * 
+   *
    * **Error Handling**:
    * - Validates path format before attempting MinIO operations
    * - Throws OcrException instead of generic BadRequestException
    * - Provides context for OCR-specific error handling flow
-   * 
+   *
    * @param path - Document URL from database (panDocumentUrl, aadhaarDocumentUrl)
    * @returns Object with bucket and objectName for storage operations
-   * 
+   *
    * @throws {OcrException} When path format is invalid or missing components
-   * 
+   *
    * @private Helper for OCR document access
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -291,28 +416,28 @@ export class OcrService {
 
   /**
    * Validate Document Format Against PDF Restriction
-   * 
+   *
    * Prevents PDF document processing which is not supported by current OCR pipeline.
    * PDFs require different processing libraries and add complexity to text extraction.
-   * 
+   *
    * **Rationale for PDF Restriction**:
    * - Tesseract.js optimized for image processing (JPEG, PNG)
    * - PDFs may contain multiple pages, text layers, or complex layouts
    * - Image-only requirement ensures consistent OCR processing
    * - Simpler error handling and validation flow
-   * 
+   *
    * **User Experience**:
    * - Clear error message guides users to provide image format
    * - HTTP 415 Unsupported Media Type indicates format issue
    * - Prevents wasted processing time on unsupported formats
-   * 
+   *
    * @param objectName - MinIO object name with file extension
    * @param docType - Document type for error context ('PAN', 'AADHAAR')
-   * 
+   *
    * @throws {OcrException} When document is PDF format (HTTP 415)
-   * 
+   *
    * @private Validation helper for document format
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -334,35 +459,35 @@ export class OcrService {
 
   /**
    * Validate OCR Confidence Against Minimum Threshold
-   * 
+   *
    * Ensures OCR results meet minimum quality standards before accepting extracted data.
    * Low confidence scores indicate poor image quality or problematic text recognition.
-   * 
+   *
    * **Confidence Scoring**:
    * - Tesseract.js confidence: 0-100 (higher is better)
    * - Default threshold: 60% (configurable via MIN_CONFIDENCE_DEFAULT)
    * - Below threshold: Reject extraction and request better image
-   * 
+   *
    * **Quality Factors Affecting Confidence**:
    * - Image resolution and sharpness
    * - Lighting conditions and contrast
    * - Document orientation and perspective
    * - Text clarity and font readability
    * - Image compression artifacts
-   * 
+   *
    * **Error Handling Strategy**:
    * - HTTP 422 Unprocessable Entity for quality issues
    * - Detailed logging with confidence scores for debugging
    * - User-friendly message requesting better image quality
-   * 
+   *
    * @param confidence - OCR confidence score from Tesseract.js (0-100)
    * @param submissionId - Submission ID for error context and logging
    * @param docType - Document type for error context ('PAN', 'AADHAAR')
-   * 
+   *
    * @throws {OcrException} When confidence is below minimum threshold (HTTP 422)
-   * 
+   *
    * @private Quality validation for OCR results
-   * 
+   *
    * @example
    * ```typescript
    * try {

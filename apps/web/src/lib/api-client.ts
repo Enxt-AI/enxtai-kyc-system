@@ -131,10 +131,21 @@ api.interceptors.response.use(
     // Handle KYC API key authentication errors
     if (error.config?.url?.includes('/api/v1/kyc/')) {
       if (error.response?.status === 401) {
-        // Invalid or inactive API key
-        clearKycApiKey();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/?error=invalid_key';
+        const data: any = error.response?.data;
+        const message = (data?.message as string | undefined) || '';
+
+        // Do NOT clear the tenant API key for DigiLocker OAuth-related 401s.
+        // Those should be handled in-page (e.g., prompt re-authorization).
+        const isDigiLockerAuthError =
+          typeof message === 'string' &&
+          (message.startsWith('DigiLocker Error:') || message.includes('re-authorize DigiLocker'));
+
+        if (!isDigiLockerAuthError) {
+          // Invalid or inactive API key
+          clearKycApiKey();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?error=invalid_key';
+          }
         }
       } else if (error.response?.status === 403) {
         // Domain not whitelisted

@@ -211,10 +211,25 @@ export default function KycUploadPage() {
         setAadhaarBackUploaded(true);
       }
 
+      // Show success feedback
+      if (result.documentsFetched.length > 0) {
+        setDigiLockerError(null);
+        // Use a brief success message (will clear error state)
+        alert(`Successfully fetched: ${result.documentsFetched.join(', ')} from DigiLocker!`);
+      } else {
+        setDigiLockerError('No documents were fetched. Please check if documents are available in your DigiLocker account.');
+      }
+
       setError(null);
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Failed to fetch documents from DigiLocker';
+      const status = err?.response?.status;
       setDigiLockerError(message);
+
+      // If DigiLocker auth is no longer valid, force the UI back to re-authorize.
+      if (status === 401 && typeof message === 'string' && message.includes('re-authorize DigiLocker')) {
+        setDigiLockerAuthorized(false);
+      }
     } finally {
       setFetchingFromDigiLocker(false);
     }
