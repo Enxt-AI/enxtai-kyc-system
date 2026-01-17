@@ -6,6 +6,7 @@ import { DigiLockerException } from './exceptions/digilocker.exception';
 import { DigiLockerTokenResponse } from '@enxtai/shared-types';
 import { firstValueFrom } from 'rxjs';
 import { createHash, randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 /**
  * DigiLocker Authentication Service
@@ -63,15 +64,25 @@ export class DigiLockerAuthService {
     try {
       const config = this.configService.getConfig();
 
-      // Generate PKCE code verifier (43-128 characters, URL-safe)
-      const codeVerifier = this.generateCodeVerifier();
-      const codeChallenge = this.generateCodeChallenge(codeVerifier);
+      // DEBUG: Toggle PKCE for testing
+      const ENABLE_PKCE = config.enablePkce;
+
+      let codeChallenge = '';
+      let codeVerifier = '';
+
+      if (ENABLE_PKCE) {
+        // Generate PKCE code verifier (43-128 characters, URL-safe)
+        codeVerifier = this.generateCodeVerifier();
+        codeChallenge = this.generateCodeChallenge(codeVerifier);
+      }
 
       // Use provided state or default to userId
       const actualState = state || userId;
 
-      // Store code verifier with state as key
-      this.codeVerifiers.set(actualState, codeVerifier);
+      if (ENABLE_PKCE) {
+        // Store code verifier with state as key
+        this.codeVerifiers.set(actualState, codeVerifier);
+      }
       // Store state -> userId mapping for custom states
       this.stateToUserId.set(actualState, userId);
 
@@ -81,12 +92,27 @@ export class DigiLockerAuthService {
         client_id: config.clientId,
         redirect_uri: config.redirectUri,
         state: actualState,
-        scope: config.scope,
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256',
       });
 
+      // Add scope parameter only if configured scope is not empty
+      if (config.scope && config.scope.trim() !== '') {
+        params.append('scope', config.scope);
+      }
+
+      // Add PKCE parameters only if enabled
+      if (ENABLE_PKCE) {
+        params.append('code_challenge', codeChallenge);
+        params.append('code_challenge_method', 'S256');
+      }
+
       const authorizationUrl = `${config.authorizeUrl}?${params.toString()}`;
+
+      // DEBUG: Log full authorization details
+      this.logger.log(`=== DigiLocker Authorization Debug ===`);
+      this.logger.log(`PKCE Enabled: ${ENABLE_PKCE}`);
+      this.logger.log(`Full Authorization URL: ${authorizationUrl}`);
+      this.logger.log(`Scope parameter: "${config.scope}"`);
+      this.logger.log(`=====================================`);
 
       this.logger.log(`Generated authorization URL for user ${userId}`);
       return authorizationUrl;
@@ -113,18 +139,43 @@ export class DigiLockerAuthService {
     try {
       const config = this.configService.getConfig();
 
-      // Retrieve code verifier from memory using state as key
-      const codeVerifier = this.codeVerifiers.get(state);
-      if (!codeVerifier) {
-        throw new DigiLockerException('Invalid state: code verifier not found', undefined, { state });
+      // DEBUG: Match PKCE setting from generateAuthorizationUrl
+      const ENABLE_PKCE = config.enablePkce;
+
+      let codeVerifier = '';
+      if (ENABLE_PKCE) {
+        // Retrieve code verifier from memory using state as key
+        const retrievedCodeVerifier = this.codeVerifiers.get(state);
+        if (!retrievedCodeVerifier) {
+          throw new DigiLockerException('Invalid state: code verifier not found', undefined, { state });
+        }
+        codeVerifier = retrievedCodeVerifier;
       }
 
       // Retrieve userId from state mapping
-      const retrievedUserId = this.stateToUserId.get(state);
-      if (!retrievedUserId) {
-        throw new DigiLockerException('Invalid state: userId mapping not found', undefined, { state });
+      const mappedUserId = this.stateToUserId.get(state);
+      if (mappedUserId) {
+        userId = mappedUserId;
+      } else {
+        // If the server restarted, in-memory state mapping will be lost.
+        // Best-effort recovery:
+        // 1) If state matches an existing submissionId, use that submission's userId.
+        // 2) Otherwise, if state looks like a UUID, assume state == userId (legacy/internal flow).
+        const submission = await this.prisma.kYCSubmission.findUnique({
+          where: { id: state },
+          select: { userId: true },
+        });
+
+        if (submission?.userId) {
+          userId = submission.userId;
+          this.logger.warn(`Recovered DigiLocker userId from submission state`, { state, userId });
+        } else if (this.looksLikeUuid(state)) {
+          userId = state;
+          this.logger.warn(`State mapping missing; falling back to state as userId`, { state, userId });
+        } else {
+          throw new DigiLockerException('Invalid state: userId mapping not found', undefined, { state });
+        }
       }
-      userId = retrievedUserId;
 
       // Build token request body
       const tokenRequestBody = new URLSearchParams({
@@ -133,8 +184,12 @@ export class DigiLockerAuthService {
         redirect_uri: config.redirectUri,
         client_id: config.clientId,
         client_secret: config.clientSecret,
-        code_verifier: codeVerifier,
       });
+
+      // Add code_verifier only if PKCE is enabled
+      if (ENABLE_PKCE && codeVerifier) {
+        tokenRequestBody.append('code_verifier', codeVerifier);
+      }
 
       // Exchange code for tokens
       const response = await firstValueFrom(
@@ -156,16 +211,16 @@ export class DigiLockerAuthService {
         update: {
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
-          tokenType: tokenData.token_type,
-          scope: tokenData.scope,
+          tokenType: tokenData.token_type || 'Bearer',
+          scope: tokenData.scope ?? '',
           expiresAt,
         },
         create: {
           userId,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
-          tokenType: tokenData.token_type,
-          scope: tokenData.scope,
+          tokenType: tokenData.token_type || 'Bearer',
+          scope: tokenData.scope ?? '',
           expiresAt,
         },
       });
@@ -179,6 +234,15 @@ export class DigiLockerAuthService {
     } catch (error) {
       this.logger.error(`Failed to exchange code for token for user ${userId}`, error);
 
+      // Provide a clearer error when persistence fails due to missing user/tenant row.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new DigiLockerException('Failed to store DigiLocker token (missing user record)', undefined, {
+          userId,
+          state,
+          prismaCode: error.code,
+        });
+      }
+
       // Handle specific OAuth errors
       if ((error as any).response?.data?.error) {
         const oauthError = (error as any).response.data;
@@ -191,6 +255,10 @@ export class DigiLockerAuthService {
 
       throw new DigiLockerException('Failed to exchange authorization code for token', undefined, { userId, code, error: (error as Error).message });
     }
+  }
+
+  private looksLikeUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   /**

@@ -480,15 +480,12 @@ export function clearKycApiKey(): void {
  * @param state - Optional state parameter for CSRF protection
  * @returns Authorization URL and metadata
  */
-export async function initiateDigiLockerAuth(userId: string, state?: string) {
-  const params = new URLSearchParams({ userId });
-  if (state) params.append('state', state);
-
-  const res = await api.get(`/api/digilocker/auth/initiate?${params.toString()}`);
+export async function initiateDigiLockerAuth(submissionId: string) {
+  const res = await api.post(`/api/v1/kyc/${submissionId}/digilocker/initiate`);
   return res.data as {
     authorizationUrl: string;
-    userId: string;
-    message: string;
+    instructions: string;
+    expiresIn: number;
   };
 }
 
@@ -501,19 +498,19 @@ export async function initiateDigiLockerAuth(userId: string, state?: string) {
  * @param documentTypes - Array of document types to fetch (e.g., ['PAN', 'AADHAAR'])
  * @returns Submission details and fetched document URLs
  */
-export async function fetchDigiLockerDocuments(userId: string, documentTypes: string[]) {
-  const res = await api.post('/api/kyc/digilocker/fetch', {
-    userId,
+export async function fetchDigiLockerDocuments(submissionId: string, documentTypes: string[]) {
+  const res = await api.post(`/api/v1/kyc/${submissionId}/digilocker/fetch`, {
     documentTypes,
   });
   return res.data as {
     success: boolean;
-    submissionId: string;
+    kycSessionId: string;
     documentsFetched: string[];
     documentUrls: {
       panDocumentUrl?: string;
       aadhaarFrontUrl?: string;
     };
+    processingStatus: string;
   };
 }
 
@@ -525,8 +522,8 @@ export async function fetchDigiLockerDocuments(userId: string, documentTypes: st
  * @param userId - User UUID
  * @returns DigiLocker status and document availability
  */
-export async function checkDigiLockerStatus(userId: string) {
-  const res = await api.get(`/api/kyc/digilocker/status/${userId}`);
+export async function checkDigiLockerStatus(submissionId: string) {
+  const res = await api.get(`/api/v1/kyc/${submissionId}/digilocker/status`);
   return res.data as {
     authorized: boolean;
     documentsFetched: boolean;

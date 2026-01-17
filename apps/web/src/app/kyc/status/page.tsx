@@ -10,6 +10,7 @@ function StatusPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const userId = searchParams.get('userId');
+  const submissionIdParam = searchParams.get('submissionId');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
@@ -21,9 +22,10 @@ function StatusPageContent() {
       setLoading(true);
       setError(null);
       try {
+        const submissionId = submissionIdParam || localStorage.getItem('kyc_submission_id');
         const [statusRes, digiLockerStatus] = await Promise.all([
           getKycStatus(userId),
-          checkDigiLockerStatus(userId).catch(() => null),
+          submissionId ? checkDigiLockerStatus(submissionId).catch(() => null) : Promise.resolve(null),
         ]);
         setData(statusRes);
         if (digiLockerStatus) {
@@ -36,7 +38,7 @@ function StatusPageContent() {
       }
     };
     load();
-  }, [userId]);
+  }, [userId, submissionIdParam]);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-0">

@@ -142,7 +142,12 @@ export default function KycUploadPage() {
   const handleDigiLockerAuth = async () => {
     try {
       setDigiLockerError(null);
-      const { authorizationUrl } = await initiateDigiLockerAuth(userId, userId);
+      if (!submissionId) {
+        setDigiLockerError('KYC session is not ready yet. Please wait a moment and try again.');
+        return;
+      }
+
+      const { authorizationUrl } = await initiateDigiLockerAuth(submissionId);
 
       // Open DigiLocker authorization in popup window
       const popup = window.open(
@@ -154,7 +159,17 @@ export default function KycUploadPage() {
       // Listen for callback completion
       const handleMessage = (event: MessageEvent) => {
         // Validate origin to prevent spoofed messages
-        if (event.origin !== window.location.origin) {
+        const allowedOrigins = new Set<string>([window.location.origin]);
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+          if (apiUrl) {
+            allowedOrigins.add(new URL(apiUrl).origin);
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!allowedOrigins.has(event.origin)) {
           return; // Ignore messages from unauthorized origins
         }
 
@@ -180,10 +195,12 @@ export default function KycUploadPage() {
       setFetchingFromDigiLocker(true);
       setDigiLockerError(null);
 
-      const result = await fetchDigiLockerDocuments(userId, ['PAN', 'AADHAAR']);
+      if (!submissionId) {
+        setDigiLockerError('KYC session is not ready yet. Please wait a moment and try again.');
+        return;
+      }
 
-      setSubmissionId(result.submissionId);
-      localStorage.setItem('kyc_submission_id', result.submissionId);
+      const result = await fetchDigiLockerDocuments(submissionId, ['PAN', 'AADHAAR']);
 
       // Mark documents as uploaded
       if (result.documentsFetched.includes('PAN')) {
@@ -268,10 +285,10 @@ export default function KycUploadPage() {
               )}
             </div>
           </div>
-          {userId && (
+          {submissionId && (
             <div className="mt-3">
               <DigiLockerStatus
-                userId={userId}
+                submissionId={submissionId}
                 onStatusChange={(status) => setDigiLockerAuthorized(status.authorized)}
               />
             </div>

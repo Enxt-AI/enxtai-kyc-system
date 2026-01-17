@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { checkDigiLockerStatus } from '@/lib/api-client';
 
 interface Props {
-  userId: string;
+  submissionId: string;
   onStatusChange?: (status: DigiLockerStatusData) => void;
 }
 
@@ -17,7 +17,7 @@ interface DigiLockerStatusData {
   fetching?: boolean;
 }
 
-export default function DigiLockerStatus({ userId, onStatusChange }: Props) {
+export default function DigiLockerStatus({ submissionId, onStatusChange }: Props) {
   const [status, setStatus] = useState<DigiLockerStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +30,7 @@ export default function DigiLockerStatus({ userId, onStatusChange }: Props) {
     const fetchStatus = async () => {
       try {
         setLoading(true);
-        const data = await checkDigiLockerStatus(userId);
+        const data = await checkDigiLockerStatus(submissionId);
         setStatus(data);
         onStatusChangeRef.current?.(data);
       } catch (err: any) {
@@ -40,10 +40,10 @@ export default function DigiLockerStatus({ userId, onStatusChange }: Props) {
       }
     };
 
-    if (userId) {
+    if (submissionId) {
       fetchStatus();
     }
-  }, [userId]); // Removed onStatusChange from dependencies
+  }, [submissionId]); // Removed onStatusChange from dependencies
 
   if (loading) {
     return (

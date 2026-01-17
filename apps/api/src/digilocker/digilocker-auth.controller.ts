@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, HttpCode, HttpStatus, Logger, Req, Res } from '@nestjs/common';
 import { DigiLockerAuthService } from './digilocker-auth.service';
 import { DigiLockerException } from './exceptions/digilocker.exception';
 import { InitiateAuthDto } from './dto/initiate-auth.dto';
@@ -103,8 +103,15 @@ export class DigiLockerAuthController {
    */
   @Get('callback')
   @HttpCode(HttpStatus.OK)
-  async handleCallback(@Query() query: CallbackDto) {
+  async handleCallback(
+    @Query() query: CallbackDto,
+    @Req() req: any,
+    @Res() reply: any,
+  ) {
     try {
+      const acceptHeader = (req?.headers?.accept as string | undefined) || '';
+      const wantsHtml = acceptHeader.includes('text/html');
+
       // Check for OAuth error response
       if (query.error) {
         this.logger.warn(`DigiLocker authorization failed: ${query.error}`, {
@@ -112,6 +119,18 @@ export class DigiLockerAuthController {
           error_description: query.error_description,
           state: query.state,
         });
+
+        if (wantsHtml) {
+          const payload = {
+            type: 'digilocker_auth_error',
+            error: query.error_description || query.error,
+            state: query.state,
+          };
+
+          return reply
+            .type('text/html; charset=utf-8')
+            .send(this.buildPopupCallbackHtml(false, payload));
+        }
 
         throw new DigiLockerException(
           `DigiLocker authorization failed: ${query.error_description || query.error}`,
@@ -126,6 +145,18 @@ export class DigiLockerAuthController {
 
       // Validate required parameters for success case
       if (!query.code || !query.state) {
+        if (wantsHtml) {
+          const payload = {
+            type: 'digilocker_auth_error',
+            error: 'Missing required parameters: code and state',
+            state: query.state,
+          };
+
+          return reply
+            .type('text/html; charset=utf-8')
+            .send(this.buildPopupCallbackHtml(false, payload));
+        }
+
         throw new DigiLockerException(
           'Missing required parameters: code and state',
           HttpStatus.BAD_REQUEST,
@@ -144,14 +175,42 @@ export class DigiLockerAuthController {
       // Calculate token expiry for response
       const tokenExpiry = new Date(Date.now() + tokenResponse.expires_in * 1000);
 
-      return {
+      if (wantsHtml) {
+        const payload = {
+          type: 'digilocker_auth_success',
+          userId,
+          state: query.state,
+          tokenExpiry: tokenExpiry.toISOString(),
+        };
+
+        return reply
+          .type('text/html; charset=utf-8')
+          .send(this.buildPopupCallbackHtml(true, payload));
+      }
+
+      return reply.send({
         success: true,
         userId,
         message: 'DigiLocker authorization successful',
         tokenExpiry: tokenExpiry.toISOString(),
-      };
+      });
     } catch (error) {
       this.logger.error('Failed to handle DigiLocker callback', error);
+
+      const acceptHeader = (req?.headers?.accept as string | undefined) || '';
+      const wantsHtml = acceptHeader.includes('text/html');
+
+      if (wantsHtml) {
+        const payload = {
+          type: 'digilocker_auth_error',
+          error: (error as Error)?.message || 'Failed to process DigiLocker callback',
+          state: query?.state,
+        };
+
+        return reply
+          .type('text/html; charset=utf-8')
+          .send(this.buildPopupCallbackHtml(false, payload));
+      }
 
       if (error instanceof DigiLockerException) {
         throw error;
@@ -162,6 +221,38 @@ export class DigiLockerAuthController {
         error: (error as Error).message,
       });
     }
+  }
+
+  private buildPopupCallbackHtml(success: boolean, payload: Record<string, any>) {
+    const safePayload = JSON.stringify(payload);
+    const title = success ? 'DigiLocker Authorized' : 'DigiLocker Authorization Failed';
+    const message = success
+      ? 'Authorization completed. You can close this window.'
+      : 'Authorization failed. You can close this window.';
+
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+  </head>
+  <body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 24px;">
+    <h2 style="margin: 0 0 8px;">${title}</h2>
+    <p style="margin: 0 0 16px; color: #334155;">${message}</p>
+    <script>
+      (function () {
+        try {
+          var payload = ${safePayload};
+          if (window.opener && typeof window.opener.postMessage === 'function') {
+            window.opener.postMessage(payload, '*');
+          }
+        } catch (e) {}
+        try { window.close(); } catch (e) {}
+      })();
+    </script>
+  </body>
+</html>`;
   }
 
   /**
