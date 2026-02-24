@@ -53,11 +53,11 @@ export default function AdminClientsPage() {
   };
 
   return (
-    <div className="px-4 py-8">
+    <div className="p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Client Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Client Management</h1>
           <p className="mt-1 text-sm text-slate-600">
             Manage client organizations and their KYC submissions
           </p>

@@ -106,7 +106,7 @@ function ClientPortalLayout({
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white font-sans">
+    <div className="min-h-screen p-5 bg-zinc-50 selection:bg-zinc-900 selection:text-white font-sans">
       {/* Mobile Menu Button - only render when sidebar exists */}
       {pathname !== "/client/login" && (
         <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-zinc-200 p-4 z-20 flex items-center justify-between">
