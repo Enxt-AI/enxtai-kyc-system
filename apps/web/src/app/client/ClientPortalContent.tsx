@@ -106,26 +106,7 @@ function ClientPortalLayout({
   ];
 
   return (
-    <div className="min-h-screen p-5 bg-zinc-50 selection:bg-zinc-900 selection:text-white font-sans">
-      {/* Mobile Menu Button - only render when sidebar exists */}
-      {pathname !== "/client/login" && (
-        <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-zinc-200 p-4 z-20 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-zinc-900 tracking-tight">
-            Client Portal
-          </h1>
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="text-zinc-500 hover:text-zinc-900 transition-colors rounded-lg hover:bg-zinc-100 p-1.5"
-          >
-            {isMobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
-          </button>
-        </div>
-      )}
-
+    <div className="min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white font-sans flex">
       {/* Mobile Overlay - only render when sidebar exists */}
       {pathname !== "/client/login" && isMobileMenuOpen && (
         <div
@@ -151,22 +132,7 @@ function ClientPortalLayout({
             </h1>
           </div>
 
-          {/* User Info Block */}
-          <div className="border-b border-zinc-200 p-6 bg-zinc-50/50">
-            <div className="flex items-center space-x-3">
-              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-white border border-zinc-200 flex items-center justify-center text-zinc-900 font-bold shadow-sm">
-                {session?.user?.email?.[0].toUpperCase() || "C"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-zinc-900 truncate">
-                  {session?.user?.email || "Loading..."}
-                </p>
-                <p className="mt-1 text-[10px] font-bold tracking-wider text-zinc-500 uppercase">
-                  {session?.user?.role || "CLIENT"}
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* User Info Block Removed (now in floating header) */}
 
           {/* Navigation Links */}
           <nav className="flex-1 overflow-y-auto px-4 py-6">
@@ -214,9 +180,47 @@ function ClientPortalLayout({
 
       {/* Main Content */}
       <div
-        className={`${pathname !== "/client/login" ? "lg:ml-64 pt-16 lg:pt-0" : ""}`}
+        className={`flex flex-col flex-1 min-w-0 min-h-screen ${pathname !== "/client/login" ? "lg:ml-64" : ""}`}
       >
-        <main>{children}</main>
+        {/* Floating Header / Navbar */}
+        {pathname !== "/client/login" && (
+          <div className="p-4 md:p-6 pb-2 z-30 sticky top-0">
+            <header className="flex items-center justify-between bg-white/80 backdrop-blur-md border border-zinc-200 shadow-sm rounded-2xl px-4 py-3">
+              {/* Mobile Hamburger & Title */}
+              <div className="flex items-center space-x-4 lg:hidden">
+                <button
+                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                  className="text-zinc-500 hover:text-zinc-900 transition-colors rounded-lg hover:bg-zinc-100 p-1"
+                >
+                  <Menu className="h-6 w-6" />
+                </button>
+                <h1 className="text-lg font-bold text-zinc-900 tracking-tight">
+                  Client Portal
+                </h1>
+              </div>
+
+              {/* Desktop Spacer */}
+              <div className="hidden lg:block flex-1" />
+
+              {/* User Info (Moved from Sidebar) */}
+              <div className="flex items-center space-x-3">
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-semibold text-zinc-900 truncate flex-1 justify-end items-end">
+                    {session?.user?.email || "Loading..."}
+                  </p>
+                  <p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">
+                    {session?.user?.role || "CLIENT"}
+                  </p>
+                </div>
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-zinc-50 border border-zinc-200 flex items-center justify-center text-zinc-900 font-bold shadow-sm">
+                  {session?.user?.email?.[0].toUpperCase() || "C"}
+                </div>
+              </div>
+            </header>
+          </div>
+        )}
+
+        <main className="flex-1 p-4 md:p-6 pt-0">{children}</main>
       </div>
     </div>
   );

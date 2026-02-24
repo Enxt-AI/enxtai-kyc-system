@@ -1,7 +1,7 @@
-'use client';
-import { useState, useEffect, useRef } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 /**
  * Change Password Page Component
@@ -56,10 +56,10 @@ function ChangePasswordForm() {
   const router = useRouter();
 
   // Form state
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [countdown, setCountdown] = useState(5);
@@ -72,7 +72,7 @@ function ChangePasswordForm() {
 
   // Check if we already completed password reset (persisted)
   useEffect(() => {
-    const storedTimestamp = localStorage.getItem('passwordResetComplete');
+    const storedTimestamp = localStorage.getItem("passwordResetComplete");
     if (storedTimestamp) {
       const elapsed = Date.now() - parseInt(storedTimestamp, 10);
       // If less than 30 seconds ago, show success UI
@@ -94,36 +94,48 @@ function ChangePasswordForm() {
     const hasNumbers = /\d/.test(password);
     const hasSpecialChar = /[@$!%*?&]/.test(password);
 
-    const criteria = [hasMinLength, hasUpperCase, hasLowerCase, hasNumbers, hasSpecialChar];
+    const criteria = [
+      hasMinLength,
+      hasUpperCase,
+      hasLowerCase,
+      hasNumbers,
+      hasSpecialChar,
+    ];
     const metCriteria = criteria.filter(Boolean).length;
 
-    if (metCriteria < 3) return 'weak';
-    if (metCriteria < 5) return 'medium';
-    return 'strong';
+    if (metCriteria < 3) return "weak";
+    if (metCriteria < 5) return "medium";
+    return "strong";
   };
 
   // Password validation
-  const validatePassword = (current: string, password: string, confirm: string) => {
+  const validatePassword = (
+    current: string,
+    password: string,
+    confirm: string,
+  ) => {
     const errors = [];
 
     if (!current.trim()) {
-      errors.push('Current password is required');
+      errors.push("Current password is required");
     }
 
     if (password.length < 8) {
-      errors.push('Password must be at least 8 characters long');
+      errors.push("Password must be at least 8 characters long");
     }
     if (!/[A-Z]/.test(password)) {
-      errors.push('Password must contain at least one uppercase letter');
+      errors.push("Password must contain at least one uppercase letter");
     }
     if (!/[a-z]/.test(password)) {
-      errors.push('Password must contain at least one lowercase letter');
+      errors.push("Password must contain at least one lowercase letter");
     }
     if (!/\d/.test(password)) {
-      errors.push('Password must contain at least one number');
+      errors.push("Password must contain at least one number");
     }
     if (!/[@$!%*?&]/.test(password)) {
-      errors.push('Password must contain at least one special character (@$!%*?&)');
+      errors.push(
+        "Password must contain at least one special character (@$!%*?&)",
+      );
     }
 
     return errors;
@@ -145,8 +157,8 @@ function ChangePasswordForm() {
       return () => clearTimeout(timer);
     } else if ((success || successRef.current) && countdown === 0) {
       // Clear localStorage flag before redirect
-      localStorage.removeItem('passwordResetComplete');
-      router.push('/client/dashboard');
+      localStorage.removeItem("passwordResetComplete");
+      router.push("/client/dashboard");
     }
   }, [success, countdown, router]);
 
@@ -157,40 +169,44 @@ function ChangePasswordForm() {
    */
   const handleManualRedirect = () => {
     setCountdown(0); // Stop timer
-    router.push('/client/dashboard');
+    router.push("/client/dashboard");
   };
 
   // Get cookie value by name
   const getCookie = (name: string) => {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop()?.split(';').shift();
+    if (parts.length === 2) return parts.pop()?.split(";").shift();
     return null;
   };
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setSuccess(false);
 
     // Check for password mismatch
     if (passwordMismatch) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
     // Validate passwords
-    const validationErrors = validatePassword(currentPassword, newPassword, confirmPassword);
+    const validationErrors = validatePassword(
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    );
     if (validationErrors.length > 0) {
-      setError(validationErrors.join('. '));
+      setError(validationErrors.join(". "));
       return;
     }
 
     // Check session
     if (!session?.user?.id) {
-      setError('Session expired. Please log in again.');
-      router.replace('/client/login');
+      setError("Session expired. Please log in again.");
+      router.replace("/client/login");
       return;
     }
 
@@ -208,45 +224,45 @@ function ChangePasswordForm() {
 
       // Call change password API
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/client/change-password`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/v1/client/change-password`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionToken}`,
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionToken}`,
           },
           body: JSON.stringify({
             currentPassword,
             newPassword,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to change password');
+        throw new Error(errorData.message || "Failed to change password");
       }
 
       // Parse response (if needed, but success is all we care about)
       await response.json().catch(() => ({}));
 
-      console.log('Password change successful, setting success state...');
+      console.log("Password change successful, setting success state...");
 
       // CRITICAL: Set localStorage flag FIRST to prevent guard race condition
-      localStorage.setItem('passwordResetComplete', Date.now().toString());
+      localStorage.setItem("passwordResetComplete", Date.now().toString());
 
       // Clear form immediately for security
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setError('');
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError("");
 
       // Update session to clear mustChangePassword flag (do this before setting success)
       // Note: Using try-catch to ensure success state is set even if session update fails
       try {
         await update({ user: { ...session.user, mustChangePassword: false } });
       } catch (updateErr) {
-        console.warn('Session update warning:', updateErr);
+        console.warn("Session update warning:", updateErr);
         // Continue anyway - the password was changed successfully
       }
 
@@ -255,10 +271,14 @@ function ChangePasswordForm() {
       successRef.current = true;
       setSuccess(true);
 
-      console.log('Success state set to true, ref:', successRef.current);
+      console.log("Success state set to true, ref:", successRef.current);
     } catch (err) {
-      console.error('Change password error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred. Please try again.');
+      console.error("Change password error:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -266,13 +286,13 @@ function ChangePasswordForm() {
 
   // Handle redirect for unauthenticated users (skip during success state)
   useEffect(() => {
-    if (!success && !successRef.current && status === 'unauthenticated') {
-      router.replace('/client/login');
+    if (!success && !successRef.current && status === "unauthenticated") {
+      router.replace("/client/login");
     }
   }, [status, router, success]);
 
   // Show loading while session loads (but allow success UI to show)
-  if (!success && !successRef.current && status === 'loading') {
+  if (!success && !successRef.current && status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -284,12 +304,17 @@ function ChangePasswordForm() {
   }
 
   // Don't render anything while redirecting (but allow success UI to show)
-  if (!success && !successRef.current && status === 'unauthenticated') {
+  if (!success && !successRef.current && status === "unauthenticated") {
     return null;
   }
 
   const passwordStrength = checkPasswordStrength(newPassword);
-  const isFormValid = newPassword && confirmPassword && currentPassword && !error && !passwordMismatch;
+  const isFormValid =
+    newPassword &&
+    confirmPassword &&
+    currentPassword &&
+    !error &&
+    !passwordMismatch;
 
   return (
     <>
@@ -303,7 +328,8 @@ function ChangePasswordForm() {
                   ✅ Password changed successfully!
                 </div>
                 <div className="text-sm text-gray-600 mb-4">
-                  Redirecting to dashboard in {countdown} second{countdown !== 1 ? 's' : ''}...
+                  Redirecting to dashboard in {countdown} second
+                  {countdown !== 1 ? "s" : ""}...
                 </div>
                 <button
                   type="button"
@@ -321,155 +347,190 @@ function ChangePasswordForm() {
       {/* Main form - only render when not in success state */}
       {!success && !successRef.current && (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            {(session?.user as any).mustChangePassword
-              ? 'Change Your Password'
-              : 'Change Password'
-            }
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            {(session?.user as any).mustChangePassword
-              ? 'You must change your password before accessing the portal.'
-              : 'Update your account password.'
-            }
-          </p>
-        </div>
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            {/* Current Password Field */}
+          <div className="max-w-md w-full space-y-8">
             <div>
-              <label htmlFor="currentPassword" className="sr-only">
-                Current Password
-              </label>
-              <input
-                id="currentPassword"
-                name="currentPassword"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Current Password"
-                value={currentPassword}
-                onChange={(e) => {
-                  setCurrentPassword(e.target.value);
-                  setError(''); // Clear errors on change
-                }}
-              />
-            </div>
+              <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                {(session?.user as any).mustChangePassword
+                  ? "Change Your Password"
+                  : "Change Password"}
+              </h2>
+              <p className="mt-2 text-center text-sm text-gray-600">
+                {(session?.user as any).mustChangePassword
+                  ? "You must change your password before accessing the portal."
+                  : "Update your account password."}
+              </p>
 
-            {/* New Password Field */}
-            <div>
-              <label htmlFor="newPassword" className="sr-only">
-                New Password
-              </label>
-              <input
-                id="newPassword"
-                name="newPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="New Password"
-                value={newPassword}
-                onChange={(e) => {
-                  setNewPassword(e.target.value);
-                  setError(''); // Clear errors on change
-                }}
-              />
-            </div>
-
-            {/* Password Strength Indicator */}
-            {newPassword && (
-              <div className="px-3 py-2 bg-gray-50 border-l border-r border-gray-300">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-gray-600">Strength:</span>
-                  <div className="flex space-x-1">
-                    <div className={`h-2 w-6 rounded ${passwordStrength === 'weak' ? 'bg-red-500' : passwordStrength === 'medium' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-                    <div className={`h-2 w-6 rounded ${passwordStrength === 'medium' || passwordStrength === 'strong' ? (passwordStrength === 'medium' ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-200'}`}></div>
-                    <div className={`h-2 w-6 rounded ${passwordStrength === 'strong' ? 'bg-green-500' : 'bg-gray-200'}`}></div>
+              {(session?.user as any).mustChangePassword && (
+                <div className="mt-6 flex items-start gap-3 p-4 bg-amber-50 text-amber-800 rounded-lg text-sm border border-amber-200">
+                  <svg
+                    className="w-5 h-5 shrink-0 mt-0.5 text-amber-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
+                  </svg>
+                  <div>
+                    <p className="font-semibold mb-1">
+                      Security Action Required
+                    </p>
+                    <p>
+                      For your security, you must update your temporary password
+                      before you can access your client workspace and dashboard.
+                    </p>
                   </div>
-                  <span className={`text-xs capitalize ${passwordStrength === 'weak' ? 'text-red-600' : passwordStrength === 'medium' ? 'text-yellow-600' : 'text-green-600'}`}>
-                    {passwordStrength}
-                  </span>
+                </div>
+              )}
+            </div>
+
+            <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+              <div className="rounded-md shadow-sm -space-y-px">
+                {/* Current Password Field */}
+                <div>
+                  <label htmlFor="currentPassword" className="sr-only">
+                    Current Password
+                  </label>
+                  <input
+                    id="currentPassword"
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                    placeholder="Current Password"
+                    value={currentPassword}
+                    onChange={(e) => {
+                      setCurrentPassword(e.target.value);
+                      setError(""); // Clear errors on change
+                    }}
+                  />
+                </div>
+
+                {/* New Password Field */}
+                <div>
+                  <label htmlFor="newPassword" className="sr-only">
+                    New Password
+                  </label>
+                  <input
+                    id="newPassword"
+                    name="newPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                    placeholder="New Password"
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setError(""); // Clear errors on change
+                    }}
+                  />
+                </div>
+
+                {/* Password Strength Indicator */}
+                {newPassword && (
+                  <div className="px-3 py-2 bg-gray-50 border-l border-r border-gray-300">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-600">Strength:</span>
+                      <div className="flex space-x-1">
+                        <div
+                          className={`h-2 w-6 rounded ${passwordStrength === "weak" ? "bg-red-500" : passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500"}`}
+                        ></div>
+                        <div
+                          className={`h-2 w-6 rounded ${passwordStrength === "medium" || passwordStrength === "strong" ? (passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500") : "bg-gray-200"}`}
+                        ></div>
+                        <div
+                          className={`h-2 w-6 rounded ${passwordStrength === "strong" ? "bg-green-500" : "bg-gray-200"}`}
+                        ></div>
+                      </div>
+                      <span
+                        className={`text-xs capitalize ${passwordStrength === "weak" ? "text-red-600" : passwordStrength === "medium" ? "text-yellow-600" : "text-green-600"}`}
+                      >
+                        {passwordStrength}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirm Password Field */}
+                <div>
+                  <label htmlFor="confirmPassword" className="sr-only">
+                    Confirm New Password
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    className={`appearance-none rounded-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:z-10 sm:text-sm ${
+                      passwordMismatch
+                        ? "border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:border-blue-500"
+                    }`}
+                    placeholder="Confirm New Password"
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setError(""); // Clear errors on change
+                    }}
+                  />
+                  {passwordMismatch && (
+                    <p className="mt-1 text-sm text-red-600">
+                      Passwords do not match
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* Confirm Password Field */}
-            <div>
-              <label htmlFor="confirmPassword" className="sr-only">
-                Confirm New Password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                className={`appearance-none rounded-none relative block w-full px-3 py-2 border placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:z-10 sm:text-sm ${
-                  passwordMismatch
-                    ? 'border-red-300 text-red-900 placeholder-red-300 focus:ring-red-500 focus:border-red-500'
-                    : 'border-gray-300 focus:border-blue-500'
-                }`}
-                placeholder="Confirm New Password"
-                value={confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value);
-                  setError(''); // Clear errors on change
-                }}
-              />
-              {passwordMismatch && (
-                <p className="mt-1 text-sm text-red-600">Passwords do not match</p>
-              )}
-            </div>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <div>
-            <button
-              type="submit"
-              disabled={loading || !isFormValid || success}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="flex items-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Changing Password...
+              {/* Error Message */}
+              {error && (
+                <div className="rounded-md bg-red-50 p-4">
+                  <div className="text-sm text-red-700">{error}</div>
                 </div>
-              ) : success ? (
-                'Password Changed'
-              ) : (
-                'Change Password'
               )}
-            </button>
-          </div>
 
-          {/* Cancel Link (only for voluntary changes) */}
-          {!(session?.user as any).mustChangePassword && (
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => router.push('/client/dashboard')}
-                className="text-sm text-blue-600 hover:text-blue-500"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </form>
-      </div>
-    </div>
-    )}
+              {/* Submit Button */}
+              <div>
+                <button
+                  type="submit"
+                  disabled={loading || !isFormValid || success}
+                  className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Changing Password...
+                    </div>
+                  ) : success ? (
+                    "Password Changed"
+                  ) : (
+                    "Change Password"
+                  )}
+                </button>
+              </div>
+
+              {/* Cancel Link (only for voluntary changes) */}
+              {!(session?.user as any).mustChangePassword && (
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/client/dashboard")}
+                    className="text-sm text-blue-600 hover:text-blue-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

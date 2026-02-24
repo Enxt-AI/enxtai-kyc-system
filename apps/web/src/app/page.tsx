@@ -251,7 +251,7 @@ export default function HomePage() {
       </div>
 
       {/* Portal Selection Grid - prefetch disabled to prevent route preloading issues */}
-      <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+      <div className= "max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
         {/* Super Admin Portal */}
         <Link
           href="/admin/login"
