@@ -239,7 +239,7 @@ export default function HomePage() {
       <div className="w-full max-w-5xl flex flex-col items-center text-center mt-12 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-zinc-200 text-xs font-semibold text-zinc-600 mb-8 shadow-sm">
           <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          enxtAI Platform Operational
+          EnxtAI Platform Operational
         </div>
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-zinc-900 mb-6 font-sans">
           Identity Verification Infrastructure
