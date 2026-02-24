@@ -17,6 +17,7 @@ import { AuthModule } from './auth/auth.module';
 import { ClientModule } from './client/client.module';
 import { ClientKycModule } from './client-kyc/client-kyc.module';
 import { WebhookModule } from './webhooks/webhook.module';
+import { DigiLockerModule } from './digilocker/digilocker.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 import { ClientThrottlerGuard } from './common/guards/client-throttler.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -117,6 +118,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     ClientKycModule, // Client-facing KYC APIs at /v1/kyc/* (protected by TenantMiddleware)
     ClientModule,
     WebhookModule, // Webhook delivery infrastructure for event notifications
+    DigiLockerModule, // DigiLocker OAuth 2.0 integration for document fetching
   ],
   controllers: [AppController],
   providers: [
@@ -170,6 +172,9 @@ export class AppModule implements NestModule {
         { path: 'v1/kyc/delete/:type/:subtype', method: RequestMethod.ALL },
         { path: 'v1/kyc/status/:id', method: RequestMethod.ALL },
         { path: 'v1/kyc/verify', method: RequestMethod.ALL },
+        { path: 'v1/kyc/:submissionId/digilocker/initiate', method: RequestMethod.ALL },
+        { path: 'v1/kyc/:submissionId/digilocker/fetch', method: RequestMethod.ALL },
+        { path: 'v1/kyc/:submissionId/digilocker/status', method: RequestMethod.ALL },
       );
   }
 }

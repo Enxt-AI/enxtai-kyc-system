@@ -35,6 +35,7 @@ model User {
   updatedAt      DateTime        @updatedAt
   kycSubmissions KYCSubmission[]
   auditLogs      AuditLog[]
+  digiLockerToken DigiLockerToken?
 
   // Indexes
   @@unique([id, clientId]) // Composite unique for FK reference from KYCSubmission
@@ -308,4 +309,37 @@ model WebhookLog {
   @@index([clientId, createdAt]) // Efficient queries for recent logs
   @@index([event])
   @@map("webhook_logs")
+}
+
+// DigiLockerToken Model
+// Stores OAuth 2.0 access and refresh tokens for DigiLocker integration
+// Purpose:
+// - Enable document fetching from user's DigiLocker account
+// - Support automatic token refresh before expiry
+// - Maintain user authorization state
+// Security:
+// - Tokens should be encrypted at rest (future enhancement)
+// - One token per user (unique constraint on userId)
+// - Cascade delete when user is deleted
+model DigiLockerToken {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // OAuth 2.0 Tokens
+  accessToken  String   // Bearer token for API requests
+  refreshToken String?  // Optional refresh token for token renewal
+  tokenType    String   @default("Bearer")
+  scope        String   // Granted scopes (space-separated)
+
+  // Token Expiry
+  expiresAt    DateTime // Calculated from expires_in (current time + expires_in seconds)
+
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt]) // Efficient queries for expired tokens
+  @@map("digilocker_tokens")
 }

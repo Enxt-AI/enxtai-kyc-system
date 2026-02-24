@@ -756,6 +756,237 @@ export class ClientKycController {
   }
 
   /**
+   * Initiate DigiLocker Authorization
+   *
+   * Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access.
+   * The generated URL should be used to redirect the user to DigiLocker for authorization.
+   *
+   * @param client - Authenticated client from API key
+   * @param submissionId - KYC session identifier
+   * @returns Authorization URL and instructions
+   *
+   * @example
+   * ```bash
+   * curl -X POST "https://api.enxtai.com/v1/kyc/sub_123/digilocker/initiate" \
+   *   -H "X-API-Key: your-api-key" \
+   *   -H "Content-Type: application/json"
+   * ```
+   */
+  @Post(':submissionId/digilocker/initiate')
+  @ApiOperation({
+    summary: 'Initiate DigiLocker Authorization',
+    description: 'Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access',
+  })
+  @ApiParam({
+    name: 'submissionId',
+    description: 'KYC session identifier',
+    example: 'sub_12345678-1234-1234-1234-123456789012',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Authorization URL generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        authorizationUrl: {
+          type: 'string',
+          description: 'DigiLocker OAuth authorization URL',
+          example: 'https://digilocker.gov.in/public/oauth2/1/authorize?...',
+        },
+        instructions: {
+          type: 'string',
+          description: 'Instructions for user',
+          example: 'Redirect user to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
+        },
+        expiresIn: {
+          type: 'number',
+          description: 'URL expiry time in seconds',
+          example: 600,
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Invalid API key' })
+  @ApiResponse({ status: 403, description: 'Submission belongs to different client' })
+  @ApiResponse({ status: 404, description: 'Submission not found' })
+  async initiateDigiLockerAuth(
+    @Client() client: any,
+    @Param('submissionId') submissionId: string,
+  ): Promise<{
+    authorizationUrl: string;
+    instructions: string;
+    expiresIn: number;
+  }> {
+    return await this.clientKycService.initiateDigiLockerAuth(client.id, submissionId);
+  }
+
+  /**
+   * Fetch Documents from DigiLocker
+   *
+   * Downloads specified documents from user's DigiLocker account and triggers automatic OCR processing.
+   * User must have completed DigiLocker OAuth authorization before calling this endpoint.
+   *
+   * @param client - Authenticated client from API key
+   * @param submissionId - KYC session identifier
+   * @param body - Document types to fetch
+   * @returns Fetched documents with URLs and processing status
+   *
+   * @example
+   * ```bash
+   * curl -X POST "https://api.enxtai.com/v1/kyc/sub_123/digilocker/fetch" \
+   *   -H "X-API-Key: your-api-key" \
+   *   -H "Content-Type: application/json" \
+   *   -d '{"documentTypes": ["PAN", "AADHAAR"]}'
+   * ```
+   */
+  @Post(':submissionId/digilocker/fetch')
+  @ApiOperation({
+    summary: 'Fetch Documents from DigiLocker',
+    description: 'Downloads specified documents from user\'s DigiLocker account and triggers automatic OCR processing',
+  })
+  @ApiParam({
+    name: 'submissionId',
+    description: 'KYC session identifier',
+    example: 'sub_12345678-1234-1234-1234-123456789012',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        documentTypes: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['PAN', 'AADHAAR'],
+          },
+          description: 'Document types to fetch from DigiLocker',
+          example: ['PAN', 'AADHAAR'],
+        },
+      },
+      required: ['documentTypes'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Documents fetched successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        kycSessionId: { type: 'string', example: 'sub_123...' },
+        documentsFetched: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['PAN', 'AADHAAR'],
+        },
+        documentUrls: {
+          type: 'object',
+          properties: {
+            panDocumentUrl: { type: 'string', example: 'kyc-client-pan/user-uuid/pan.jpg' },
+            aadhaarFrontUrl: { type: 'string', example: 'kyc-client-aadhaar/user-uuid/aadhaar.jpg' },
+          },
+        },
+        processingStatus: { type: 'string', example: 'OCR and face verification processing initiated' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid document types or user not authorized' })
+  @ApiResponse({ status: 401, description: 'Invalid API key' })
+  @ApiResponse({ status: 404, description: 'Documents not found in DigiLocker' })
+  @ApiResponse({ status: 429, description: 'DigiLocker rate limit exceeded' })
+  async fetchDigiLockerDocuments(
+    @Client() client: any,
+    @Param('submissionId') submissionId: string,
+    @Body() body: { documentTypes: string[] },
+  ): Promise<{
+    success: boolean;
+    kycSessionId: string;
+    documentsFetched: string[];
+    documentUrls: {
+      panDocumentUrl?: string;
+      aadhaarFrontUrl?: string;
+    };
+    processingStatus: string;
+  }> {
+    // Validate document types
+    const validTypes = ['PAN', 'AADHAAR'];
+    const invalidTypes = body.documentTypes.filter(type => !validTypes.includes(type));
+    if (invalidTypes.length > 0) {
+      throw new BadRequestException(`Invalid document types: ${invalidTypes.join(', ')}. Valid types: ${validTypes.join(', ')}`);
+    }
+
+    return await this.clientKycService.fetchDigiLockerDocuments(client.id, submissionId, body.documentTypes);
+  }
+
+  /**
+   * Get DigiLocker Status
+   *
+   * Retrieves DigiLocker authorization status and available documents for a KYC session.
+   * Use this endpoint to check if user has authorized DigiLocker access and what documents are available.
+   *
+   * @param client - Authenticated client from API key
+   * @param submissionId - KYC session identifier
+   * @returns DigiLocker status and submission details
+   *
+   * @example
+   * ```bash
+   * curl -X GET "https://api.enxtai.com/v1/kyc/sub_123/digilocker/status" \
+   *   -H "X-API-Key: your-api-key"
+   * ```
+   */
+  @Get(':submissionId/digilocker/status')
+  @ApiOperation({
+    summary: 'Get DigiLocker Status',
+    description: 'Retrieves DigiLocker authorization status and available documents for a KYC session',
+  })
+  @ApiParam({
+    name: 'submissionId',
+    description: 'KYC session identifier',
+    example: 'sub_12345678-1234-1234-1234-123456789012',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'DigiLocker status retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        authorized: { type: 'boolean', description: 'Whether user has authorized DigiLocker' },
+        documentsFetched: { type: 'boolean', description: 'Whether documents have been fetched' },
+        documentSource: {
+          type: 'string',
+          enum: ['MANUAL_UPLOAD', 'DIGILOCKER'],
+          description: 'Source of documents',
+        },
+        availableDocuments: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Documents available in DigiLocker',
+          example: ['PAN', 'AADHAAR'],
+        },
+        submission: {
+          type: 'object',
+          description: 'KYC submission details',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Invalid API key' })
+  @ApiResponse({ status: 403, description: 'Submission belongs to different client' })
+  @ApiResponse({ status: 404, description: 'Submission not found' })
+  async getDigiLockerStatus(
+    @Client() client: any,
+    @Param('submissionId') submissionId: string,
+  ): Promise<{
+    authorized: boolean;
+    documentsFetched: boolean;
+    documentSource: 'MANUAL_UPLOAD' | 'DIGILOCKER';
+    availableDocuments: string[];
+    submission: KycStatusResponseDto;
+  }> {
+    return await this.clientKycService.getDigiLockerStatus(client.id, submissionId);
+  }
+
+  /**
    * Parse Multipart Upload (Helper)
    *
    * Extracts `externalUserId` field and `file` attachment from multipart/form-data request.

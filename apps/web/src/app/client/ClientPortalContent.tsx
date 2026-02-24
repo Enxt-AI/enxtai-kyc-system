@@ -198,7 +198,7 @@ function ClientPortalLayout({
 
       {/* Main Content */}
       <div className={`${pathname !== '/client/login' ? 'lg:ml-64 pt-16 lg:pt-0' : ''}`}>
-        <main className="p-6">{children}</main>
+        <main>{children}</main>
       </div>
     </div>
   );

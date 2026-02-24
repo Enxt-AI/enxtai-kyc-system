@@ -131,10 +131,21 @@ api.interceptors.response.use(
     // Handle KYC API key authentication errors
     if (error.config?.url?.includes('/api/v1/kyc/')) {
       if (error.response?.status === 401) {
-        // Invalid or inactive API key
-        clearKycApiKey();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/?error=invalid_key';
+        const data: any = error.response?.data;
+        const message = (data?.message as string | undefined) || '';
+
+        // Do NOT clear the tenant API key for DigiLocker OAuth-related 401s.
+        // Those should be handled in-page (e.g., prompt re-authorization).
+        const isDigiLockerAuthError =
+          typeof message === 'string' &&
+          (message.startsWith('DigiLocker Error:') || message.includes('re-authorize DigiLocker'));
+
+        if (!isDigiLockerAuthError) {
+          // Invalid or inactive API key
+          clearKycApiKey();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?error=invalid_key';
+          }
         }
       } else if (error.response?.status === 403) {
         // Domain not whitelisted
@@ -470,6 +481,95 @@ export function clearKycApiKey(): void {
     const res = await api.post('/api/admin/kyc/reject', { submissionId, adminUserId, reason });
     return res.data;
   }
+
+/**
+ * Initiate DigiLocker Authorization
+ *
+ * Generates DigiLocker OAuth authorization URL for user to authorize access.
+ *
+ * @param userId - User UUID
+ * @param state - Optional state parameter for CSRF protection
+ * @returns Authorization URL and metadata
+ */
+export async function initiateDigiLockerAuth(submissionId: string) {
+  const res = await api.post(`/api/v1/kyc/${submissionId}/digilocker/initiate`);
+  return res.data as {
+    authorizationUrl: string;
+    instructions: string;
+    expiresIn: number;
+  };
+}
+
+/**
+ * Fetch Documents from DigiLocker
+ *
+ * Fetches specified documents from DigiLocker and stores in MinIO.
+ *
+ * @param userId - User UUID
+ * @param documentTypes - Array of document types to fetch (e.g., ['PAN', 'AADHAAR'])
+ * @returns Submission details and fetched document URLs
+ */
+export async function fetchDigiLockerDocuments(submissionId: string, documentTypes: string[]) {
+  const res = await api.post(`/api/v1/kyc/${submissionId}/digilocker/fetch`, {
+    documentTypes,
+  });
+  return res.data as {
+    success: boolean;
+    kycSessionId: string;
+    documentsFetched: string[];
+    documentUrls: {
+      panDocumentUrl?: string;
+      aadhaarFrontUrl?: string;
+    };
+    processingStatus: string;
+  };
+}
+
+/**
+ * Check DigiLocker Status
+ *
+ * Checks DigiLocker authorization status and available documents for user.
+ *
+ * @param userId - User UUID
+ * @returns DigiLocker status and document availability
+ */
+export async function checkDigiLockerStatus(submissionId: string) {
+  const res = await api.get(`/api/v1/kyc/${submissionId}/digilocker/status`);
+  return res.data as {
+    authorized: boolean;
+    documentsFetched: boolean;
+    documentSource: 'MANUAL_UPLOAD' | 'DIGILOCKER';
+    availableDocuments: string[];
+    submission: any;
+  };
+}
+
+/**
+ * Process DigiLocker Documents
+ *
+ * Triggers OCR extraction and face verification for DigiLocker-fetched documents.
+ *
+ * @param submissionId - Submission UUID
+ * @returns Processing results with extracted data and verification scores
+ */
+export async function processDigiLockerDocuments(submissionId: string) {
+  const res = await api.post('/api/kyc/digilocker/process', { submissionId });
+  return res.data as {
+    success: boolean;
+    submissionId: string;
+    ocrCompleted: boolean;
+    faceVerified: boolean;
+    extractedData: {
+      panNumber?: string;
+      aadhaarNumber?: string;
+      fullName?: string;
+    };
+    verificationScores: {
+      faceMatchScore?: number;
+      livenessScore?: number;
+    };
+  };
+}
 
 /**
  * Client Portal API Functions

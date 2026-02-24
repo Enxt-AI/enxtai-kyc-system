@@ -3,16 +3,18 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getKycStatus } from '@/lib/api-client';
+import { getKycStatus, checkDigiLockerStatus } from '@/lib/api-client';
 import KycStatusIndicator from '@/components/KycStatusIndicator';
 
 function StatusPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const userId = searchParams.get('userId');
+  const submissionIdParam = searchParams.get('submissionId');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
+  const [documentSource, setDocumentSource] = useState<'MANUAL_UPLOAD' | 'DIGILOCKER' | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -20,8 +22,15 @@ function StatusPageContent() {
       setLoading(true);
       setError(null);
       try {
-        const res = await getKycStatus(userId);
-        setData(res);
+        const submissionId = submissionIdParam || localStorage.getItem('kyc_submission_id');
+        const [statusRes, digiLockerStatus] = await Promise.all([
+          getKycStatus(userId),
+          submissionId ? checkDigiLockerStatus(submissionId).catch(() => null) : Promise.resolve(null),
+        ]);
+        setData(statusRes);
+        if (digiLockerStatus) {
+          setDocumentSource(digiLockerStatus.documentSource);
+        }
       } catch (err: any) {
         setError(err?.response?.data?.message || err?.message || 'Failed to load status');
       } finally {
@@ -29,7 +38,7 @@ function StatusPageContent() {
       }
     };
     load();
-  }, [userId]);
+  }, [userId, submissionIdParam]);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-0">
@@ -76,6 +85,28 @@ function StatusPageContent() {
           livenessScore={data.submission.livenessScore}
           rejectionReason={data.submission.rejectionReason}
         />
+      )}
+
+      {data && documentSource && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-600">Document Source</p>
+          <div className="mt-2 flex items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                documentSource === 'DIGILOCKER'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {documentSource === 'DIGILOCKER' ? '📱 DigiLocker' : '📤 Manual Upload'}
+            </span>
+            {documentSource === 'DIGILOCKER' && (
+              <p className="text-xs text-slate-500">
+                Documents fetched automatically from DigiLocker
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

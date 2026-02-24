@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
@@ -14,6 +16,7 @@ import { OcrService } from '../ocr/ocr.service';
 import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
 import { WebhookService } from '../webhooks/webhook.service';
 import { WebhookEvent } from '../webhooks/webhook-events.enum';
+import { DigiLockerDocumentService } from '../digilocker/digilocker-document.service';
 import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
@@ -31,33 +34,33 @@ const MAX_HEIGHT = 8192;
 
 /**
  * KYC Service
- * 
+ *
  * Core business logic service for KYC (Know Your Customer) verification workflow.
  * Orchestrates document uploads, OCR text extraction, face recognition, and status management.
- * 
+ *
  * **Workflow**:
  * 1. Document Upload: PAN, Aadhaar (front/back), Live Photo → MinIO storage
  * 2. OCR Extraction: Tesseract.js extracts text from PAN/Aadhaar
  * 3. Face Verification: face-api.js matches live photo against ID documents
  * 4. Status Progression: PENDING → DOCUMENTS_UPLOADED → OCR_COMPLETED → FACE_VERIFIED
  * 5. Admin Review: If confidence <80%, manual approval required
- * 
+ *
  * **Auto-Creation Strategy (MVP)**:
  * - Users and submissions are auto-created if they don't exist during uploads
  * - Simplifies frontend logic by eliminating pre-creation API calls
  * - Generated emails/phones are placeholders (e.g., user-xxx@kyc-temp.local)
- * 
+ *
  * **Multi-Tenancy**:
  * - All operations scoped to clientId (extracted from X-API-Key by TenantMiddleware)
  * - Documents stored in client-specific MinIO buckets (kyc-{clientId}-{suffix})
  * - User lookups constrained by (clientId, externalUserId) composite unique key
  * - Legacy internal endpoints use clientId '00000000-0000-0000-0000-000000000000'
- * 
+ *
  * **Webhook Integration**:
  * - WebhookService injected for real-time status change notifications
  * - Webhooks triggered after document uploads and verification completion
  * - Failures logged but don't block KYC workflow (isolated error handling)
- * 
+ *
  * @see {@link StorageService} for MinIO S3 operations
  * @see {@link OcrService} for Tesseract.js OCR integration
  * @see {@link FaceRecognitionService} for face-api.js verification
@@ -65,12 +68,15 @@ const MAX_HEIGHT = 8192;
  */
 @Injectable()
 export class KycService {
+  private readonly logger = new Logger(KycService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly ocrService: OcrService,
     private readonly faceRecognitionService: FaceRecognitionService,
     private readonly webhookService: WebhookService,
+    private readonly digiLockerDocumentService: DigiLockerDocumentService,
   ) {}
 
   /** Generate a temporary phone that won't collide with UNIQUE(phone) */
@@ -85,19 +91,19 @@ export class KycService {
 
   /**
    * Get or Create User (Helper)
-   * 
+   *
    * Auto-creates user if they don't exist in the database. This MVP convenience feature
    * allows the frontend to start document uploads without pre-creating user accounts.
-   * 
+   *
    * **Generated Fields**:
    * - Email: user-{first8CharsOfUuid}@kyc-temp.local
    * - Phone: 999{timestamp7Digits} (ensures uniqueness)
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
    * - Maintains backward compatibility while supporting new client-facing endpoints
-   * 
+   *
    * @param userId - UUID v4 string
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns User object (existing or newly created)
@@ -152,13 +158,13 @@ export class KycService {
 
   /**
    * Get or Create Submission (Helper)
-   * 
+   *
    * Retrieves most recent submission for user or creates new one if not found.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns KYCSubmission object (existing or newly created)
@@ -186,15 +192,15 @@ export class KycService {
 
   /**
    * Trigger Webhook Helper
-   * 
+   *
    * Sends webhook notification to client's configured endpoint with KYC event data.
    * Fetches user details, builds webhook payload, and delegates to WebhookService.
-   * 
+   *
    * **Error Isolation**:
    * - Webhook failures are caught and logged but do NOT throw exceptions
    * - Ensures KYC workflow continues even if client webhook endpoint is down
    * - All delivery attempts logged to WebhookLog table for debugging
-   * 
+   *
    * **Data Mapping**:
    * - `kycSessionId`: Submission ID (for client API correlation)
    * - `externalUserId`: Client's user identifier (from User.externalUserId)
@@ -202,14 +208,14 @@ export class KycService {
    * - `extractedData`: OCR results (PAN number, Aadhaar number, name, DOB)
    * - `verificationScores`: Face match and liveness scores (if verification completed)
    * - `rejectionReason`: Admin rejection reason (if applicable)
-   * 
+   *
    * @param submission - KYCSubmission object with updated status
    * @param event - Webhook event type (documents_uploaded, verification_completed, status_changed)
-   * 
+   *
    * @returns Promise<void> - Always resolves (errors caught internally)
-   * 
+   *
    * @private Helper method for KycService webhook triggers
-   * 
+   *
    * @example
    * ```typescript
    * // After document upload completes
@@ -217,7 +223,7 @@ export class KycService {
    *   updated,
    *   WebhookEvent.KYC_DOCUMENTS_UPLOADED
    * );
-   * 
+   *
    * // After face verification completes
    * await this.triggerWebhook(
    *   verified,
@@ -284,20 +290,20 @@ export class KycService {
 
   /**
    * Check and Trigger Documents Uploaded Webhook
-   * 
+   *
    * Centralized helper to detect when all required documents are uploaded
    * and trigger the KYC_DOCUMENTS_UPLOADED webhook. Called from all document
    * upload methods to ensure webhook fires regardless of upload order.
-   * 
+   *
    * **Required Documents**:
    * - PAN document (panDocumentUrl)
    * - Aadhaar (either legacy aadhaarDocumentUrl OR both aadhaarFrontUrl + aadhaarBackUrl)
    * - Live photo (livePhotoUrl)
-   * 
+   *
    * **Trigger Conditions**:
    * - All required documents present
    * - Submission status is DOCUMENTS_UPLOADED
-   * 
+   *
    * @param submission - Updated KYCSubmission object after document upload
    * @returns Promise<void> - Always resolves (errors caught internally)
    * @private Helper method called from all upload paths
@@ -309,16 +315,16 @@ export class KycService {
       // Check if all required documents are present
       const hasPan = Boolean(submission.panDocumentUrl);
       const hasAadhaar = Boolean(
-        submission.aadhaarDocumentUrl || 
+        submission.aadhaarDocumentUrl ||
         (submission.aadhaarFrontUrl && submission.aadhaarBackUrl)
       );
       const hasLivePhoto = Boolean(submission.livePhotoUrl);
-      
+
       // Trigger webhook only if all documents uploaded and status is DOCUMENTS_UPLOADED
       if (
-        hasPan && 
-        hasAadhaar && 
-        hasLivePhoto && 
+        hasPan &&
+        hasAadhaar &&
+        hasLivePhoto &&
         submission.internalStatus === InternalStatus.DOCUMENTS_UPLOADED
       ) {
         await this.triggerWebhook(submission, WebhookEvent.KYC_DOCUMENTS_UPLOADED);
@@ -352,13 +358,13 @@ export class KycService {
 
   /**
    * Create KYC Submission
-   * 
+   *
    * Creates a new KYC verification submission for a user.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Created KYCSubmission object
@@ -400,13 +406,13 @@ export class KycService {
 
   /**
    * Upload PAN Document
-   * 
+   *
    * Uploads PAN card image to MinIO storage with validation.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -416,7 +422,7 @@ export class KycService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    
+
     // Auto-create user if not exists
     const user = await this.getOrCreateUser(userId, clientId);
 
@@ -463,13 +469,13 @@ export class KycService {
 
   /**
    * Upload Aadhaar Document (Legacy)
-   * 
+   *
    * Uploads single-side Aadhaar card image. Prefer uploadAadhaarFront/uploadAadhaarBack.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -526,13 +532,13 @@ export class KycService {
 
   /**
    * Upload Aadhaar Front Document
-   * 
+   *
    * Uploads Aadhaar front side (contains photograph for face matching).
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -586,13 +592,13 @@ export class KycService {
 
   /**
    * Upload Aadhaar Back Document
-   * 
+   *
    * Uploads Aadhaar back side (contains address information).
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -730,13 +736,13 @@ export class KycService {
 
   /**
    * Upload Live Photo Document
-   * 
+   *
    * Uploads user's live photograph for face verification.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -746,7 +752,7 @@ export class KycService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    
+
     // Auto-create user if not exists
     const user = await this.getOrCreateUser(userId, clientId);
 
@@ -798,13 +804,13 @@ export class KycService {
 
   /**
    * Upload Signature Document
-   * 
+   *
    * Uploads user's signature image for verification.
-   * 
+   *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   * 
+   *
    * @param userId - Internal user UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
@@ -999,31 +1005,366 @@ export class KycService {
   }
 
   /**
+   * Fetch Documents from DigiLocker
+   *
+   * Fetches PAN and/or Aadhaar documents from DigiLocker and stores them in MinIO.
+   * Updates the submission with document URLs and sets documentSource to DIGILOCKER.
+   *
+   * @param userId - UUID of the user
+   * @param documentTypes - Array of document types to fetch (e.g., ['PAN', 'AADHAAR'])
+   * @param submissionId - Optional specific submission ID to update (defaults to most recent)
+   * @returns Promise<KYCSubmission> - Updated submission with DigiLocker documents
+   *
+   * @throws DigiLockerException if user not authorized or documents not found
+   * @throws NotFoundException if requested documents not available in DigiLocker
+   */
+  async fetchDocumentsFromDigiLocker(userId: string, documentTypes: string[], submissionId?: string): Promise<any> {
+    // Validate user exists and has DigiLocker authorization
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    try {
+      // Check if user has DigiLocker authorization
+      const digiLockerToken = await this.prisma.digiLockerToken.findUnique({
+        where: { userId },
+      });
+
+      if (!digiLockerToken) {
+        throw new BadRequestException('User not authorized with DigiLocker. Please complete OAuth flow first.');
+      }
+
+      // Get or create KYC submission
+      const submission = submissionId
+        ? await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } })
+        : await this.getOrCreateSubmission(userId);
+
+      if (!submission) {
+        throw new NotFoundException('Submission not found');
+      }
+
+      if (submission.userId !== userId) {
+        throw new ForbiddenException('Submission does not belong to user');
+      }
+
+      // Trigger webhook for fetch initiated
+      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_INITIATED, {
+        kycSessionId: submission.id,
+        externalUserId: user.externalUserId,
+        documentTypes,
+      });
+
+      // List available documents from DigiLocker
+      const availableDocuments = await this.digiLockerDocumentService.listAvailableDocuments(userId);
+
+      // Filter and map document types
+      const documentsToFetch: { type: string; uri: string; documentType: DocumentType }[] = [];
+
+      const extractType = (doc: any) => {
+        const raw = doc?.doctype ?? doc?.docType ?? doc?.doc_type ?? doc?.documentType ?? doc?.document_type ?? doc?.type ?? '';
+        return String(raw).toUpperCase();
+      };
+      const extractUri = (doc: any) => String(doc?.uri ?? doc?.URI ?? doc?.docUri ?? doc?.documentUri ?? doc?.document_uri ?? '').trim();
+
+      if (documentTypes.includes('PAN')) {
+        const panDoc = availableDocuments.find((doc: any) => {
+          const t = extractType(doc);
+          return t === 'PANCR' || t === 'PAN';
+        });
+        if (panDoc) {
+          const uri = extractUri(panDoc);
+          if (!uri) {
+            throw new BadRequestException('PAN document found in DigiLocker but missing URI');
+          }
+          documentsToFetch.push({
+            type: 'PAN',
+            uri,
+            documentType: DocumentType.PAN_CARD,
+          });
+        }
+      }
+
+      if (documentTypes.includes('AADHAAR')) {
+        const aadhaarDoc = availableDocuments.find((doc: any) => {
+          const t = extractType(doc);
+          return t === 'ADHAR' || t === 'AADHAAR' || t === 'ADHAAR';
+        });
+        if (aadhaarDoc) {
+          const uri = extractUri(aadhaarDoc);
+          if (!uri) {
+            throw new BadRequestException('Aadhaar document found in DigiLocker but missing URI');
+          }
+          documentsToFetch.push({
+            type: 'AADHAAR',
+            uri,
+            documentType: DocumentType.AADHAAR_CARD,
+          });
+        }
+      }
+
+      if (documentsToFetch.length === 0) {
+        throw new NotFoundException(`Requested documents not found in DigiLocker. Available: ${availableDocuments.map(d => d.type).join(', ')}`);
+      }
+
+      // Fetch and store each document
+      const fetchedDocuments: string[] = [];
+      for (const doc of documentsToFetch) {
+        try {
+          const objectPath = await this.digiLockerDocumentService.fetchDocument(
+            userId,
+            doc.uri,
+            doc.documentType
+          );
+
+          // Update submission with document URL
+          if (doc.type === 'PAN') {
+            await this.prisma.kYCSubmission.update({
+              where: { id: submission.id },
+              data: { panDocumentUrl: objectPath },
+            });
+          } else if (doc.type === 'AADHAAR') {
+            await this.prisma.kYCSubmission.update({
+              where: { id: submission.id },
+              data: { aadhaarFrontUrl: objectPath },
+            });
+          }
+
+          fetchedDocuments.push(doc.type);
+
+          // Audit log
+          await this.prisma.auditLog.create({
+            data: {
+              userId,
+              action: 'DIGILOCKER_DOCUMENT_FETCHED',
+              metadata: { submissionId: submission.id, documentType: doc.type, objectPath },
+            },
+          });
+        } catch (error) {
+          this.logger.error(`Failed to fetch ${doc.type} document for user ${userId}`, error);
+          // Continue with other documents but log the error
+        }
+      }
+
+      // Check if any documents were actually fetched
+      if (fetchedDocuments.length === 0) {
+        throw new NotFoundException('No documents could be fetched from DigiLocker. All requested documents failed to download.');
+      }
+
+      // Update submission with DigiLocker source and recompute status
+      const updated = await this.prisma.kYCSubmission.update({
+        where: { id: submission.id },
+        data: {
+          documentSource: DocumentSource.DIGILOCKER,
+          internalStatus: this.recomputeInternalStatus(await this.prisma.kYCSubmission.findUnique({
+            where: { id: submission.id },
+          }) as any),
+        },
+      });
+
+      // Trigger webhook for documents uploaded
+      await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+
+      // Trigger DigiLocker fetch completed webhook
+      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_COMPLETED, {
+        kycSessionId: updated.id,
+        externalUserId: user.externalUserId,
+        documentsFetched: fetchedDocuments,
+        documentUrls: {
+          panDocumentUrl: updated.panDocumentUrl,
+          aadhaarFrontUrl: updated.aadhaarFrontUrl,
+        },
+      });
+
+      // Audit log for fetch completion
+      await this.prisma.auditLog.create({
+        data: {
+          userId,
+          action: 'DIGILOCKER_FETCH_COMPLETED',
+          metadata: { submissionId: submission.id, fetchedDocuments },
+        },
+      });
+
+      return { submission: updated, fetchedDocuments };
+    } catch (error) {
+      // Get submission for webhook if available (may not be available if error occurred early)
+      let submissionForWebhook: any = null;
+      try {
+        submissionForWebhook = submissionId
+          ? await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } })
+          : await this.getOrCreateSubmission(userId);
+      } catch (subError) {
+        // Ignore errors when trying to get submission for webhook
+      }
+
+      // Trigger DigiLocker fetch failed webhook
+      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_FAILED, {
+        kycSessionId: submissionForWebhook?.id,
+        externalUserId: user.externalUserId,
+        documentTypes,
+        error: (error as Error).message,
+      });
+
+      // Audit log for fetch failure
+      await this.prisma.auditLog.create({
+        data: {
+          userId,
+          action: 'DIGILOCKER_FETCH_FAILED',
+          metadata: { documentTypes, error: (error as Error).message },
+        },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Process DigiLocker Documents
+   *
+   * Triggers OCR and face verification for DigiLocker-fetched documents.
+   *
+   * @param submissionId - Submission UUID
+   * @returns Promise<KYCSubmission> - Updated submission with OCR results and verification scores
+   */
+  async processDigiLockerDocuments(submissionId: string): Promise<any> {
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission ${submissionId} not found`);
+    }
+
+    // Validate submission has documents
+    if (!submission.panDocumentUrl && !submission.aadhaarFrontUrl) {
+      throw new BadRequestException('Submission has no documents to process');
+    }
+
+    try {
+      // Extract PAN data if PAN document exists
+      if (submission.panDocumentUrl) {
+        await this.extractPanDataAndUpdate(submissionId);
+      }
+    } catch (error) {
+      this.logger.error(`PAN OCR failed for submission ${submissionId}`, error);
+    }
+
+    try {
+      // Extract Aadhaar data if Aadhaar document exists
+      if (submission.aadhaarFrontUrl) {
+        await this.extractAadhaarDataAndUpdate(submissionId);
+      }
+    } catch (error) {
+      this.logger.error(`Aadhaar OCR failed for submission ${submissionId}`, error);
+    }
+
+    try {
+      // Verify face if live photo exists
+      if (submission.livePhotoUrl) {
+        await this.verifyFaceAndUpdate(submissionId);
+      }
+    } catch (error) {
+      this.logger.error(`Face verification failed for submission ${submissionId}`, error);
+    }
+
+    // Return updated submission
+    return await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+  }
+
+  /**
+   * Get DigiLocker Fetch Status
+   *
+   * Checks DigiLocker authorization and fetch status for a user.
+   *
+   * @param userId - User UUID
+   * @returns Promise<object> - Status object with authorization and fetch details
+   */
+  async getDigiLockerFetchStatus(userId: string): Promise<any> {
+    try {
+      // Check DigiLocker authorization
+      const digiLockerToken = await this.prisma.digiLockerToken.findUnique({
+        where: { userId },
+      });
+
+      let authorized = Boolean(digiLockerToken);
+      if (digiLockerToken) {
+        const now = new Date();
+        if (!digiLockerToken.refreshToken && digiLockerToken.expiresAt <= now) {
+          // Token is no longer usable; clear it so the UI can prompt re-authorization.
+          await this.prisma.digiLockerToken.deleteMany({ where: { userId } });
+          authorized = false;
+        }
+      }
+
+      // Get latest submission
+      const submission = await this.prisma.kYCSubmission.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      let availableDocuments: string[] = [];
+      if (authorized) {
+        try {
+          const documents = await this.digiLockerDocumentService.listAvailableDocuments(userId);
+          availableDocuments = documents
+            .filter(doc => doc.type === 'PANCR' || doc.type === 'ADHAR')
+            .map(doc => doc.type === 'PANCR' ? 'PAN' : 'AADHAAR');
+        } catch (error) {
+          this.logger.warn(`Failed to list DigiLocker documents for user ${userId}`, error);
+          // Don't fail the status check if document listing fails
+        }
+      }
+
+      return {
+        authorized,
+        documentsFetched: submission?.documentSource === DocumentSource.DIGILOCKER,
+        documentSource: submission?.documentSource || DocumentSource.MANUAL_UPLOAD,
+        availableDocuments,
+        submission,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get DigiLocker status for user ${userId}`, error);
+      return {
+        authorized: false,
+        documentsFetched: false,
+        documentSource: DocumentSource.MANUAL_UPLOAD,
+        availableDocuments: [],
+        submission: null,
+      };
+    }
+  }
+
+  /**
    * Prepare File Buffer with Validation
-   * 
+   *
    * Validates file type and size before processing. Combines type and size validation
    * into a single operation to fail fast on invalid uploads.
-   * 
+   *
    * **Validation Steps**:
    * 1. File type validation against allowed MIME types
    * 2. File size validation against maximum allowed size (5MB)
    * 3. Buffer conversion from multipart stream
-   * 
+   *
    * **Error Handling**:
    * - BadRequestException: Invalid file type (not in allowedTypes array)
    * - PayloadTooLargeException: File size exceeds 5MB limit
    * - Stream errors: Propagated from file.toBuffer() operation
-   * 
+   *
    * @param file - Multipart file from upload request
    * @param allowedTypes - Array of allowed MIME types (e.g., ['image/jpeg', 'image/png'])
    * @returns Promise<Buffer> - Validated file buffer ready for processing
-   * 
+   *
    * @throws {BadRequestException} When file type is not in allowedTypes
    * @throws {PayloadTooLargeException} When file size exceeds MAX_FILE_SIZE (5MB)
    * @throws {Error} When file.toBuffer() operation fails
-   * 
+   *
    * @private Helper method for all document upload operations
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -1048,27 +1389,27 @@ export class KycService {
 
   /**
    * Validate File Type Against Allowed MIME Types
-   * 
+   *
    * Ensures uploaded file matches one of the expected MIME types to prevent
    * processing of unsupported file formats or potential security risks.
-   * 
+   *
    * **Supported Types**:
    * - Documents: ['image/jpeg', 'image/png'] (ALLOWED_MIME_TYPES)
    * - Live Photos: ['image/jpeg', 'image/png'] (IMAGE_ONLY_MIME_TYPES)
    * - No PDF support to prevent OCR complexity and ensure image processing
-   * 
+   *
    * **Security Considerations**:
    * - MIME type validation prevents execution of disguised executable files
    * - Limited to image formats reduces attack surface for document processing
    * - Client-side file extensions not trusted (MIME type is server-validated)
-   * 
+   *
    * @param mimetype - File MIME type from multipart upload (e.g., 'image/jpeg')
    * @param allowedTypes - Array of allowed MIME type strings
-   * 
+   *
    * @throws {BadRequestException} When MIME type is not in allowed list
-   * 
+   *
    * @private Validation helper for file uploads
-   * 
+   *
    * @example
    * ```typescript
    * // Usage in document upload
@@ -1089,27 +1430,27 @@ export class KycService {
 
   /**
    * Validate File Size Against Maximum Limit
-   * 
+   *
    * Prevents storage of oversized files that could impact system performance
    * or exceed storage quotas. Uses HTTP 413 status for proper client handling.
-   * 
+   *
    * **Size Limits**:
    * - Maximum: 5MB (5,242,880 bytes) defined by MAX_FILE_SIZE constant
    * - Rationale: Balance between image quality and processing performance
    * - Large images are downscaled by Sharp for OCR processing anyway
-   * 
+   *
    * **Storage Optimization**:
    * - MinIO bucket storage costs scale with file sizes
    * - OCR performance degrades with very large images
    * - Face recognition works better with moderately sized images
-   * 
+   *
    * @param size - File size in bytes from buffer.byteLength
    * @param maxSize - Maximum allowed size in bytes (typically MAX_FILE_SIZE)
-   * 
+   *
    * @throws {PayloadTooLargeException} When file size exceeds maxSize limit
-   * 
+   *
    * @private Validation helper for file uploads
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -1128,34 +1469,34 @@ export class KycService {
 
   /**
    * Validate Image Dimensions for Processing Compatibility
-   * 
+   *
    * Ensures uploaded images meet minimum and maximum dimension requirements
    * for reliable OCR extraction and face recognition processing.
-   * 
+   *
    * **Dimension Requirements**:
    * - Minimum: 300x300 pixels (MIN_WIDTH × MIN_HEIGHT)
    * - Maximum: 8192x8192 pixels (MAX_WIDTH × MAX_HEIGHT)
    * - Rationale: Balance between processing quality and performance
-   * 
+   *
    * **Processing Considerations**:
    * - OCR accuracy improves with higher resolution (min 300px)
    * - Face detection requires sufficient pixel detail (min 300px)
    * - Excessive resolution slows down processing (max 8192px)
    * - Sharp library handles metadata extraction and dimension validation
-   * 
+   *
    * **Error Handling**:
    * - Non-image files: Skipped (no dimension validation needed)
    * - Corrupt images: Sharp metadata() throws, bubbles up as HTTP 500
    * - Invalid dimensions: BadRequestException with specific requirements
-   * 
+   *
    * @param mimetype - File MIME type (only image/* types are validated)
    * @param buffer - File buffer for Sharp metadata extraction
-   * 
+   *
    * @throws {BadRequestException} When image dimensions are outside allowed range
    * @throws {Error} When Sharp cannot read image metadata (corrupt file)
-   * 
+   *
    * @private Image validation helper
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -1223,27 +1564,27 @@ export class KycService {
 
   /**
    * Parse MinIO Object Path from Storage URL
-   * 
+   *
    * Extracts bucket name and object name from stored document URLs for MinIO operations.
    * Used when downloading/deleting documents that were previously uploaded.
-   * 
+   *
    * **URL Format**: "{bucketName}/{objectPath}"
    * - Example: "kyc-pan-cards/client_123/user_456/pan_20240115_103000.jpg"
    * - Bucket: "kyc-pan-cards"
    * - ObjectName: "client_123/user_456/pan_20240115_103000.jpg"
-   * 
+   *
    * **Error Handling**:
    * - Missing bucket or object name results in BadRequestException
    * - Prevents MinIO operations with invalid paths
    * - Critical for document deletion and download operations
-   * 
+   *
    * @param path - Storage path string from database (panDocumentUrl, aadhaarFrontUrl, etc.)
    * @returns Object with bucket and objectName for MinIO operations
-   * 
+   *
    * @throws {BadRequestException} When path format is invalid or components missing
-   * 
+   *
    * @private Helper for MinIO operations
-   * 
+   *
    * @example
    * ```typescript
    * try {
@@ -1266,32 +1607,32 @@ export class KycService {
 
   /**
    * Convert Stream to Buffer with Error Handling
-   * 
+   *
    * Converts MinIO download streams to buffers for in-memory processing.
    * Essential for passing document data to OCR and face recognition services.
-   * 
+   *
    * **Stream Processing**:
    * - Collects stream chunks into buffer array
    * - Concatenates chunks into single buffer
    * - Handles stream errors and completion events
-   * 
+   *
    * **Memory Considerations**:
    * - Entire file loaded into memory (limited by 5MB upload size)
    * - Required for TensorFlow.js and Tesseract.js processing
    * - Alternative: Stream processing not supported by ML libraries
-   * 
+   *
    * **Error Scenarios**:
    * - Stream read errors (network issues, MinIO unavailable)
    * - Memory allocation failures (very large files)
    * - Premature stream termination
-   * 
+   *
    * @param stream - Readable stream from MinIO download operation
    * @returns Promise<Buffer> - Complete file buffer for processing
-   * 
+   *
    * @throws {Error} When stream encounters read errors or memory issues
-   * 
+   *
    * @private Helper for document processing
-   * 
+   *
    * @example
    * ```typescript
    * try {

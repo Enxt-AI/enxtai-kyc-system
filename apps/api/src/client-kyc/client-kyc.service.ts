@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KycService } from '../kyc/kyc.service';
+import { DigiLockerAuthService } from '../digilocker/digilocker-auth.service';
 import { InitiateKycDto } from './dto/initiate-kyc.dto';
 import {
   InitiateKycResponseDto,
@@ -42,6 +43,7 @@ export class ClientKycService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kycService: KycService,
+    private readonly digiLockerAuthService: DigiLockerAuthService,
   ) {}
 
   /**
@@ -647,5 +649,174 @@ export class ClientKycService {
     const userId = await this.lookupUserByExternalId(clientId, externalUserId);
     await this.kycService.deleteAadhaarBack(userId);
     return { success: true, message: 'Aadhaar back document deleted successfully' };
+  }
+
+  /**
+   * Initiate DigiLocker Authorization
+   *
+   * Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access.
+   * Validates submission ownership and maps external user ID to internal UUID.
+   *
+   * @param clientId - Client tenant identifier
+   * @param submissionId - KYC session identifier
+   * @returns Promise with authorization URL and instructions
+   *
+   * @throws NotFoundException if submission not found
+   * @throws ForbiddenException if submission belongs to different client
+   */
+  async initiateDigiLockerAuth(
+    clientId: string,
+    submissionId: string,
+  ): Promise<{
+    authorizationUrl: string;
+    instructions: string;
+    expiresIn: number;
+  }> {
+    // Validate submission exists and belongs to client
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+
+    if (submission.clientId !== clientId) {
+      throw new ForbiddenException('Submission belongs to different client');
+    }
+
+    // Extract userId from submission
+    const userId = submission.userId;
+
+    // Generate authorization URL
+    const authorizationUrl = await this.digiLockerAuthService.generateAuthorizationUrl(userId, submissionId);
+
+    return {
+      authorizationUrl,
+      instructions: 'Redirect user to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
+      expiresIn: 600, // 10 minutes
+    };
+  }
+
+  /**
+   * Fetch Documents from DigiLocker
+   *
+   * Downloads specified documents from user's DigiLocker account and triggers automatic OCR processing.
+   * Validates submission ownership and maps external user ID to internal UUID.
+   *
+   * @param clientId - Client tenant identifier
+   * @param submissionId - KYC session identifier
+   * @param documentTypes - Array of document types to fetch ('PAN', 'AADHAAR')
+   * @returns Promise with fetch results and document URLs
+   *
+   * @throws NotFoundException if submission not found
+   * @throws ForbiddenException if submission belongs to different client
+   * @throws BadRequestException if user not authorized with DigiLocker
+   */
+  async fetchDigiLockerDocuments(
+    clientId: string,
+    submissionId: string,
+    documentTypes: string[],
+  ): Promise<{
+    success: boolean;
+    kycSessionId: string;
+    documentsFetched: string[];
+    documentUrls: {
+      panDocumentUrl?: string;
+      aadhaarFrontUrl?: string;
+    };
+    processingStatus: string;
+  }> {
+    // Validate submission exists and belongs to client
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+
+    if (submission.clientId !== clientId) {
+      throw new ForbiddenException('Submission belongs to different client');
+    }
+
+    // Extract userId from submission
+    const userId = submission.userId;
+
+    // Fetch documents from DigiLocker
+    const result = await this.kycService.fetchDocumentsFromDigiLocker(userId, documentTypes, submissionId);
+
+    // Automatically trigger document processing
+    await this.kycService.processDigiLockerDocuments(submissionId);
+
+    // Get updated submission for document URLs
+    const updatedSubmission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    return {
+      success: true,
+      kycSessionId: submissionId,
+      documentsFetched: result.fetchedDocuments,
+      documentUrls: {
+        panDocumentUrl: updatedSubmission?.panDocumentUrl || undefined,
+        aadhaarFrontUrl: updatedSubmission?.aadhaarFrontUrl || undefined,
+      },
+      processingStatus: 'OCR and face verification processing initiated',
+    };
+  }
+
+  /**
+   * Get DigiLocker Status
+   *
+   * Retrieves DigiLocker authorization status and available documents for a KYC session.
+   * Validates submission ownership and maps external user ID to internal UUID.
+   *
+   * @param clientId - Client tenant identifier
+   * @param submissionId - KYC session identifier
+   * @returns Promise with DigiLocker status and submission details
+   *
+   * @throws NotFoundException if submission not found
+   * @throws ForbiddenException if submission belongs to different client
+   */
+  async getDigiLockerStatus(
+    clientId: string,
+    submissionId: string,
+  ): Promise<{
+    authorized: boolean;
+    documentsFetched: boolean;
+    documentSource: 'MANUAL_UPLOAD' | 'DIGILOCKER';
+    availableDocuments: string[];
+    submission: KycStatusResponseDto;
+  }> {
+    // Validate submission exists and belongs to client
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+
+    if (submission.clientId !== clientId) {
+      throw new ForbiddenException('Submission belongs to different client');
+    }
+
+    // Extract userId from submission
+    const userId = submission.userId;
+
+    // Get DigiLocker status
+    const status = await this.kycService.getDigiLockerFetchStatus(userId);
+
+    // Map to client-friendly response
+    const kycStatus = await this.getKycStatus(clientId, submissionId);
+
+    return {
+      authorized: status.authorized,
+      documentsFetched: status.documentsFetched,
+      documentSource: status.documentSource,
+      availableDocuments: status.availableDocuments,
+      submission: kycStatus,
+    };
   }
 }

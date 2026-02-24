@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import { DocumentUpload, DocumentUploadRef } from '@/components/DocumentUpload';
-import { getKycApiKey, initiateKyc } from '@/lib/api-client';
+import { getKycApiKey, initiateKyc, initiateDigiLockerAuth, fetchDigiLockerDocuments, checkDigiLockerStatus } from '@/lib/api-client';
+import DigiLockerStatus from '@/components/DigiLockerStatus';
 
 export default function KycUploadPage() {
   const router = useRouter();
@@ -94,6 +95,9 @@ export default function KycUploadPage() {
   const [aadhaarBackSelected, setAadhaarBackSelected] = useState(false);
   const [uploadingAll, setUploadingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [digiLockerAuthorized, setDigiLockerAuthorized] = useState(false);
+  const [fetchingFromDigiLocker, setFetchingFromDigiLocker] = useState(false);
+  const [digiLockerError, setDigiLockerError] = useState<string | null>(null);
 
   const panRef = useRef<DocumentUploadRef>(null);
   const aadhaarFrontRef = useRef<DocumentUploadRef>(null);
@@ -135,6 +139,102 @@ export default function KycUploadPage() {
     }
   };
 
+  const handleDigiLockerAuth = async () => {
+    try {
+      setDigiLockerError(null);
+      if (!submissionId) {
+        setDigiLockerError('KYC session is not ready yet. Please wait a moment and try again.');
+        return;
+      }
+
+      const { authorizationUrl } = await initiateDigiLockerAuth(submissionId);
+
+      // Open DigiLocker authorization in popup window
+      const popup = window.open(
+        authorizationUrl,
+        'DigiLocker Authorization',
+        'width=600,height=700,scrollbars=yes'
+      );
+
+      // Listen for callback completion
+      const handleMessage = (event: MessageEvent) => {
+        // Validate origin to prevent spoofed messages
+        const allowedOrigins = new Set<string>([window.location.origin]);
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+          if (apiUrl) {
+            allowedOrigins.add(new URL(apiUrl).origin);
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!allowedOrigins.has(event.origin)) {
+          return; // Ignore messages from unauthorized origins
+        }
+
+        if (event.data.type === 'digilocker_auth_success') {
+          setDigiLockerAuthorized(true);
+          popup?.close();
+          window.removeEventListener('message', handleMessage);
+        } else if (event.data.type === 'digilocker_auth_error') {
+          setDigiLockerError(event.data.error || 'Authorization failed');
+          popup?.close();
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
+    } catch (err: any) {
+      setDigiLockerError(err?.response?.data?.message || 'Failed to initiate DigiLocker authorization');
+    }
+  };
+
+  const handleFetchFromDigiLocker = async () => {
+    try {
+      setFetchingFromDigiLocker(true);
+      setDigiLockerError(null);
+
+      if (!submissionId) {
+        setDigiLockerError('KYC session is not ready yet. Please wait a moment and try again.');
+        return;
+      }
+
+      const result = await fetchDigiLockerDocuments(submissionId, ['PAN', 'AADHAAR']);
+
+      // Mark documents as uploaded
+      if (result.documentsFetched.includes('PAN')) {
+        setPanUploaded(true);
+      }
+      if (result.documentsFetched.includes('AADHAAR')) {
+        setAadhaarFrontUploaded(true);
+        setAadhaarBackUploaded(true);
+      }
+
+      // Show success feedback
+      if (result.documentsFetched.length > 0) {
+        setDigiLockerError(null);
+        // Use a brief success message (will clear error state)
+        alert(`Successfully fetched: ${result.documentsFetched.join(', ')} from DigiLocker!`);
+      } else {
+        setDigiLockerError('No documents were fetched. Please check if documents are available in your DigiLocker account.');
+      }
+
+      setError(null);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to fetch documents from DigiLocker';
+      const status = err?.response?.status;
+      setDigiLockerError(message);
+
+      // If DigiLocker auth is no longer valid, force the UI back to re-authorize.
+      if (status === 401 && typeof message === 'string' && message.includes('re-authorize DigiLocker')) {
+        setDigiLockerAuthorized(false);
+      }
+    } finally {
+      setFetchingFromDigiLocker(false);
+    }
+  };
+
   // Show loading state until userId is ready
   if (!isReady) {
     return (
@@ -162,6 +262,59 @@ export default function KycUploadPage() {
             Back
           </Link>
         </header>
+
+        {/* DigiLocker Integration Section */}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900">Fetch from DigiLocker</h3>
+              <p className="mt-1 text-xs text-blue-700">
+                Automatically fetch your PAN and Aadhaar documents from DigiLocker
+              </p>
+              {digiLockerError && (
+                <p className="mt-2 text-xs text-red-600">{digiLockerError}</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {!digiLockerAuthorized ? (
+                <button
+                  type="button"
+                  onClick={handleDigiLockerAuth}
+                  className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+                >
+                  Authorize DigiLocker
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleFetchFromDigiLocker}
+                  disabled={fetchingFromDigiLocker}
+                  className={`rounded px-4 py-2 text-sm font-semibold text-white shadow ${
+                    fetchingFromDigiLocker
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-green-600 hover:bg-green-700'
+                  }`}
+                >
+                  {fetchingFromDigiLocker ? 'Fetching...' : 'Fetch Documents'}
+                </button>
+              )}
+            </div>
+          </div>
+          {submissionId && (
+            <div className="mt-3">
+              <DigiLockerStatus
+                submissionId={submissionId}
+                onStatusChange={(status) => setDigiLockerAuthorized(status.authorized)}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-medium text-slate-500">OR UPLOAD MANUALLY</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
