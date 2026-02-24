@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, Suspense } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { validateApiKey, setKycApiKey } from '@/lib/api-client';
+import React, { useState, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { validateApiKey, setKycApiKey } from "@/lib/api-client";
 
 /**
  * EnxtAI KYC System - Landing Page (Secure Entry)
@@ -89,28 +89,34 @@ function ErrorBanner({ onError }: { onError: (error: string | null) => void }) {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const errorParam = searchParams.get('error');
+    const errorParam = searchParams.get("error");
 
     if (errorParam) {
       switch (errorParam) {
-        case 'session_expired':
-          onError('Your session has expired. Please enter your API key again.');
+        case "session_expired":
+          onError("Your session has expired. Please enter your API key again.");
           break;
-        case 'invalid_key':
-          onError('Your API key is invalid or has been revoked. Please contact your administrator.');
+        case "invalid_key":
+          onError(
+            "Your API key is invalid or has been revoked. Please contact your administrator.",
+          );
           break;
-        case 'domain_not_whitelisted':
-          onError('This domain is not authorized to access the KYC system. Please contact your administrator.');
+        case "domain_not_whitelisted":
+          onError(
+            "This domain is not authorized to access the KYC system. Please contact your administrator.",
+          );
           break;
-        case 'key_required':
-          onError('Please enter your API key to access the KYC verification flow.');
+        case "key_required":
+          onError(
+            "Please enter your API key to access the KYC verification flow.",
+          );
           break;
         default:
-          onError('An error occurred. Please try again.');
+          onError("An error occurred. Please try again.");
       }
 
       // Clear error param from URL without triggering navigation
-      window.history.replaceState({}, '', '/');
+      window.history.replaceState({}, "", "/");
     }
   }, [searchParams, onError]);
 
@@ -120,7 +126,7 @@ function ErrorBanner({ onError }: { onError: (error: string | null) => void }) {
 export default function HomePage() {
   const router = useRouter();
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState("");
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
@@ -152,7 +158,7 @@ export default function HomePage() {
 
     const trimmedKey = apiKey.trim();
     if (!trimmedKey) {
-      setError('Please enter an API key');
+      setError("Please enter a valid API key");
       return;
     }
 
@@ -163,85 +169,395 @@ export default function HomePage() {
       if (result.valid) {
         // Store API key using helper function (sets key + 30min expiry)
         setKycApiKey(trimmedKey);
-
         // Redirect to KYC upload flow
-        router.push('/kyc/upload');
+        router.push("/kyc/upload");
       } else {
-        setError(result.error || 'Invalid API key');
+        setError(result.error || "Invalid API key provided");
       }
     } catch (err) {
-      setError('Failed to validate API key. Please try again.');
+      setError("An unexpected error occurred. Please try again later.");
     } finally {
       setValidating(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 via-white to-gray-50 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-zinc-50 selection:bg-zinc-900 selection:text-white flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8">
       {/* Error Banner Handler - wrapped in Suspense for useSearchParams */}
       <Suspense fallback={null}>
         <ErrorBanner onError={setBannerError} />
       </Suspense>
 
-      <div className="w-full max-w-7xl space-y-12">
-        {/* Error Banner */}
-        {bannerError && (
-          <div className="max-w-6xl mx-auto">
-            <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start">
-                  <svg className="h-6 w-6 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-red-800">Authentication Error</h3>
-                    <p className="mt-1 text-sm text-red-700">{bannerError}</p>
-                  </div>
+      {/* Global Error Banner */}
+      {bannerError && (
+        <div className="w-full max-w-5xl mb-8 animate-in slide-in-from-top-4">
+          <div className="rounded-xl bg-red-50 border border-red-100 p-4 shrink-0 flex items-start gap-4 shadow-sm">
+            <svg
+              className="w-5 h-5 text-red-600 mt-0.5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-900">
+                Authentication Required
+              </h3>
+              <p className="mt-1 text-sm text-red-700 leading-relaxed">
+                {bannerError}
+              </p>
+            </div>
+            <button
+              onClick={() => setBannerError(null)}
+              className="text-red-500 hover:text-red-700 transition-colors p-1"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hero Section */}
+      <div className="w-full max-w-5xl flex flex-col items-center text-center mt-12 mb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-zinc-200 text-xs font-semibold text-zinc-600 mb-8 shadow-sm">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          enxtAI Platform Operational
+        </div>
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-zinc-900 mb-6 font-sans">
+          Identity Verification Infrastructure
+        </h1>
+        <p className="max-w-2xl text-lg sm:text-lg text-zinc-500 leading-relaxed font-medium">
+          Enterprise-grade automated KYC workflows designed for modern FinTech
+          compliance, secure access, and streamlined customer onboarding.
+        </p>
+      </div>
+
+      {/* Portal Selection Grid - prefetch disabled to prevent route preloading issues */}
+      <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700">
+        {/* Super Admin Portal */}
+        <Link
+          href="/admin/login"
+          prefetch={false}
+          className="group relative flex flex-col p-8 bg-white rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-300"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-100/80 text-zinc-900 mb-6 group-hover:scale-110 group-hover:bg-zinc-100 transition-all duration-300">
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745l-1 1M12 15v8m0-8h.01M5 19h14"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 11V3m0 8h.01M5 7h14"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M9 3h6v4H9V3z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-900 mb-3 tracking-tight">
+            System Administration
+          </h2>
+          <p className="text-sm text-zinc-500 flex-grow mb-8 leading-relaxed">
+            Centralized portal for operational oversight, infrastructure
+            monitoring, and advanced compliance review queues.
+          </p>
+          <div className="mt-auto flex items-center justify-between border-t border-zinc-100 pt-5">
+            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">
+              Internal Access
+            </span>
+            <span className="flex items-center text-sm font-medium text-zinc-900 group-hover:text-blue-600 transition-colors">
+              Enter{" "}
+              <span className="ml-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300">
+                →
+              </span>
+            </span>
+          </div>
+        </Link>
+
+        {/* Client Portal */}
+        <Link
+          href="/client/login"
+          prefetch={false}
+          className="group relative flex flex-col p-8 bg-white rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-300"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-100/80 text-zinc-900 mb-6 group-hover:scale-110 group-hover:bg-zinc-100 transition-all duration-300">
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-900 mb-3 tracking-tight">
+            Client Workspace
+          </h2>
+          <p className="text-sm text-zinc-500 flex-grow mb-8 leading-relaxed">
+            Partner access for FinTech organizations to oversee webhook
+            integrations, monitor verification status, and analyze metrics.
+          </p>
+          <div className="mt-auto flex items-center justify-between border-t border-zinc-100 pt-5">
+            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">
+              Partner Access
+            </span>
+            <span className="flex items-center text-sm font-medium text-zinc-900 group-hover:text-blue-600 transition-colors">
+              Enter{" "}
+              <span className="ml-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300">
+                →
+              </span>
+            </span>
+          </div>
+        </Link>
+
+        {/* KYC Verification - Highlighted (Now requires API key) */}
+        <button
+          onClick={() => setShowApiKeyModal(true)}
+          className="group relative flex flex-col p-8 bg-white rounded-2xl border border-zinc-200 hover:border-zinc-300 hover:shadow-xl hover:shadow-zinc-200/50 transition-all duration-300 text-left"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-100/80 text-zinc-900 mb-6 group-hover:scale-110 group-hover:bg-zinc-100 transition-all duration-300">
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-zinc-900 mb-3 tracking-tight">
+            Initiate KYC Flow
+          </h2>
+          <p className="text-sm text-zinc-500 flex-grow mb-8 leading-relaxed">
+            Secure entry point for end-users to submit documents, verify
+            identity, and complete the automated onboarding procedure.
+          </p>
+          <div className="mt-auto flex items-center justify-between border-t border-zinc-100 pt-5">
+            <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">
+              Secure Access
+            </span>
+            <span className="flex items-center text-sm font-medium text-zinc-900 group-hover:text-blue-600 transition-colors">
+              Start{" "}
+              <span className="ml-1 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300">
+                →
+              </span>
+            </span>
+          </div>
+        </button>
+      </div>
+
+      {/* Footer */}
+      <footer className="mt-auto pt-24 pb-8 text-center text-zinc-400 text-sm animate-in fade-in duration-1000">
+        <p className="flex items-center justify-center gap-2">
+          <span>© {new Date().getFullYear()} EnxtAI Core Technologies.</span>
+          <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
+          <span>All Rights Reserved.</span>
+        </p>
+      </footer>
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div
+            className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm transition-opacity"
+            onClick={() => {
+              if (!validating) {
+                setShowApiKeyModal(false);
+                setApiKey("");
+                setError(null);
+              }
+            }}
+          />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 sm:p-8">
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-zinc-900 tracking-tight">
+                    Authenticate Request
+                  </h3>
+                  <p className="mt-2 text-sm text-zinc-500 leading-relaxed">
+                    Provide your commercial API key to authorize the secure KYC
+                    flow initialization.
+                  </p>
                 </div>
                 <button
-                  type="button"
-                  onClick={() => setBannerError(null)}
-                  className="ml-4 inline-flex text-red-400 hover:text-red-600 focus:outline-none"
+                  onClick={() => {
+                    setShowApiKeyModal(false);
+                    setApiKey("");
+                    setError(null);
+                  }}
+                  disabled={validating}
+                  className="text-zinc-400 hover:text-zinc-600 transition-colors p-1"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
+
+              <form onSubmit={handleApiKeySubmit} className="space-y-6">
+                <div>
+                  <label
+                    htmlFor="apiKey"
+                    className="block text-sm font-medium text-zinc-900 mb-2"
+                  >
+                    Client API Key
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg
+                        className="h-5 w-5 text-zinc-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                        />
+                      </svg>
+                    </div>
+                    <input
+                      id="apiKey"
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="sk_live_..."
+                      className="block w-full pl-10 pr-3 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      disabled={validating}
+                      autoFocus
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="flex items-start gap-3 p-3 bg-red-50 text-red-700 rounded-lg text-sm border border-red-100">
+                    <svg
+                      className="w-5 h-5 shrink-0 mt-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <p>{error}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowApiKeyModal(false);
+                      setApiKey("");
+                      setError(null);
+                    }}
+                    disabled={validating}
+                    className="flex-1 px-4 py-2.5 border border-zinc-200 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-300 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={validating || !apiKey.trim()}
+                    className="flex-1 px-4 py-2.5 bg-zinc-900 text-white text-sm font-medium rounded-lg hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {validating ? (
+                      <>
+                        <svg
+                          className="animate-spin h-4 w-4 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        Authenticating...
+                      </>
+                    ) : (
+                      "Authorize Request"
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
-          </div>
-        )}
-
-        {/* Hero Section */}
-        <div className="text-center space-y-4">
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900">
-            EnxtAI KYC System
-          </h1>
-          <p className="text-xl sm:text-2xl text-gray-600 max-w-3xl mx-auto">
-            Multi-tenant Know Your Customer verification platform for FinTech companies
-          </p>
-          <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-            Streamline customer onboarding with automated document verification,
-            role-based access control, and comprehensive compliance management.
-          </p>
-        </div>
-
-        {/* Portal Selection Grid - prefetch disabled to prevent route preloading issues */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {/* Super Admin Portal */}
-          <Link
-            href="/admin/login"
-            prefetch={false}
-            className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center"
-          >
-            <div className="space-y-4">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto group-hover:bg-blue-200 transition-colors">
+            <div className="bg-zinc-50 border-t border-zinc-100 p-4 sm:px-8">
+              <p className="text-[11px] text-zinc-500 text-center flex items-center justify-center gap-1.5 font-medium uppercase tracking-wider">
                 <svg
-                  className="w-8 h-8 text-blue-600"
+                  className="w-3.5 h-3.5 text-zinc-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
-                  aria-label="Admin Shield Icon"
                 >
                   <path
                     strokeLinecap="round"
@@ -250,183 +566,13 @@ export default function HomePage() {
                     d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
                   />
                 </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Super Admin Portal</h2>
-              <p className="text-gray-600 leading-relaxed">
-                Internal access for EnxtAI team to manage clients, review KYC submissions,
-                and oversee system operations.
+                Secure Environment Setup
               </p>
-              <div className="pt-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                  Internal Access
-                </span>
-              </div>
-            </div>
-          </Link>
-
-          {/* Client Portal */}
-          <Link
-            href="/client/login"
-            prefetch={false}
-            className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center"
-          >
-            <div className="space-y-4">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto group-hover:bg-indigo-200 transition-colors">
-                <svg
-                  className="w-8 h-8 text-indigo-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-label="Client Building Icon"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                  />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Client Portal</h2>
-              <p className="text-gray-600 leading-relaxed">
-                FinTech client access to manage KYC submissions, configure webhooks,
-                and monitor verification status.
-              </p>
-              <div className="pt-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
-                  Client Access
-                </span>
-              </div>
-            </div>
-          </Link>
-
-          {/* KYC Verification - Now requires API key */}
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="group block bg-white rounded-lg shadow-md hover:shadow-xl hover:scale-105 transition-all duration-200 p-8 text-center md:col-span-2 lg:col-span-1 w-full"
-          >
-            <div className="space-y-4">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto group-hover:bg-green-200 transition-colors">
-                <svg
-                  className="w-8 h-8 text-green-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-label="KYC Document Icon"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Begin KYC Verification</h2>
-              <p className="text-gray-600 leading-relaxed">
-                Start your Know Your Customer verification process with guided document
-                upload and automated verification.
-              </p>
-              <div className="pt-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                  Secure Access
-                </span>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center text-gray-500 text-sm">
-          <p>© 2026 EnxtAI. Secure KYC verification for modern FinTech.</p>
-        </div>
-      </div>
-
-      {/* API Key Modal */}
-      {showApiKeyModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-gray-900">Enter Client API Key</h3>
-              <button
-                onClick={() => {
-                  setShowApiKeyModal(false);
-                  setApiKey('');
-                  setError(null);
-                }}
-                className="text-gray-400 hover:text-gray-600"
-                aria-label="Close modal"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <p className="text-sm text-gray-600">
-              To begin the KYC verification process, please enter your client API key.
-              This key is provided by your organization and ensures secure access to the verification system.
-            </p>
-
-            <form onSubmit={handleApiKeySubmit} className="space-y-4">
-              <div>
-                <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                  API Key
-                </label>
-                <input
-                  id="apiKey"
-                  type="text"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk_live_..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={validating}
-                  autoFocus
-                />
-              </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-md p-3">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowApiKeyModal(false);
-                    setApiKey('');
-                    setError(null);
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-                  disabled={validating}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={validating || !apiKey.trim()}
-                  className={`flex-1 px-4 py-2 rounded-md text-white font-medium transition-colors ${
-                    validating || !apiKey.trim()
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
-                >
-                  {validating ? 'Validating...' : 'Continue'}
-                </button>
-              </div>
-            </form>
-
-            <div className="pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500">
-                <strong>Note:</strong> Your API key is validated against your organization's
-                whitelisted domains. If you encounter issues, please contact your administrator.
-              </p>
+              {/* Note: Your API key is validated against your organization's whitelisted domains. */}
             </div>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }
