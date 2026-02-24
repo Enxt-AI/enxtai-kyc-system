@@ -1,13 +1,22 @@
-'use client';
+"use client";
 
-import { SessionProvider } from 'next-auth/react';
-import SuperAdminGuard from '@/components/SuperAdminGuard';
-import AdminSessionProvider from '@/components/AdminSessionProvider';
-import { useSession, signOut } from 'next-auth/react';
-import { useAdminSession } from '@/lib/use-admin-session';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { SessionProvider } from "next-auth/react";
+import SuperAdminGuard from "@/components/SuperAdminGuard";
+import AdminSessionProvider from "@/components/AdminSessionProvider";
+import { useSession, signOut } from "next-auth/react";
+import { useAdminSession } from "@/lib/use-admin-session";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  Building2,
+  CheckSquare,
+  Key,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
 
 /**
  * Admin Panel Layout Content
@@ -27,95 +36,101 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigation = [
-    { name: 'Dashboard', href: '/admin/dashboard', icon: '📊' },
-    { name: 'Client Management', href: '/admin/clients', icon: '🏢' },
-    { name: 'KYC Review', href: '/admin/kyc-review', icon: '✅' },
-    { name: 'Change Password', href: '/admin/change-password', icon: '🔑' }, // SELF-SERVICE PASSWORD CHANGE: Allows Super Admin to update password anytime (voluntary, not forced)
+    { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+    { name: "Client Management", href: "/admin/clients", icon: Building2 },
+    { name: "KYC Review", href: "/admin/kyc-review", icon: CheckSquare },
+    { name: "Change Password", href: "/admin/change-password", icon: Key }, // SELF-SERVICE PASSWORD CHANGE: Allows Super Admin to update password anytime (voluntary, not forced)
   ];
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-zinc-50 font-sans selection:bg-zinc-900 selection:text-white">
       {/* Sidebar - only render when not on login page */}
-      {pathname !== '/admin/login' && (
+      {pathname !== "/admin/login" && (
         <aside
-        className={`${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto`}
-      >
-        <div className="flex h-full flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-gray-200 p-4">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Admin Panel</h1>
-              <p className="text-xs text-gray-500">Platform Management</p>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* User Info */}
-          <div className="border-b border-gray-200 p-4">
-            <div className="flex items-center space-x-3">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
-                {session?.user?.email?.[0].toUpperCase() || 'A'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {session?.user?.email || 'Admin'}
-                </p>
-                <p className="text-xs text-white bg-purple-600 px-2 py-0.5 rounded-full inline-block">
-                  SUPER_ADMIN
+          className={`${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto`}
+        >
+          <div className="flex h-full flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-200 p-6 bg-white">
+              <div>
+                <h1 className="text-xl font-bold text-zinc-900 tracking-tight">
+                  Admin Panel
+                </h1>
+                <p className="text-xs text-zinc-500 font-medium mt-0.5">
+                  Platform Management
                 </p>
               </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="lg:hidden text-zinc-400 hover:text-zinc-900 transition-colors rounded-lg hover:bg-zinc-100 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* User Info */}
+            <div className="border-b border-zinc-200 p-6 bg-zinc-50/50">
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-white border border-zinc-200 flex items-center justify-center text-zinc-900 font-bold shadow-sm">
+                  {session?.user?.email?.[0].toUpperCase() || "A"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-zinc-900 truncate">
+                    {session?.user?.email || "Admin"}
+                  </p>
+                  <p className="mt-1 text-[10px] font-bold tracking-wider text-zinc-500 uppercase">
+                    SUPER_ADMIN
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <nav className="flex-1 overflow-y-auto px-4 py-6 bg-white">
+              <ul className="space-y-1.5 relative">
+                {navigation.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <li key={item.name} className="relative">
+                      <Link
+                        href={item.href}
+                        className={`group flex items-center space-x-3 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200 ${
+                          isActive
+                            ? "bg-zinc-100 text-zinc-900"
+                            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                        }`}
+                        onClick={() => setSidebarOpen(false)}
+                      >
+                        <item.icon
+                          className={`w-5 h-5 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-900"}`}
+                        />
+                        <span>{item.name}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+
+            {/* Logout Button */}
+            {/* ISOLATED ADMIN SIGNOUT: Routes to /api/auth/admin/signout (AdminSessionProvider basePath) */}
+            <div className="border-t border-zinc-200 p-4 bg-white">
+              <button
+                onClick={() => signOut({ callbackUrl: "/admin/login" })}
+                className="group flex w-full items-center space-x-3 rounded-lg px-3.5 py-2.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-all duration-200"
+              >
+                <LogOut className="w-5 h-5 text-zinc-400 group-hover:text-zinc-900 transition-colors" />
+                <span>Logout</span>
+              </button>
             </div>
           </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-4">
-            <ul className="space-y-2">
-              {navigation.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <li key={item.name}>
-                    <Link
-                      href={item.href}
-                      className={`flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                        isActive
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span>{item.name}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-
-          {/* Logout Button */}
-          {/* ISOLATED ADMIN SIGNOUT: Routes to /api/auth/admin/signout (AdminSessionProvider basePath) */}
-          <div className="border-t border-gray-200 p-4">
-            <button
-              onClick={() => signOut({ callbackUrl: '/admin/login' })}
-              className="flex w-full items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition"
-            >
-              <span className="text-lg">🚪</span>
-              <span>Logout</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+        </aside>
       )}
 
       {/* Mobile Overlay - only render when sidebar exists */}
-      {pathname !== '/admin/login' && sidebarOpen && (
+      {pathname !== "/admin/login" && sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -123,39 +138,29 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <div className={`flex flex-1 flex-col overflow-hidden ${pathname !== '/admin/login' ? 'lg:ml-64' : ''}`}>
+      <div
+        className={`flex flex-1 flex-col overflow-hidden ${pathname !== "/admin/login" ? "" : ""}`}
+      >
         {/* Mobile Header - only render when sidebar exists */}
-        {pathname !== '/admin/login' && (
-          <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <svg
-                className="h-6 w-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+        {pathname !== "/admin/login" && (
+          <header className="lg:hidden bg-white border-b border-zinc-200 px-4 py-3 z-30 relative">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="text-zinc-500 hover:text-zinc-900 transition-colors rounded-lg hover:bg-zinc-100 p-1.5"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              </svg>
-            </button>
-            <h1 className="text-lg font-semibold text-gray-900">Admin Panel</h1>
-            <div className="w-6" /> {/* Spacer for centering */}
-          </div>
-        </header>
+                <Menu className="h-6 w-6" />
+              </button>
+              <h1 className="text-lg font-bold text-zinc-900 tracking-tight">
+                Admin
+              </h1>
+              <div className="w-8" /> {/* Spacer for centering */}
+            </div>
+          </header>
         )}
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto bg-gray-100">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto bg-zinc-50">{children}</main>
       </div>
     </div>
   );

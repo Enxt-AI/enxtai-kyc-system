@@ -7,21 +7,21 @@ import { getAllClients } from '@/lib/api-client';
 
 /**
  * Admin Clients List Page
- * 
+ *
  * Displays all client organizations with basic stats and actions.
- * 
+ *
  * @remarks
  * **Features**:
  * - Table view with client name, status, API key (masked), total KYCs
  * - Status badges (ACTIVE = green, SUSPENDED = red, TRIAL = yellow)
  * - Actions: View/Edit, Regenerate Key
  * - Create New Client button
- * 
+ *
  * **Data Loading**:
  * - Fetches clients on mount via getAllClients() API call
  * - Shows loading state while fetching
  * - Displays error message if fetch fails
- * 
+ *
  * **Table Columns**:
  * - Name: Organization name (clickable link to detail page)
  * - Status: Badge with color coding
@@ -53,11 +53,11 @@ export default function AdminClientsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Client Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Client Management</h1>
           <p className="mt-1 text-sm text-slate-600">
             Manage client organizations and their KYC submissions
           </p>

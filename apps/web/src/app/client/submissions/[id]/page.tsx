@@ -8,9 +8,9 @@ import Link from 'next/link';
 
 /**
  * Submission Detail Page
- * 
+ *
  * Displays full submission details with extracted data and document previews.
- * 
+ *
  * @remarks
  * **Features**:
  * - Full extracted data display (PAN, Aadhaar, name, DOB, etc.)
@@ -18,24 +18,24 @@ import Link from 'next/link';
  * - Document image previews with presigned URLs (1-hour expiry)
  * - Status badge with color coding
  * - Back navigation to submissions list
- * 
+ *
  * **Data Source**:
  * - API endpoint: GET /api/v1/client/submissions/:id
  * - Requires session authentication
  * - Returns full submission with presigned URLs for documents
- * 
+ *
  * **Security**:
  * - Presigned URLs valid for 1 hour
  * - Tenant isolation enforced by backend (clientId validation)
  * - Aadhaar number masked (XXXX XXXX 1234)
- * 
+ *
  * **Document Previews**:
  * - PAN Document
  * - Aadhaar Front
  * - Aadhaar Back
  * - Live Photo
  * - Signature (if available)
- * 
+ *
  * **Error Handling**:
  * - 404: Submission not found or belongs to different client
  * - Network errors: Display retry button
@@ -100,7 +100,7 @@ export default function SubmissionDetailPage() {
 
   const renderScoreBar = (score: number | null, label: string) => {
     if (score === null) return null;
-    
+
     const percentage = score * 100;
     const color = percentage >= 80 ? 'bg-green-500' : percentage >= 60 ? 'bg-yellow-500' : 'bg-red-500';
 
@@ -122,7 +122,7 @@ export default function SubmissionDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto">
+      <div className="">
         <div className="mb-8">
           <Link href="/client/submissions" className="text-blue-600 hover:text-blue-800 font-medium">
             ← Back to Submissions
@@ -138,7 +138,7 @@ export default function SubmissionDetailPage() {
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto">
+      <div className="">
         <div className="mb-8">
           <Link href="/client/submissions" className="text-blue-600 hover:text-blue-800 font-medium">
             ← Back to Submissions
@@ -176,7 +176,7 @@ export default function SubmissionDetailPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="">
       {/* Back Navigation */}
       <div className="mb-8">
         <Link href="/client/submissions" className="text-blue-600 hover:text-blue-800 font-medium">

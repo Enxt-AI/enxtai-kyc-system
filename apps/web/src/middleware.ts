@@ -71,7 +71,6 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // ISOLATED SESSIONS: Check appropriate cookie based on path
   // Admin paths → next-auth.super-admin-token
   if (pathname.startsWith('/admin')) {
     const token = await getToken({
@@ -79,7 +78,21 @@ export async function middleware(req: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET,
       cookieName: 'next-auth.super-admin-token'
     });
+
     if (!token) {
+      // Check if they have a client token instead
+      const clientToken = await getToken({
+        req,
+        secret: process.env.NEXTAUTH_SECRET,
+        cookieName: 'next-auth.client-token'
+      });
+
+      if (clientToken) {
+        // Logged in as Client Admin but trying to access Super Admin panel
+        const clientDashboardUrl = new URL('/client/dashboard', req.url);
+        return NextResponse.redirect(clientDashboardUrl, { headers: { 'x-middleware-replace': 'true' } });
+      }
+
       const loginUrl = new URL('/admin/login', req.url);
       return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
     }
@@ -92,7 +105,21 @@ export async function middleware(req: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET,
       cookieName: 'next-auth.client-token'
     });
+
     if (!token) {
+      // Check if they have a super admin token instead
+      const adminToken = await getToken({
+        req,
+        secret: process.env.NEXTAUTH_SECRET,
+        cookieName: 'next-auth.super-admin-token'
+      });
+
+      if (adminToken) {
+        // Logged in as Super Admin but trying to access Client Portal
+        const adminDashboardUrl = new URL('/admin', req.url);
+        return NextResponse.redirect(adminDashboardUrl, { headers: { 'x-middleware-replace': 'true' } });
+      }
+
       const loginUrl = new URL('/client/login', req.url);
       return NextResponse.redirect(loginUrl, { headers: { 'x-middleware-replace': 'true' } });
     }

@@ -95,7 +95,7 @@ export class DigiLockerDocumentService {
           trim: true,
           mergeAttrs: true,
         },
-        (err, result) => {
+        (err: Error | null, result: any) => {
           if (err) return reject(err);
           resolve(result);
         },

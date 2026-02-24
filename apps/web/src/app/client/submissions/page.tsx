@@ -7,9 +7,9 @@ import Link from 'next/link';
 
 /**
  * Submissions List Page
- * 
+ *
  * Displays paginated, filterable table of KYC submissions for the authenticated client.
- * 
+ *
  * @remarks
  * **Features**:
  * - Paginated table with 20 items per page
@@ -18,12 +18,12 @@ import Link from 'next/link';
  * - Date range filtering (start/end date)
  * - CSV export for reporting
  * - Link to submission detail page
- * 
+ *
  * **Data Source**:
  * - API endpoint: GET /api/v1/client/submissions
  * - Requires session authentication
  * - Returns submissions scoped to clientId
- * 
+ *
  * **Columns**:
  * - User ID (externalUserId)
  * - Email
@@ -33,7 +33,7 @@ import Link from 'next/link';
  * - Liveness Score (0-1, percentage)
  * - Submitted Date
  * - Actions (View Details link)
- * 
+ *
  * **Responsive**: Table on desktop, cards on mobile (below md breakpoint)
  */
 export default function SubmissionsPage() {
@@ -121,7 +121,7 @@ export default function SubmissionsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="">
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Submissions</h1>
