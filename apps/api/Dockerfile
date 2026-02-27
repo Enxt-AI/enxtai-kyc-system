@@ -65,12 +65,22 @@ RUN addgroup --system --gid 1001 nodejs \
 # install only prod deps for api
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
+COPY packages/shared-types/package.json packages/shared-types/package.json
 RUN corepack enable pnpm && pnpm install --filter @enxtai/api... --prod --frozen-lockfile
 
 # copy build
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/prisma ./prisma
+COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
+
+# Need to run startup commands as root to create entrypoint script
+USER root
+RUN echo '#!/bin/sh' > /app/start.sh && \
+	echo 'cd apps/api && pnpm exec prisma db push --accept-data-loss && pnpm exec prisma db seed' >> /app/start.sh && \
+	echo 'node dist/main' >> /app/start.sh && \
+	chmod +x /app/start.sh && \
+	chown nestjs:nodejs /app/start.sh
 
 USER nestjs
 EXPOSE 3001
-CMD ["node", "dist/main"]
+CMD ["/app/start.sh"]
