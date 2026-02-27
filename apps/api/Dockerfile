@@ -10,6 +10,7 @@ RUN apk add --no-cache \
 	pango-dev \
 	giflib-dev \
 	pixman-dev \
+	openssl \
 	&& corepack enable pnpm
 WORKDIR /app
 
