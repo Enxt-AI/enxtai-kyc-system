@@ -62,20 +62,9 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs \
 	&& adduser --system --uid 1001 nestjs
 
-# Install all deps; we explicitly use NODE_ENV=development so that prisma is installed
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/api/package.json apps/api/package.json
-COPY apps/api/tsconfig.json apps/api/tsconfig.json
-COPY packages/shared-types/package.json packages/shared-types/package.json
-RUN corepack enable pnpm && NODE_ENV=development pnpm install --filter @enxtai/api... --frozen-lockfile
-
-# Copy build to the exact monorepo paths
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
-COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
-
-# Generate Prisma Client for the runtime environment
-RUN pnpm --filter @enxtai/api exec prisma generate
+# Copy the completely built application and the pnpm global store
+COPY --from=builder --chown=nestjs:nodejs /app /app
+COPY --from=builder --chown=nestjs:nodejs /root/.local/share/pnpm /root/.local/share/pnpm
 
 # Create entrypoint script
 USER root
