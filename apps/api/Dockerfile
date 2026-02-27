@@ -48,6 +48,8 @@ RUN pnpm install --filter @enxtai/api... --frozen-lockfile
 RUN pnpm --filter @enxtai/shared-types... build
 
 # prisma CLI now exists ✔
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+ENV PRISMA_CLI_QUERY_ENGINE_TYPE=binary
 RUN pnpm --filter @enxtai/api exec prisma generate
 
 # build API
