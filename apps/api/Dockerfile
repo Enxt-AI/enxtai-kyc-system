@@ -74,10 +74,13 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 
+# Generate Prisma Client for the runtime environment
+RUN pnpm --filter @enxtai/api exec prisma generate
+
 # Create entrypoint script
 USER root
 RUN echo '#!/bin/sh' > /app/start.sh && \
-	echo 'cd apps/api && pnpm exec prisma db push --accept-data-loss && pnpm exec prisma db seed' >> /app/start.sh && \
+	echo 'cd apps/api && npx prisma db push --accept-data-loss && npx prisma db seed' >> /app/start.sh && \
 	echo 'node dist/main' >> /app/start.sh && \
 	chmod +x /app/start.sh && \
 	chown nestjs:nodejs /app/start.sh
