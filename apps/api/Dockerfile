@@ -1,16 +1,15 @@
 # ---------- base ----------
-FROM node:20-alpine AS base
-RUN apk add --no-cache \
-	libc6-compat \
+FROM node:20-bookworm-slim AS base
+RUN apt-get update && apt-get install -y \
 	python3 \
-	make \
-	g++ \
-	cairo-dev \
-	jpeg-dev \
-	pango-dev \
-	giflib-dev \
-	pixman-dev \
+	build-essential \
+	libcairo2-dev \
+	libjpeg-dev \
+	libpango1.0-dev \
+	libgif-dev \
+	librsvg2-dev \
 	openssl \
+	&& rm -rf /var/lib/apt/lists/* \
 	&& corepack enable pnpm
 WORKDIR /app
 
