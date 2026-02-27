@@ -1,10 +1,7 @@
 {
   "name": "enxtai-kyc-system",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -12,8 +9,8 @@
     "clean": "turbo run clean"
   },
   "devDependencies": {
-    "turbo": "^2.8.11",
-    "typescript": "^5.9.3"
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.0"
   },
   "packageManager": "pnpm@9.0.0"
 }
