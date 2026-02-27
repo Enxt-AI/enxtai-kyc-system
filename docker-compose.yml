@@ -73,35 +73,33 @@ services:
   #   networks:
   #     - kyc-network
 
-  # api:
-  #   build:
-  #     context: .
-  #     dockerfile: apps/api/Dockerfile
-  #   container_name: kyc-api
-  #   ports:
-  #     - "3001:3001"
-  #   environment:
-  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/kyc_db
-  #     - REDIS_URL=redis://redis:6379
-  #     - ML_SERVICE_URL=http://ml-service:8000
-  #     - MINIO_ENDPOINT=minio
-  #     - MINIO_PORT=9000
-  #     - MINIO_ACCESS_KEY=minioadmin
-  #     - MINIO_SECRET_KEY=minioadmin
-  #     - MINIO_USE_SSL=false
-  #     - JWT_SECRET=dev-secret-change-in-production
-  #     - PORT=3001
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #     minio:
-  #       condition: service_healthy
-  #     ml-service:
-  #       condition: service_healthy
-  #   networks:
-  #     - kyc-network
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: kyc-api
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/kyc_db
+      - REDIS_URL=redis://redis:6379
+      - ML_SERVICE_URL=http://localhost:8000
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_USE_SSL=false
+      - JWT_SECRET=dev-secret-change-in-production
+      - PORT=3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - kyc-network
 
   # web:
   #   build:

@@ -10,7 +10,7 @@ RUN apk add --no-cache \
 	pango-dev \
 	giflib-dev \
 	pixman-dev \
- && corepack enable pnpm
+	&& corepack enable pnpm
 WORKDIR /app
 
 
@@ -36,13 +36,16 @@ COPY . .
 
 # ensure face-api models are available in repo path (and cache layer)
 RUN mkdir -p apps/api/models \
- && cp -r node_modules/@vladmandic/face-api/model/* apps/api/models/ || true
+	&& cp -r node_modules/@vladmandic/face-api/model/* apps/api/models/ || true
 
 # reuse pnpm store for speed
 COPY --from=deps /root/.local/share/pnpm /root/.local/share/pnpm
 
 # ⬇️ THIS is the critical line
 RUN pnpm install --filter @enxtai/api... --frozen-lockfile
+
+# build workspace dependencies first (shared-types)
+RUN pnpm --filter @enxtai/shared-types... build
 
 # prisma CLI now exists ✔
 RUN pnpm --filter @enxtai/api exec prisma generate
@@ -57,7 +60,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nestjs
+	&& adduser --system --uid 1001 nestjs
 
 # install only prod deps for api
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
