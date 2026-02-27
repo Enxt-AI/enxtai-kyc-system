@@ -165,3 +165,45 @@ Add the following required variables in the Vercel dashboard before clicking Dep
 | `NEXTAUTH_SECRET` | `generate-a-random-secure-string` | Used to encrypt NextAuth user sessions securely |
 
 Click **Deploy**! Once compiled, your users can successfully sign up and trigger KYC verification fully interconnected with your AWS cloud databases!
+
+---
+
+## Part 4: Useful Docker Commands Cheatsheet
+
+Once your backend is running on EC2, you will need these commands to manage it:
+
+**Restart the entire backend cluster:**
+```bash
+docker compose restart
+```
+
+**View live logs of the API container:**
+```bash
+docker logs -f kyc-api
+```
+
+**Rebuild and apply changes ONLY to the API (e.g., after pushing new code):**
+```bash
+# Don't take down the databases, just swap the API container
+docker compose up -d --build --force-recreate api
+```
+
+**Stop all backend services temporarily:**
+```bash
+docker compose stop
+```
+
+**Shut down and completely remove containers/networks:**
+```bash
+docker compose down
+```
+
+**Check the health of all running containers:**
+```bash
+docker ps
+```
+
+**Access the Postgres database terminal directly:**
+```bash
+docker exec -it kyc-postgres psql -U postgres -d kyc_db
+```
