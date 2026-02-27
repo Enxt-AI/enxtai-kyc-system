@@ -62,18 +62,19 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs \
 	&& adduser --system --uid 1001 nestjs
 
-# install only prod deps for api
+# Install all deps instead of --prod so prisma and ts-node are available for seeding
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
+COPY apps/api/tsconfig.json apps/api/tsconfig.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
-RUN corepack enable pnpm && pnpm install --filter @enxtai/api... --prod --frozen-lockfile
+RUN corepack enable pnpm && pnpm install --filter @enxtai/api... --frozen-lockfile
 
-# copy build
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/prisma ./prisma
+# Copy build to the exact monorepo paths
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 
-# Need to run startup commands as root to create entrypoint script
+# Create entrypoint script
 USER root
 RUN echo '#!/bin/sh' > /app/start.sh && \
 	echo 'cd apps/api && pnpm exec prisma db push --accept-data-loss && pnpm exec prisma db seed' >> /app/start.sh && \
