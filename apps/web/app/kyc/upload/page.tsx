@@ -392,6 +392,7 @@ export default function KycUploadPage() {
                 {!digiLockerAuthorized ? (
                   <button
                     type="button"
+                    disabled
                     onClick={handleDigiLockerAuth}
                     className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow hover:bg-blue-500 transition"
                   >
