@@ -32,7 +32,12 @@ import { getSession } from 'next-auth/react';
  * 2. Response: Centralized error handling (passthrough for now)
  */
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  // In the browser, calling an http:// backend from an https:// Vercel site is blocked
+  // (Mixed Content). Route browser requests through a same-origin proxy instead.
+  baseURL:
+    typeof window === 'undefined'
+      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      : '/api/backend',
   timeout: 15000,
 });
 
