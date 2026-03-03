@@ -129,7 +129,7 @@ export const authAdminOptions: NextAuthOptions = {
         try {
           // Call backend admin login endpoint
           const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/admin/login`,
+            `${process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/admin/login`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

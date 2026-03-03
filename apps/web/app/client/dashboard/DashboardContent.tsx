@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { getClientStats } from "@/lib/api-client";
+import { getAllClients, getClientStats } from "@/lib/api-client";
 import type { ClientStats } from "@enxtai/shared-types";
 import Link from "next/link";
 import axios from "axios";
@@ -76,10 +76,8 @@ export default function DashboardContent() {
   const loadClients = async () => {
     try {
       setLoadingClients(true);
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/admin/clients`,
-      );
-      setClients(response.data);
+      const data = await getAllClients();
+      setClients(data as any);
     } catch (err: any) {
       console.error("Failed to load clients:", err);
       setError(err.response?.data?.message || "Failed to load clients");
