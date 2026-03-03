@@ -1,209 +1,151 @@
-# EnxtAI KYC Deployment Guide
+# EnxtAI KYC AWS Staging Deployment Guide
 
-This guide explains how to deploy the EnxtAI KYC System from scratch.
-The Web Frontend is built for **Vercel**, and the Backend API & Databases are run via **Docker Compose** on an **AWS EC2** instance.
+This guide defines the staging deployment flow for the backend API on AWS EC2.
+
+## Scope and Architecture
+
+- `apps/web` remains deployed on Vercel.
+- EC2 runs backend services with Docker Compose using `docker-compose.aws.yml`.
+- External managed services are used for database and cache:
+  - PostgreSQL: Supabase
+  - Redis: Upstash
+- MinIO runs in Docker on EC2 for staging object storage.
 
 ## Prerequisites
-- **AWS Account** (For backend EC2 instance)
-- **Vercel Account** (For frontend deployment)
-- **GitHub/GitLab Account** (To host the repository)
-- **SSH Client** (Terminal/Git Bash/PowerShell)
 
----
+- AWS EC2 instance (Ubuntu 22.04+/Amazon Linux 2023) with Docker installed
+- Open inbound ports as needed:
+  - `22` for SSH
+  - `3001` for API access (or via reverse proxy)
+  - `9001` only if you need MinIO console access
+- Repository access on the server (recommended: `git clone` / `git pull`)
 
-## Part 1: AWS EC2 Backend Setup
-
-### 1. Provision the EC2 Instance
-1. Log in to your AWS Console and go to **EC2 -> Launch Instance**.
-2. **Name**: `enxtai-kyc-backend`
-3. **OS**: Select **Amazon Linux 2023** (or Ubuntu 24.04 LTS).
-4. **Instance Type**: Select `t3.small` (minimum 2GB RAM required for building).
-5. **Key Pair**: Create a new `.pem` key (e.g., `kyc-key.pem`) and download it.
-6. **Network Settings**:
-   - Allow SSH traffic from *Anywhere* (or your IP).
-   - Allow HTTP/HTTPS traffic from *Anywhere*.
-   - **Custom TCP**: Allow Port `3001` (API) from *Anywhere* (temporary, until you setup a domain reverse proxy).
-7. **Storage**: Allocate at least **30GB gp3**.
-8. Click **Launch**.
-
-### 2. Connect to the EC2 Instance
-Open your terminal on your local machine containing the `kyc-key.pem` file.
+## 1) One-Time Server Setup
 
 ```bash
-# Correct permissions for the key (macOS/Linux only)
-chmod 400 kyc-key.pem
-
-# Connect to the server
-ssh -i kyc-key.pem ec2-user@<YOUR_EC2_PUBLIC_IP>
-```
-
-### 3. Server Initialization Setup
-Once inside the EC2 terminal, we need to install Git, Docker, and configure memory Swap Space (so NextJS builds don't run out of memory).
-
-Run these commands on the EC2 server:
-
-```bash
-sudo dnf update -y
-sudo dnf install -y git docker htop
-
-# Create 2GB Swap Memory
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# Start and enable Docker
-sudo systemctl start docker
+sudo dnf update -y || sudo apt update -y
+sudo dnf install -y git docker || sudo apt install -y git docker.io
 sudo systemctl enable docker
-
-# Allow 'ec2-user' to run Docker without sudo
-sudo usermod -aG docker ec2-user
+sudo systemctl start docker
+sudo usermod -aG docker $USER
 ```
-**Important:** Type `exit` to disconnect from SSH, then SSH back in for the Docker permissions to apply.
 
----
+After adding your user to the Docker group, reconnect your SSH session.
 
-## Part 2: Deploying the Backend Code & Environment
-
-### 1. Transfer Code to AWS
-On your **Local Machine**, clone the repo and compress the backend components:
+## 2) Fetch Project on EC2
 
 ```bash
 git clone <your-repo-url> enxtai-kyc-system
 cd enxtai-kyc-system
-
-# Use git archive to bundle the necessary backend files into a tar ZIP
-git archive -o backend.tar HEAD apps/api packages docker-compose.yml package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json
-
-# Send the zip to the EC2 server
-scp -i kyc-key.pem backend.tar ec2-user@<YOUR_EC2_PUBLIC_IP>:~/backend.tar
 ```
 
-### 2. Configure AWS Environment Variables
-On your **Local Machine**, create a file named `.env.aws` with the following variables so the Docker containers can talk to each other correctly:
-
-```env
-# Database - Using Docker internal network name 'postgres'
-DATABASE_URL="postgresql://postgres:postgres@postgres:5432/kyc_db"
-
-# Redis - Using Docker internal network name 'redis'
-REDIS_URL="redis://redis:6379"
-
-# MinIO - Using Docker internal network name 'minio'
-MINIO_ENDPOINT="minio"
-MINIO_PORT="9000"
-MINIO_ACCESS_KEY="minioadmin"
-MINIO_SECRET_KEY="minioadmin"
-MINIO_USE_SSL="false"
-MINIO_PAN_BUCKET="pan-cards"
-MINIO_AADHAAR_BUCKET="aadhaar-cards"
-MINIO_LIVE_PHOTO_BUCKET="live-photos"
-
-# ML Service
-ML_SERVICE_URL="http://ml-service:8000"
-
-# API Secrets
-JWT_SECRET="your-super-secure-production-secret"
-PORT="3001"
-```
-
-Send this environment configuration file to your EC2 server as `.env`:
+For future deployments:
 
 ```bash
-scp -i kyc-key.pem .env.aws ec2-user@<YOUR_EC2_PUBLIC_IP>:~/.env
+git pull origin <your-branch>
 ```
 
-### 3. Build & Run the Backend Cluster
-SSH back into your **EC2 Server** and extract the code:
+## 3) Configure Staging Environment File
+
+Create `.env.aws` in the repository root. This file is gitignored and used by `docker-compose.aws.yml`.
 
 ```bash
-# Connect
-ssh -i kyc-key.pem ec2-user@<YOUR_EC2_PUBLIC_IP>
-
-# Extract the code bundle
-tar -xvf backend.tar
-
-# Build the containers and launch the databases in detached mode
-docker compose up -d --build
+cp .env.aws .env.aws.local.backup 2>/dev/null || true
+nano .env.aws
 ```
-*Note: The API Dockerfile contains a startup script that automatically pushes Prisma schemas and runs the DB Seed every time the API container boots.*
 
-You can verify the cluster is running, and stream the API logs using:
+Required baseline:
+
+- External services: `DATABASE_URL`, `REDIS_URL`
+- For Supabase pooler setups: `DIRECT_URL` for migrations and `DATABASE_URL` for runtime queries
+- API runtime: `PORT`, `NODE_ENV`
+- DigiLocker required settings: `DIGILOCKER_CLIENT_ID`, `DIGILOCKER_CLIENT_SECRET`, `DIGILOCKER_REDIRECT_URI`
+- MinIO settings and bucket names
+
+If database credentials contain special characters (for example `@`, `#`, `%`), URL-encode them in `DATABASE_URL`.
+
+## 4) Build and Start Staging Stack
+
 ```bash
-docker ps
-docker logs -f kyc-api
+docker compose --env-file .env.aws -f docker-compose.aws.yml build api
+docker compose --env-file .env.aws -f docker-compose.aws.yml up -d
 ```
 
-Your Backend API is now live at `http://<YOUR_EC2_PUBLIC_IP>:3001`!
+Services started by this compose file:
 
----
+- `api` (NestJS backend)
+- `minio` (staging object storage)
 
-## Part 3: Vercel Frontend Deployment
+Services intentionally externalized and not started in compose:
 
-The Next.js frontend is built using Turborepo and lives in `apps/web`.
+- PostgreSQL
+- Redis
 
-### 1. Import to Vercel
-1. Log in to Vercel, click **Add New Project**, and import your `enxtai-kyc-system` GitHub repository.
-2. Ensure the **Framework Preset** is `Next.js`.
-3. Set the **Root Directory** to `apps/web`.
+## 5) Startup Behavior (Important)
 
-### 2. Override the Build Command
-Because Turborepo requires the shared packages to be built properly:
-1. Under **Build and Output Settings**, override the **Build Command**.
-2. Enter this exact command:
-   ```bash
-   cd ../.. && pnpm turbo run build --filter=@enxtai/web
-   ```
+On container boot, API startup performs:
 
-### 3. Environment Variables
-Add the following required variables in the Vercel dashboard before clicking Deploy:
+1. `prisma migrate deploy` (unless `SKIP_PRISMA_MIGRATE=true`)
+2. `node dist/main.js`
 
-| Name | Value | Description |
-|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://<YOUR_EC2_PUBLIC_IP>:3001` | Points the frontend to your AWS API server |
-| `NEXTAUTH_URL` | `https://your-app-domain.vercel.app` | Required for NextAuth valid redirect domains |
-| `NEXTAUTH_SECRET` | `generate-a-random-secure-string` | Used to encrypt NextAuth user sessions securely |
+No automatic `db push` and no automatic seeding are run on startup.
 
-Click **Deploy**! Once compiled, your users can successfully sign up and trigger KYC verification fully interconnected with your AWS cloud databases!
+If `SKIP_PRISMA_MIGRATE=true` is used for staging connectivity constraints, run migrations manually from an environment that can reach your direct database endpoint.
 
----
+If you need to seed staging data manually:
 
-## Part 4: Useful Docker Commands Cheatsheet
-
-Once your backend is running on EC2, you will need these commands to manage it:
-
-**Restart the entire backend cluster:**
 ```bash
-docker compose restart
+docker compose --env-file .env.aws -f docker-compose.aws.yml exec api pnpm --filter @enxtai/api prisma:seed
 ```
 
-**View live logs of the API container:**
+## 6) Verification Commands
+
 ```bash
-docker logs -f kyc-api
+docker compose --env-file .env.aws -f docker-compose.aws.yml ps
+docker compose --env-file .env.aws -f docker-compose.aws.yml logs -f api
+curl http://localhost:3001/health
 ```
 
-**Rebuild and apply changes ONLY to the API (e.g., after pushing new code):**
+If MinIO console is exposed, access it at `http://<EC2_PUBLIC_IP>:9001`.
+
+## 7) Operations Cheat Sheet
+
+Restart services:
+
 ```bash
-# Don't take down the databases, just swap the API container
-docker compose up -d --build --force-recreate api
+docker compose --env-file .env.aws -f docker-compose.aws.yml restart
 ```
 
-**Stop all backend services temporarily:**
+Rebuild API only:
+
 ```bash
-docker compose stop
+docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build --force-recreate api
 ```
 
-**Shut down and completely remove containers/networks:**
+Stop services:
+
 ```bash
-docker compose down
+docker compose --env-file .env.aws -f docker-compose.aws.yml stop
 ```
 
-**Check the health of all running containers:**
+Remove services:
+
 ```bash
-docker ps
+docker compose --env-file .env.aws -f docker-compose.aws.yml down
 ```
 
-**Access the Postgres database terminal directly:**
+## 8) Rollback Strategy
+
+Rollback to a previous commit and redeploy:
+
 ```bash
-docker exec -it kyc-postgres psql -U postgres -d kyc_db
+git log --oneline -n 10
+git checkout <previous_commit_sha>
+docker compose --env-file .env.aws -f docker-compose.aws.yml up -d --build --force-recreate api
 ```
+
+## 9) Staging Notes
+
+- This setup is for staging/experimental use and is not hardened public production.
+- Secrets in `.env.aws` should be rotated regularly and never committed.
+- For internet-facing access, place API behind a reverse proxy and TLS.

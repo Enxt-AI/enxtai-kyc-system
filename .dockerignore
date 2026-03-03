@@ -1,0 +1,28 @@
+# Dependency directories and package manager stores
+node_modules
+.pnpm-store
+
+# Build and cache outputs
+dist
+.next
+out
+.turbo
+
+# Local environment and secrets
+.env
+.env.local
+.env.aws
+
+# Local runtime data
+postgres_data
+redis_data
+minio_data
+
+# Miscellaneous workspace files not needed for Docker builds
+.git
+.github
+.vscode
+docs
+*.pem
+*.tar
+backend.tar
