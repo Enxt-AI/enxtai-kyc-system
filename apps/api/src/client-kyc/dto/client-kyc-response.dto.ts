@@ -60,6 +60,25 @@ export class InitiateKycResponseDto {
     aadhaarBack: string;
     livePhoto: string;
   };
+
+  /**
+   * Tokenized URL for the EnxtAI KYC frontend flow.
+   *
+   * Client applications should redirect the end-user's browser to this URL
+   * to start the KYC document upload and verification process. The URL contains
+   * a short-lived JWT (25 minute expiry) that bootstraps the session on the
+   * EnxtAI frontend without exposing the raw API key.
+   *
+   * After the user completes or cancels the flow, they are redirected back
+   * to the returnUrl provided in the initiation request.
+   *
+   * @example 'https://enxtai-kyc-system-web.vercel.app/kyc/start?token=eyJhbGciOi...'
+   */
+  @ApiProperty({
+    description: 'Tokenized URL for the EnxtAI KYC frontend. Redirect the user here to start KYC.',
+    example: 'https://enxtai-kyc-system-web.vercel.app/kyc/start?token=eyJhbGciOi...',
+  })
+  kycFlowUrl!: string;
 }
 
 /**

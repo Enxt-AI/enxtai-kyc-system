@@ -1,17 +1,17 @@
-import { IsString, IsEmail, IsOptional, IsUrl, MinLength } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsUrl, MinLength, IsArray } from 'class-validator';
 
 /**
  * Create Client DTO
- * 
+ *
  * Validates input for creating a new client organization.
- * 
+ *
  * @remarks
  * **Validation Rules**:
  * - name: Required, min 2 characters (organization name)
  * - email: Required, valid email format (for default admin user)
  * - webhookUrl: Optional, must be HTTPS URL if provided
  * - webhookSecret: Optional, min 16 characters if provided
- * 
+ *
  * **Onboarding Flow**:
  * 1. Validate input via class-validator decorators
  * 2. Generate API key (SHA-256 hash + plaintext)
@@ -20,7 +20,7 @@ import { IsString, IsEmail, IsOptional, IsUrl, MinLength } from 'class-validator
  * 5. Generate temporary password for default admin user
  * 6. Create ClientUser record (bcrypt hash password)
  * 7. Return plaintext API key and password (show once)
- * 
+ *
  * **Security**:
  * - Webhook URL must be HTTPS (enforced by @IsUrl)
  * - Webhook secret min 16 chars (HMAC security)
@@ -41,4 +41,21 @@ export class CreateClientDto {
   @IsOptional()
   @MinLength(16)
   webhookSecret?: string; // Optional webhook secret
+
+  /**
+   * Allowed domains for API key usage (CORS/origin validation).
+   *
+   * Domain whitelist enforced by TenantMiddleware. Supports:
+   * - Exact match: 'smc-app.com'
+   * - Wildcard subdomains: '*.smc-app.com' (matches api.smc-app.com, admin.smc-app.com)
+   * - Localhost for dev: 'localhost:3000'
+   *
+   * If omitted or empty, all domains are allowed (backward compatibility).
+   *
+   * @example ['smc-app.com', '*.smc-app.com', 'localhost:3000']
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedDomains?: string[];
 }

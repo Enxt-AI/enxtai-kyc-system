@@ -408,6 +408,10 @@ export class AdminService {
           webhookUrl: dto.webhookUrl,
           webhookSecret: dto.webhookSecret,
           status: 'ACTIVE',
+          // Domain whitelist for API key usage (CORS/origin validation).
+          // If provided, TenantMiddleware will reject requests from unlisted domains.
+          // If null or empty, all domains are allowed (backward compatibility).
+          allowedDomains: dto.allowedDomains || undefined,
         },
       });
 

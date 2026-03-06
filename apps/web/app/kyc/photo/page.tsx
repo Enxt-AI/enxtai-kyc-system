@@ -4,7 +4,14 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { WebcamCapture } from '@/components/WebcamCapture';
-import { createKYCSubmission, getKYCSubmission, getKycApiKey } from '@/lib/api-client';
+import {
+  createKYCSubmission,
+  getKYCSubmission,
+  getKycApiKey,
+  getKycReturnUrl,
+  clearKycReturnUrl,
+  clearKycApiKey,
+} from '@/lib/api-client';
 
 export default function KycPhotoPage() {
   const router = useRouter();
@@ -15,6 +22,32 @@ export default function KycPhotoPage() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Return URL for external client flow.
+   * When present, a "Cancel & Return" button is shown in the header.
+   */
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReturnUrl(getKycReturnUrl());
+  }, []);
+
+  /**
+   * Handle Cancel / Exit to Client Application
+   *
+   * Clears session data and redirects back to the client app with status=cancelled.
+   */
+  const handleCancelToClient = () => {
+    if (!returnUrl) return;
+    const target = new URL(returnUrl);
+    target.searchParams.set('status', 'cancelled');
+    localStorage.removeItem('kyc_submission_id');
+    localStorage.removeItem('kyc_user_id');
+    clearKycApiKey();
+    clearKycReturnUrl();
+    window.location.href = target.toString();
+  };
 
   /**
    * API Key Validation Guard
@@ -90,9 +123,22 @@ export default function KycPhotoPage() {
               </ul>
             </div>
           </div>
-          <Link href="/kyc/upload" className="text-blue-600 hover:underline text-sm font-semibold">
-            Back to Documents
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/kyc/upload" className="text-blue-600 hover:underline text-sm font-semibold">
+              Back to Documents
+            </Link>
+
+            {/* Cancel button for external client flow */}
+            {returnUrl && (
+              <button
+                type="button"
+                onClick={handleCancelToClient}
+                className="text-sm font-semibold text-red-500 hover:text-red-700 transition-colors"
+              >
+                Cancel &amp; Return to App
+              </button>
+            )}
+          </div>
         </header>
 
         <WebcamCapture

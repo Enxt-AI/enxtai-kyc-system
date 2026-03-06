@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KycService } from '../kyc/kyc.service';
 import { DigiLockerAuthService } from '../digilocker/digilocker-auth.service';
@@ -11,6 +11,7 @@ import {
 import { InternalStatus } from '@enxtai/shared-types';
 import { DocumentSource } from '@prisma/client';
 import type { MultipartFile } from '@fastify/multipart';
+import * as jwt from 'jsonwebtoken';
 
 /**
  * Client KYC Service
@@ -40,6 +41,8 @@ import type { MultipartFile } from '@fastify/multipart';
  */
 @Injectable()
 export class ClientKycService {
+  private readonly logger = new Logger(ClientKycService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly kycService: KycService,
@@ -116,38 +119,40 @@ export class ClientKycService {
   /**
    * Initiate KYC Session
    *
-   * Creates a new KYC verification session for a client's end-user. Returns session ID
-   * and upload URLs for document submission.
+   * Creates a new KYC verification session for a client's end-user. Returns session ID,
+   * upload URLs, and a tokenized kycFlowUrl for redirecting the user to the EnxtAI
+   * KYC frontend.
    *
    * **Workflow:**
    * 1. Map externalUserId to internal UUID (create user if new)
    * 2. Create KYCSubmission record with PENDING status
-   * 3. Return session ID and upload endpoints
+   * 3. Generate a short-lived JWT (25 min) containing session context
+   * 4. Build kycFlowUrl pointing to the EnxtAI frontend /kyc/start page with the JWT
+   * 5. Return session ID, upload endpoints, and kycFlowUrl
+   *
+   * **JWT Payload:**
+   * The JWT embeds the following claims so the frontend can bootstrap the KYC session
+   * without the client app exposing the raw API key in the redirect URL:
+   * - clientId: UUID of the authenticated client organization
+   * - userId: Internal user UUID (mapped from externalUserId)
+   * - externalUserId: The client's own user identifier (echoed back in webhooks)
+   * - kycSessionId: The KYC submission UUID
+   * - apiKey: The raw API key from the request header (needed by frontend for API calls)
+   * - returnUrl: Optional URL to redirect the user back to after KYC completion/cancellation
    *
    * **Authentication:**
    * - Requires X-API-Key header (validated by TenantMiddleware)
    * - clientId extracted from API key and injected into request context
    *
    * @param clientId - UUID of client organization (from TenantMiddleware)
-   * @param dto - Request payload with externalUserId, email, phone, metadata
-   * @returns Session ID, status, and upload URLs
-   *
-   * @example
-   * const response = await initiateKyc('client-abc-123', {
-   *   externalUserId: 'customer-456',
-   *   email: 'john@example.com',
-   *   phone: '+919876543210',
-   *   metadata: { transactionId: 'txn-789' }
-   * });
-   * // Returns: {
-   * //   kycSessionId: 'a1b2c3d4-...',
-   * //   status: 'PENDING',
-   * //   uploadUrls: { pan: '/v1/kyc/upload/pan', ... }
-   * // }
+   * @param dto - Request payload with externalUserId, email, phone, metadata, returnUrl
+   * @param apiKey - Raw plaintext API key from request header (from TenantMiddleware)
+   * @returns Session ID, status, upload URLs, and kycFlowUrl
    */
   async initiateKyc(
     clientId: string,
     dto: InitiateKycDto,
+    apiKey: string,
   ): Promise<InitiateKycResponseDto> {
     // Map external user ID to internal UUID
     const userId = await this.getOrCreateUserByExternalId(
@@ -167,6 +172,49 @@ export class ClientKycService {
       },
     });
 
+    // ------------------------------------------------------------------
+    // Generate a short-lived JWT for the KYC redirect flow.
+    //
+    // This token is embedded in the kycFlowUrl that the client app redirects
+    // the user's browser to. The EnxtAI frontend /kyc/start page validates
+    // this token server-side (via /api/kyc/validate-token) and uses the
+    // decoded payload to bootstrap sessionStorage (API key, user ID, etc.)
+    // without ever exposing the raw API key in the URL.
+    //
+    // Token expiry: 25 minutes (enough time for the user to complete the
+    // KYC flow, but short enough to limit abuse if the URL is leaked).
+    // ------------------------------------------------------------------
+    const jwtSecret = process.env.JWT_KYC_SESSION_SECRET;
+    if (!jwtSecret) {
+      this.logger.error('JWT_KYC_SESSION_SECRET is not configured. Cannot generate kycFlowUrl.');
+      throw new BadRequestException(
+        'KYC session token generation is not configured. Contact system administrator.',
+      );
+    }
+
+    const tokenPayload = {
+      clientId,
+      userId,
+      externalUserId: dto.externalUserId,
+      kycSessionId: submission.id,
+      apiKey,
+      returnUrl: dto.returnUrl || null,
+    };
+
+    const sessionToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '25m',
+    });
+
+    // Build the kycFlowUrl using the frontend URL from environment config.
+    // Falls back to http://localhost:3000 for local development.
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const kycFlowUrl = `${frontendUrl}/kyc/start?token=${sessionToken}`;
+
+    this.logger.log(
+      `KYC session initiated for client ${clientId}, ` +
+      `externalUserId=${dto.externalUserId}, kycSessionId=${submission.id}`,
+    );
+
     return {
       kycSessionId: submission.id,
       status: submission.internalStatus as InternalStatus,
@@ -176,6 +224,7 @@ export class ClientKycService {
         aadhaarBack: '/v1/kyc/upload/aadhaar/back',
         livePhoto: '/v1/kyc/upload/live-photo',
       },
+      kycFlowUrl,
     };
   }
 

@@ -56,7 +56,7 @@ const nextConfig = {
     return [
       {
         source: '/api/digilocker/:path*',
-        destination: 'http://localhost:3001/api/digilocker/:path*',
+        destination: 'http://localhost:5001/api/digilocker/:path*',
       },
     ];
   },

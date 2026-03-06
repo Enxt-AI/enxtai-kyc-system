@@ -153,13 +153,14 @@ export class ClientKycController {
    * ```
    *
    * @param client - Authenticated client object (injected by @Client() decorator)
-   * @param dto - Request payload with externalUserId, email, phone, metadata
-   * @returns Session ID, status, and upload URLs
+   * @param dto - Request payload with externalUserId, email, phone, metadata, returnUrl
+   * @param req - Fastify request (for extracting the raw API key set by TenantMiddleware)
+   * @returns Session ID, status, upload URLs, and kycFlowUrl
    */
   @Post('initiate')
   @ApiOperation({
     summary: 'Initiate KYC Session',
-    description: 'Creates a new KYC verification session for a client end-user. Returns session ID and upload URLs.',
+    description: 'Creates a new KYC verification session for a client end-user. Returns session ID, upload URLs, and a tokenized kycFlowUrl for browser redirect.',
   })
   @ApiResponse({
     status: 201,
@@ -172,8 +173,12 @@ export class ClientKycController {
   async initiateKyc(
     @Client() client: any,
     @Body() dto: InitiateKycDto,
+    @Req() req: FastifyRequest,
   ): Promise<InitiateKycResponseDto> {
-    return await this.clientKycService.initiateKyc(client.id, dto);
+    // Pass the raw API key from the request (injected by TenantMiddleware)
+    // so the service can embed it in the short-lived KYC session JWT.
+    const apiKey = req.apiKey || (req.headers['x-api-key'] as string);
+    return await this.clientKycService.initiateKyc(client.id, dto, apiKey);
   }
 
   /**

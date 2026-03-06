@@ -18,7 +18,7 @@ import { getSession } from 'next-auth/react';
  *
  * @remarks
  * **Base Configuration**:
- * - Base URL: Process.env.NEXT_PUBLIC_API_URL or localhost:3001
+ * - Base URL: Process.env.NEXT_PUBLIC_API_URL or localhost:5001
  * - Timeout: 15 seconds
  * - Automatic error handling
  *
@@ -36,7 +36,7 @@ const api = axios.create({
   // (Mixed Content). Route browser requests through a same-origin proxy instead.
   baseURL:
     typeof window === 'undefined'
-      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'
       : '/api/backend',
   timeout: 15000,
 });
@@ -257,6 +257,51 @@ export function clearKycApiKey(): void {
   if (typeof window === 'undefined') return;
 
   sessionStorage.removeItem('kycApiKey');
+  // Also clear the return URL when clearing the API key, since both belong
+  // to the same KYC session lifecycle. This prevents stale returnUrl data
+  // from persisting across separate KYC sessions.
+  sessionStorage.removeItem('kyc_return_url');
+}
+
+/**
+ * Set KYC Return URL
+ *
+ * Stores the client application's return URL in sessionStorage. After the user
+ * completes or cancels the KYC flow, the /kyc/verify page reads this URL and
+ * redirects the user back to the client application with status query params.
+ *
+ * This value is set by the /kyc/start page after validating the session JWT
+ * from the kycFlowUrl.
+ *
+ * @param url - The client application's return URL (e.g., 'https://smc-app.com/kyc')
+ */
+export function setKycReturnUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem('kyc_return_url', url);
+}
+
+/**
+ * Get KYC Return URL
+ *
+ * Retrieves the stored return URL from sessionStorage. Returns null if not set
+ * (indicating the user accessed the KYC flow directly, without a client redirect).
+ *
+ * @returns The client application's return URL, or null if not configured
+ */
+export function getKycReturnUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem('kyc_return_url');
+}
+
+/**
+ * Clear KYC Return URL
+ *
+ * Removes the return URL from sessionStorage. Called after the redirect is
+ * performed to prevent reuse.
+ */
+export function clearKycReturnUrl(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem('kyc_return_url');
 }
 
   /**
