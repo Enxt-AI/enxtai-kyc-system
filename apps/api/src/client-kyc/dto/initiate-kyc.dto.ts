@@ -99,7 +99,10 @@ export class InitiateKycDto {
     example: 'https://smc-app.com/kyc',
     type: String,
   })
-  @IsUrl({ require_protocol: true }, { message: 'returnUrl must be a valid URL with protocol (https://)' })
+  @IsUrl(
+    { protocols: ['https', 'http'], require_protocol: true, require_tld: false },
+    { message: 'returnUrl must be a valid URL with protocol (https:// or http://)' },
+  )
   @IsOptional()
   returnUrl?: string;
 }

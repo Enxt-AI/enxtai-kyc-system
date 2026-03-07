@@ -101,10 +101,13 @@ function KycStartContent() {
         //    automatically includes it in X-API-Key headers for /v1/kyc/* requests.
         setKycApiKey(data.apiKey);
 
-        // 2. Store the user ID in localStorage -- the KYC flow pages read this
-        //    to associate uploads with the correct user.
-        if (data.userId) {
-          localStorage.setItem('kyc_user_id', data.userId);
+        // 2. Store the external user ID in localStorage -- the KYC flow pages
+        //    send this as the `externalUserId` form field in upload requests.
+        //    This must be the client's original external ID (e.g., "cmmf4ww..."),
+        //    NOT the internal User.id UUID, because the upload endpoints call
+        //    lookupUserByExternalId() which queries by (clientId, externalUserId).
+        if (data.externalUserId) {
+          localStorage.setItem('kyc_user_id', data.externalUserId);
         }
 
         // 3. Store the KYC submission ID (kycSessionId) -- this is used by the

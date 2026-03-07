@@ -35,7 +35,7 @@ export class CreateClientDto {
   email!: string; // Email for default admin user
 
   @IsOptional()
-  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @IsUrl({ protocols: ['https', 'http'], require_protocol: true, require_tld: false })
   webhookUrl?: string; // Optional webhook endpoint
 
   @IsOptional()
