@@ -289,11 +289,14 @@ export class KycService {
   }
 
   /**
-   * Check and Trigger Documents Uploaded Webhook
+   * Check and Trigger Documents Uploaded Webhook + Auto-Processing
    *
-   * Centralized helper to detect when all required documents are uploaded
-   * and trigger the KYC_DOCUMENTS_UPLOADED webhook. Called from all document
-   * upload methods to ensure webhook fires regardless of upload order.
+   * Centralized helper to detect when all required documents are uploaded,
+   * trigger the KYC_DOCUMENTS_UPLOADED webhook, and then automatically run
+   * OCR extraction and face verification.
+   *
+   * Called from all document upload methods to ensure processing fires
+   * regardless of document upload order.
    *
    * **Required Documents**:
    * - PAN document (panDocumentUrl)
@@ -304,6 +307,17 @@ export class KycService {
    * - All required documents present
    * - Submission status is DOCUMENTS_UPLOADED
    *
+   * **Auto-Processing Pipeline** (runs after webhook fires):
+   * 1. OCR: Extract PAN data (panNumber, fullName, dateOfBirth)
+   * 2. OCR: Extract Aadhaar data (aadhaarNumber, address)
+   * 3. Face verification: Compare live photo against ID documents
+   *    - Sets faceMatchScore, livenessScore
+   *    - Updates status to FACE_VERIFIED or PENDING_REVIEW based on scores
+   * 4. Fires KYC_VERIFICATION_COMPLETED webhook with scores
+   *
+   * Each processing step is wrapped in try/catch so one failure does not
+   * prevent the remaining steps from executing.
+   *
    * @param submission - Updated KYCSubmission object after document upload
    * @returns Promise<void> - Always resolves (errors caught internally)
    * @private Helper method called from all upload paths
@@ -312,26 +326,104 @@ export class KycService {
     submission: any,
   ): Promise<void> {
     try {
-      // Check if all required documents are present
+      // Check if all required documents are present (PAN + Aadhaar + live photo + signature)
       const hasPan = Boolean(submission.panDocumentUrl);
       const hasAadhaar = Boolean(
         submission.aadhaarDocumentUrl ||
         (submission.aadhaarFrontUrl && submission.aadhaarBackUrl)
       );
       const hasLivePhoto = Boolean(submission.livePhotoUrl);
+      const hasSignature = Boolean(submission.signatureUrl);
 
-      // Trigger webhook only if all documents uploaded and status is DOCUMENTS_UPLOADED
+      // Only proceed if all documents are uploaded and status is DOCUMENTS_UPLOADED
       if (
-        hasPan &&
+        !(hasPan &&
         hasAadhaar &&
         hasLivePhoto &&
-        submission.internalStatus === InternalStatus.DOCUMENTS_UPLOADED
+        hasSignature &&
+        submission.internalStatus === InternalStatus.DOCUMENTS_UPLOADED)
       ) {
-        await this.triggerWebhook(submission, WebhookEvent.KYC_DOCUMENTS_UPLOADED);
+        return;
+      }
+
+      // --- Step 1: Fire the documents uploaded webhook ---
+      await this.triggerWebhook(submission, WebhookEvent.KYC_DOCUMENTS_UPLOADED);
+
+      // --- Step 2: Auto-run OCR on PAN document ---
+      // Extracts panNumber, fullName, dateOfBirth from the uploaded PAN image
+      // and persists them to the KYCSubmission record.
+      if (submission.panDocumentUrl) {
+        try {
+          this.logger.log(
+            `Starting PAN OCR extraction for submission ${submission.id}`,
+          );
+          await this.extractPanDataAndUpdate(submission.id);
+          this.logger.log(
+            `PAN OCR extraction completed for submission ${submission.id}`,
+          );
+        } catch (ocrError) {
+          // Log but do not throw -- OCR failure should not block the rest
+          // of the processing pipeline (face verification can still run).
+          this.logger.error(
+            `PAN OCR extraction failed for submission ${submission.id}`,
+            ocrError,
+          );
+        }
+      }
+
+      // --- Step 3: Auto-run OCR on Aadhaar document ---
+      // Extracts aadhaarNumber (masked), fullName, and address from the
+      // uploaded Aadhaar front image and persists them to the submission.
+      if (submission.aadhaarFrontUrl || submission.aadhaarDocumentUrl) {
+        try {
+          this.logger.log(
+            `Starting Aadhaar OCR extraction for submission ${submission.id}`,
+          );
+          await this.extractAadhaarDataAndUpdate(submission.id);
+          this.logger.log(
+            `Aadhaar OCR extraction completed for submission ${submission.id}`,
+          );
+        } catch (ocrError) {
+          // Log but do not throw -- Aadhaar OCR failure should not block
+          // face verification from running.
+          this.logger.error(
+            `Aadhaar OCR extraction failed for submission ${submission.id}`,
+            ocrError,
+          );
+        }
+      }
+
+      // --- Step 4: Auto-run face verification ---
+      // Compares the live photo against PAN and Aadhaar front documents
+      // using face-api.js. Sets faceMatchScore, livenessScore, and updates
+      // internalStatus to either FACE_VERIFIED (scores >= 0.8) or
+      // PENDING_REVIEW (scores below threshold).
+      // The verifyFaceAndUpdate method also fires the
+      // KYC_VERIFICATION_COMPLETED webhook internally.
+      if (submission.livePhotoUrl) {
+        try {
+          this.logger.log(
+            `Starting face verification for submission ${submission.id}`,
+          );
+          await this.verifyFaceAndUpdate(submission.id);
+          this.logger.log(
+            `Face verification completed for submission ${submission.id}`,
+          );
+        } catch (faceError) {
+          // Log but do not throw -- face verification failure should not
+          // break the upload response to the client.
+          this.logger.error(
+            `Face verification failed for submission ${submission.id}`,
+            faceError,
+          );
+        }
       }
     } catch (error) {
-      // Log error but don't throw (webhook check failures should not break upload flow)
-      console.error(`Failed to check/trigger documents uploaded webhook for submission ${submission.id}:`, error);
+      // Log error but don't throw (webhook/processing failures should not break upload flow)
+      this.logger.error(
+        `Failed to process documents for submission ${submission.id}`,
+        error,
+      );
     }
   }
 
@@ -445,11 +537,23 @@ export class KycService {
       uploadDto,
     );
 
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // PAN (being uploaded now) + Aadhaar (front+back or legacy) + live photo + signature.
+    const hasAadhaar = Boolean(
+      submission.aadhaarDocumentUrl ||
+      (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
+    );
+    const hasLivePhoto = Boolean(submission.livePhotoUrl);
+    const hasSignature = Boolean(submission.signatureUrl);
+    const allDocsPresent = hasAadhaar && hasLivePhoto && hasSignature;
+
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
       data: {
         panDocumentUrl: objectPath,
-        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
       },
     });
 
@@ -461,8 +565,10 @@ export class KycService {
       },
     });
 
-    // Check if all documents uploaded and trigger webhook if needed
-    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
+    // in the background so the upload response returns immediately.
+    // The .catch() prevents unhandled promise rejections from crashing the process.
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -505,11 +611,20 @@ export class KycService {
       uploadDto,
     );
 
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // Aadhaar legacy (being uploaded now) + PAN + live photo + signature.
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasLivePhoto = Boolean(submission.livePhotoUrl);
+    const hasSignature = Boolean(submission.signatureUrl);
+    const allDocsPresent = hasPan && hasLivePhoto && hasSignature;
+
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
       data: {
         aadhaarDocumentUrl: objectPath,
-        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
       },
     });
 
@@ -524,8 +639,10 @@ export class KycService {
       },
     });
 
-    // Check if all documents uploaded and trigger webhook if needed
-    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
+    // in the background so the upload response returns immediately.
+    // The .catch() prevents unhandled promise rejections from crashing the process.
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -568,11 +685,21 @@ export class KycService {
       uploadDto,
     );
 
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // Aadhaar front (being uploaded now) + Aadhaar back + PAN + live photo + signature.
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasAadhaarBack = Boolean(submission.aadhaarBackUrl);
+    const hasLivePhoto = Boolean(submission.livePhotoUrl);
+    const hasSignature = Boolean(submission.signatureUrl);
+    const allDocsPresent = hasPan && hasAadhaarBack && hasLivePhoto && hasSignature;
+
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
       data: {
         aadhaarFrontUrl: objectPath,
-        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
       },
     });
 
@@ -584,8 +711,10 @@ export class KycService {
       },
     });
 
-    // Check if all documents uploaded and trigger webhook if needed
-    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
+    // in the background so the upload response returns immediately.
+    // The .catch() prevents unhandled promise rejections from crashing the process.
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -628,11 +757,21 @@ export class KycService {
       uploadDto,
     );
 
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // Aadhaar back (being uploaded now) + Aadhaar front + PAN + live photo + signature.
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasAadhaarFront = Boolean(submission.aadhaarFrontUrl);
+    const hasLivePhoto = Boolean(submission.livePhotoUrl);
+    const hasSignature = Boolean(submission.signatureUrl);
+    const allDocsPresent = hasPan && hasAadhaarFront && hasLivePhoto && hasSignature;
+
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
       data: {
         aadhaarBackUrl: objectPath,
-        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
       },
     });
 
@@ -644,8 +783,10 @@ export class KycService {
       },
     });
 
-    // Check if all documents uploaded and trigger webhook if needed
-    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
+    // in the background so the upload response returns immediately.
+    // The .catch() prevents unhandled promise rejections from crashing the process.
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -775,14 +916,21 @@ export class KycService {
       uploadDto,
     );
 
-    const hasAadhaar = submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl;
-    const shouldMarkUploaded = Boolean(submission.panDocumentUrl && hasAadhaar);
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // Live photo (being uploaded now) + PAN + Aadhaar (front+back or legacy) + signature.
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasAadhaar = Boolean(
+      submission.aadhaarDocumentUrl ||
+      (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
+    );
+    const hasSignature = Boolean(submission.signatureUrl);
+    const allDocsPresent = hasPan && hasAadhaar && hasSignature;
 
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
       data: {
         livePhotoUrl: objectPath,
-        internalStatus: shouldMarkUploaded
+        internalStatus: allDocsPresent
           ? InternalStatus.DOCUMENTS_UPLOADED
           : submission.internalStatus,
       },
@@ -796,8 +944,10 @@ export class KycService {
       },
     });
 
-    // Check if all documents uploaded and trigger webhook if needed
-    await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
+    // in the background so the upload response returns immediately.
+    // The .catch() prevents unhandled promise rejections from crashing the process.
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -840,11 +990,23 @@ export class KycService {
       uploadDto,
     );
 
+    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+    // Signature (being uploaded now) + PAN + Aadhaar (front+back or legacy) + live photo.
+    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasAadhaar = Boolean(
+      submission.aadhaarDocumentUrl ||
+      (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
+    );
+    const hasLivePhoto = Boolean(submission.livePhotoUrl);
+    const allDocsPresent = hasPan && hasAadhaar && hasLivePhoto;
+
     const updated = await this.prisma.kYCSubmission.update({
       where: { id: submission.id },
-      // Cast to any to tolerate older generated Prisma clients until migrations are applied
       data: {
         signatureUrl: objectPath,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
       } as any,
     });
 
@@ -855,6 +1017,9 @@ export class KycService {
         metadata: { type: 'SIGNATURE', objectPath },
       },
     });
+
+    // Signature may be the last document uploaded, so trigger auto-OCR/face verification
+    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
     return updated;
   }
@@ -1166,8 +1331,9 @@ export class KycService {
         },
       });
 
-      // Trigger webhook for documents uploaded
-      await this.checkAndTriggerDocumentsUploadedWebhook(updated);
+      // Fire-and-forget: trigger webhook + auto-processing in the background.
+      // The .catch() prevents unhandled promise rejections from crashing the process.
+      this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
       // Trigger DigiLocker fetch completed webhook
       await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_COMPLETED, {

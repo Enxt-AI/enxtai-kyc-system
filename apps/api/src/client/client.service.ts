@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { Client } from '@prisma/client';
+import { WebhookService } from '../webhooks/webhook.service';
+import { WebhookEvent } from '../webhooks/webhook-events.enum';
+import { Client, InternalStatus, FinalStatus } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 
 /**
@@ -40,6 +42,7 @@ export class ClientService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly webhookService: WebhookService,
   ) {}
 
   /**
@@ -363,12 +366,12 @@ export class ClientService {
 
   /**
    * Get Client Dashboard Statistics
-   * 
+   *
    * Calculates aggregated KYC submission metrics for dashboard display.
-   * 
+   *
    * @param clientId - Client UUID from session
    * @returns Statistics object with counts and rejection rate
-   * 
+   *
    * @remarks
    * **Metrics Calculated**:
    * - Total submissions (all statuses)
@@ -376,7 +379,7 @@ export class ClientService {
    * - Pending review count (internalStatus = PENDING_REVIEW)
    * - Rejected count (internalStatus = REJECTED)
    * - Rejection rate (rejected / total * 100)
-   * 
+   *
    * **Performance**:
    * - Uses Prisma aggregation (single query with groupBy)
    * - Indexed on [clientId, internalStatus] for fast filtering
@@ -408,23 +411,23 @@ export class ClientService {
 
   /**
    * Get Client Submissions (Paginated & Filtered)
-   * 
+   *
    * Retrieves KYC submissions for client portal table with filtering and pagination.
-   * 
+   *
    * @param clientId - Client UUID from session
    * @param filters - Optional filters (status, date range, search)
    * @param page - Page number (1-indexed)
    * @param limit - Items per page (max 100)
    * @returns Paginated submissions with metadata
-   * 
+   *
    * @remarks
    * **Filtering**:
    * - status: Filter by internalStatus (VERIFIED, PENDING_REVIEW, etc.)
    * - search: Search by externalUserId or email (case-insensitive)
    * - startDate/endDate: Filter by submissionDate range
-   * 
+   *
    * **Sorting**: Default order by submissionDate DESC (newest first)
-   * 
+   *
    * **Tenant Isolation**: All queries filtered by clientId from session
    */
   async getClientSubmissions(
@@ -504,13 +507,13 @@ export class ClientService {
 
   /**
    * Get Submission Detail with Presigned URLs
-   * 
+   *
    * Retrieves full submission data including presigned URLs for document viewing.
-   * 
+   *
    * @param clientId - Client UUID from session (for tenant isolation)
    * @param submissionId - Submission UUID
    * @returns Submission detail with presigned URLs
-   * 
+   *
    * @remarks
    * **Tenant Isolation**: Validates submission belongs to client
    * **Presigned URLs**: Generated with 1-hour expiry for security
@@ -537,7 +540,7 @@ export class ClientService {
 
     // Generate presigned URLs for documents
     const presignedUrls: any = {};
-    
+
     // Helper to parse MinIO path and generate presigned URL
     const generateUrl = async (path: string | null, key: string) => {
       if (!path) return;
@@ -566,7 +569,7 @@ export class ClientService {
       submissionDate: submission.submissionDate.toISOString(),
       updatedAt: submission.updatedAt.toISOString(),
       panNumber: submission.panNumber,
-      aadhaarNumber: submission.aadhaarNumber 
+      aadhaarNumber: submission.aadhaarNumber
         ? submission.aadhaarNumber.replace(/^\d{8}/, 'XXXX XXXX')
         : null,
       fullName: submission.fullName,
@@ -579,6 +582,186 @@ export class ClientService {
       documentQuality: null, // Not in schema yet
       rejectionReason: submission.rejectionReason,
       presignedUrls,
+    };
+  }
+
+  /**
+   * Approve a KYC Submission
+   *
+   * Marks a submission as VERIFIED/COMPLETE and sends a KYC_STATUS_CHANGED
+   * webhook to the client's configured webhook URL. Only submissions that
+   * are not already in a terminal state (VERIFIED or REJECTED) can be approved.
+   *
+   * **State Transition**:
+   * - internalStatus -> VERIFIED
+   * - finalStatus   -> COMPLETE
+   *
+   * **Webhook Payload** (KYC_STATUS_CHANGED):
+   * ```json
+   * {
+   *   "kycSessionId": "submission-uuid",
+   *   "externalUserId": "external-user-id",
+   *   "status": "VERIFIED",
+   *   "finalStatus": "COMPLETE",
+   *   "previousStatus": "PENDING_REVIEW"
+   * }
+   * ```
+   *
+   * @param clientId - Client UUID from session (for tenant isolation)
+   * @param submissionId - Submission UUID to approve
+   * @returns Updated submission record
+   * @throws NotFoundException if submission not found or belongs to different client
+   * @throws BadRequestException if submission is already in a terminal state
+   */
+  async approveSubmission(clientId: string, submissionId: string) {
+    // Fetch submission with tenant isolation
+    const submission = await this.prisma.kYCSubmission.findFirst({
+      where: { id: submissionId, clientId },
+      include: {
+        user: {
+          select: { externalUserId: true },
+        },
+      },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found or access denied');
+    }
+
+    // Prevent re-approving or approving already-rejected submissions
+    if (
+      submission.internalStatus === InternalStatus.VERIFIED ||
+      submission.internalStatus === InternalStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        `Cannot approve submission with status ${submission.internalStatus}`,
+      );
+    }
+
+    const previousStatus = submission.internalStatus;
+
+    // Update submission to approved state
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submissionId },
+      data: {
+        internalStatus: InternalStatus.VERIFIED,
+        finalStatus: FinalStatus.COMPLETE,
+      },
+    });
+
+    // Fire-and-forget: send KYC_STATUS_CHANGED webhook in the background
+    // so the approve response returns immediately to the UI.
+    this.webhookService.sendWebhook(clientId, WebhookEvent.KYC_STATUS_CHANGED, {
+      kycSessionId: submission.id,
+      externalUserId: submission.user.externalUserId,
+      status: InternalStatus.VERIFIED,
+      finalStatus: FinalStatus.COMPLETE,
+      previousStatus,
+    }).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Submission approved successfully',
+      submission: {
+        id: updated.id,
+        internalStatus: updated.internalStatus,
+        finalStatus: updated.finalStatus,
+      },
+    };
+  }
+
+  /**
+   * Reject a KYC Submission
+   *
+   * Marks a submission as REJECTED and stores the rejection reason. Sends a
+   * KYC_STATUS_CHANGED webhook with the rejection reason included in the payload.
+   * Only submissions that are not already in a terminal state can be rejected.
+   *
+   * **State Transition**:
+   * - internalStatus   -> REJECTED
+   * - finalStatus      -> REJECTED
+   * - rejectionReason  -> provided reason string
+   *
+   * **Webhook Payload** (KYC_STATUS_CHANGED):
+   * ```json
+   * {
+   *   "kycSessionId": "submission-uuid",
+   *   "externalUserId": "external-user-id",
+   *   "status": "REJECTED",
+   *   "finalStatus": "REJECTED",
+   *   "previousStatus": "PENDING_REVIEW",
+   *   "rejectionReason": "PAN document is blurry"
+   * }
+   * ```
+   *
+   * @param clientId - Client UUID from session (for tenant isolation)
+   * @param submissionId - Submission UUID to reject
+   * @param rejectionReason - Human-readable reason for rejection
+   * @returns Updated submission record
+   * @throws NotFoundException if submission not found or belongs to different client
+   * @throws BadRequestException if submission is already in a terminal state
+   */
+  async rejectSubmission(
+    clientId: string,
+    submissionId: string,
+    rejectionReason: string,
+  ) {
+    // Fetch submission with tenant isolation
+    const submission = await this.prisma.kYCSubmission.findFirst({
+      where: { id: submissionId, clientId },
+      include: {
+        user: {
+          select: { externalUserId: true },
+        },
+      },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found or access denied');
+    }
+
+    // Prevent rejecting submissions that are already in a terminal state
+    if (
+      submission.internalStatus === InternalStatus.VERIFIED ||
+      submission.internalStatus === InternalStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        `Cannot reject submission with status ${submission.internalStatus}`,
+      );
+    }
+
+    const previousStatus = submission.internalStatus;
+
+    // Update submission to rejected state with reason
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submissionId },
+      data: {
+        internalStatus: InternalStatus.REJECTED,
+        finalStatus: FinalStatus.REJECTED,
+        rejectionReason,
+      },
+    });
+
+    // Fire-and-forget: send KYC_STATUS_CHANGED webhook in the background
+    // so the reject response returns immediately to the UI.
+    this.webhookService.sendWebhook(clientId, WebhookEvent.KYC_STATUS_CHANGED, {
+      kycSessionId: submission.id,
+      externalUserId: submission.user.externalUserId,
+      status: InternalStatus.REJECTED,
+      finalStatus: FinalStatus.REJECTED,
+      previousStatus,
+      rejectionReason,
+    }).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Submission rejected',
+      submission: {
+        id: updated.id,
+        internalStatus: updated.internalStatus,
+        finalStatus: updated.finalStatus,
+        rejectionReason: updated.rejectionReason,
+      },
     };
   }
 }

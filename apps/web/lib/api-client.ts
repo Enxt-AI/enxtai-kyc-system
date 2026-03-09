@@ -867,6 +867,85 @@ export async function getClientSubmissionDetail(
 }
 
 /**
+ * Approve a KYC Submission
+ *
+ * Sends a POST request to approve a submission, transitioning it to
+ * VERIFIED/COMPLETE status. The backend also fires a KYC_STATUS_CHANGED
+ * webhook to the client's configured webhook URL.
+ *
+ * @remarks
+ * **Endpoint**: POST /api/v1/client/submissions/:id/approve
+ * **Authentication**: Session-based (NextAuth bearer token)
+ *
+ * **Preconditions**:
+ * - Submission must not be in a terminal state (VERIFIED or REJECTED)
+ *
+ * **Error Handling**:
+ * - 400: Submission already in terminal state
+ * - 404: Submission not found or access denied
+ *
+ * @param submissionId - UUID of the KYC submission to approve
+ * @returns Approval confirmation with updated submission status
+ *
+ * @example
+ * ```typescript
+ * const result = await approveSubmission('123e4567-e89b-12d3-a456-426614174000');
+ * // { success: true, message: 'Submission approved successfully', submission: { ... } }
+ * ```
+ */
+export async function approveSubmission(
+  submissionId: string
+): Promise<{ success: boolean; message: string; submission: any }> {
+  const response = await api.post(
+    `/api/v1/client/submissions/${submissionId}/approve`
+  );
+  return response.data;
+}
+
+/**
+ * Reject a KYC Submission
+ *
+ * Sends a POST request to reject a submission with a mandatory reason.
+ * Transitions the submission to REJECTED status. The backend fires a
+ * KYC_STATUS_CHANGED webhook with the rejection reason in the payload.
+ *
+ * @remarks
+ * **Endpoint**: POST /api/v1/client/submissions/:id/reject
+ * **Authentication**: Session-based (NextAuth bearer token)
+ *
+ * **Preconditions**:
+ * - Submission must not be in a terminal state (VERIFIED or REJECTED)
+ * - Rejection reason must be non-empty (max 1000 chars)
+ *
+ * **Error Handling**:
+ * - 400: Submission already in terminal state or empty reason
+ * - 404: Submission not found or access denied
+ *
+ * @param submissionId - UUID of the KYC submission to reject
+ * @param rejectionReason - Human-readable reason for rejection
+ * @returns Rejection confirmation with updated submission status
+ *
+ * @example
+ * ```typescript
+ * const result = await rejectSubmission(
+ *   '123e4567-e89b-12d3-a456-426614174000',
+ *   'PAN document is blurry and unreadable'
+ * );
+ * // { success: true, message: 'Submission rejected', submission: { ... } }
+ * ```
+ */
+export async function rejectSubmission(
+  submissionId: string,
+  rejectionReason: string
+): Promise<{ success: boolean; message: string; submission: any }> {
+  const response = await api.post(
+    `/api/v1/client/submissions/${submissionId}/reject`,
+    { rejectionReason }
+  );
+  return response.data;
+}
+
+/**
  * Export Submissions to CSV
  *
  * Client-side CSV generation from submission data with auto-download.
