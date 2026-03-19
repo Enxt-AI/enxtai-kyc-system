@@ -1,5 +1,5 @@
 import { InternalStatus } from '@enxtai/shared-types';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Initiate KYC Response DTO
@@ -79,6 +79,46 @@ export class InitiateKycResponseDto {
     example: 'https://enxtai-kyc-system-web.vercel.app/kyc/start?token=eyJhbGciOi...',
   })
   kycFlowUrl!: string;
+
+  /**
+   * Steps the user has already completed.
+   *
+   * Each entry corresponds to a KYC flow page:
+   * - "pan":       PAN document uploaded
+   * - "aadhaar":   Aadhaar front and back (or legacy single) uploaded
+   * - "photo":     Live photo captured and uploaded
+   * - "signature": Signature drawn/uploaded
+   *
+   * Empty array for a fresh submission, all four for a fully-uploaded one.
+   */
+  @ApiPropertyOptional({
+    description: 'Completed KYC flow steps (e.g., ["pan", "aadhaar"]). Empty for new sessions.',
+    example: ['pan', 'aadhaar'],
+    type: [String],
+  })
+  completedSteps?: string[];
+
+  /**
+   * The next step the user needs to complete in the KYC flow.
+   * Null when all steps are done (all documents uploaded).
+   *
+   * Possible values: "pan", "aadhaar", "photo", "signature", or null.
+   */
+  @ApiPropertyOptional({
+    description: 'Next step to complete. Null if all documents are uploaded.',
+    example: 'photo',
+    nullable: true,
+  })
+  currentStep?: string | null;
+
+  /**
+   * Total number of steps in the KYC flow. Always 4.
+   */
+  @ApiPropertyOptional({
+    description: 'Total number of KYC flow steps (always 4)',
+    example: 4,
+  })
+  totalSteps?: number;
 }
 
 /**
@@ -192,6 +232,47 @@ export class KycStatusResponseDto {
    */
   @ApiProperty({ description: 'Last update timestamp (ISO 8601)', example: '2026-01-05T10:45:00Z' })
   updatedAt!: string;
+
+  /**
+   * Steps the user has already completed in the KYC flow.
+   *
+   * Each entry corresponds to a KYC flow page:
+   * - "pan":       PAN document uploaded
+   * - "aadhaar":   Aadhaar front and back (or legacy single) uploaded
+   * - "photo":     Live photo captured and uploaded
+   * - "signature": Signature drawn/uploaded
+   *
+   * Empty array for a fresh submission, all four for a fully-uploaded one.
+   * This field is derived from document URL presence on the submission record.
+   */
+  @ApiPropertyOptional({
+    description: 'Completed KYC flow steps (e.g., ["pan", "aadhaar"]). Empty for new sessions.',
+    example: ['pan', 'aadhaar'],
+    type: [String],
+  })
+  completedSteps?: string[];
+
+  /**
+   * The next step the user needs to complete in the KYC flow.
+   * Null when all steps are done (all documents uploaded).
+   *
+   * Possible values: "pan", "aadhaar", "photo", "signature", or null.
+   */
+  @ApiPropertyOptional({
+    description: 'Next step to complete. Null if all documents are uploaded.',
+    example: 'photo',
+    nullable: true,
+  })
+  currentStep?: string | null;
+
+  /**
+   * Total number of steps in the KYC flow. Always 4.
+   */
+  @ApiPropertyOptional({
+    description: 'Total number of KYC flow steps (always 4)',
+    example: 4,
+  })
+  totalSteps?: number;
 }
 
 /**

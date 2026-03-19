@@ -35,6 +35,10 @@ interface KycSessionPayload {
   kycSessionId: string;
   apiKey: string;
   returnUrl?: string;
+  /** Steps already completed (e.g., ["pan", "aadhaar"]). Empty for fresh sessions. */
+  completedSteps?: string[];
+  /** Next step the user should complete, or null if all done. */
+  currentStep?: string | null;
 }
 
 /**
@@ -81,7 +85,8 @@ export async function POST(request: NextRequest) {
     // Throws if the token is invalid, expired, or tampered with.
     const decoded = jwt.verify(token, secret) as KycSessionPayload;
 
-    // Return the decoded payload so the /kyc/start page can bootstrap the session
+    // Return the decoded payload so the /kyc/start page can bootstrap the session.
+    // Includes step progress so the start page can route to the correct step.
     return NextResponse.json({
       valid: true,
       clientId: decoded.clientId,
@@ -90,6 +95,8 @@ export async function POST(request: NextRequest) {
       kycSessionId: decoded.kycSessionId,
       apiKey: decoded.apiKey,
       returnUrl: decoded.returnUrl || null,
+      completedSteps: decoded.completedSteps || [],
+      currentStep: decoded.currentStep ?? null,
     });
   } catch (error: unknown) {
     // Handle specific JWT error types for clear client-side messaging

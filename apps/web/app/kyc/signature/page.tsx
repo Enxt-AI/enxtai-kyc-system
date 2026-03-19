@@ -4,8 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  createKYCSubmission,
-  getKYCSubmission,
   uploadSignature,
   getKycApiKey,
   getKycReturnUrl,
@@ -96,25 +94,17 @@ export default function KycSignaturePage() {
     };
   };
 
+  // Read the submission ID from localStorage. This was set during the
+  // /kyc/start session bootstrap (from the kycSessionId in the JWT token).
+  // No need to call the legacy getKYCSubmission/createKYCSubmission endpoints.
   useEffect(() => {
-    async function init() {
-      try {
-        const existing = await getKYCSubmission(userId);
-        if (existing?.id) {
-          setSubmissionId(existing.id);
-          localStorage.setItem('kyc_submission_id', existing.id);
-        } else {
-          const res = await createKYCSubmission(userId);
-          setSubmissionId(res.id);
-          localStorage.setItem('kyc_submission_id', res.id);
-        }
-      } catch (err: any) {
-        const message = err?.response?.data?.message || 'Unable to start submission';
-        setError(message);
-      }
+    const storedSubmissionId = localStorage.getItem('kyc_submission_id');
+    if (storedSubmissionId) {
+      setSubmissionId(storedSubmissionId);
+    } else {
+      setError('No KYC submission found. Please restart the KYC process.');
     }
-    void init();
-  }, [userId]);
+  }, []);
 
   const initializeCanvas = () => {
     const canvas = canvasRef.current;

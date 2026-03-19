@@ -43,6 +43,10 @@ interface ValidateTokenResponse {
   apiKey?: string;
   returnUrl?: string | null;
   error?: string;
+  /** Steps already completed in a prior session (e.g., ["pan", "aadhaar"]). */
+  completedSteps?: string[];
+  /** Next step to complete, or null if all documents are uploaded. */
+  currentStep?: string | null;
 }
 
 /**
@@ -123,10 +127,30 @@ function KycStartContent() {
           setKycReturnUrl(data.returnUrl);
         }
 
-        // 5. Redirect to the first step of the KYC flow.
+        // 5. Determine the correct entry point based on step progress.
+        //
+        //    If the user is resuming a partially completed session (e.g., PAN
+        //    and Aadhaar already uploaded), we skip them directly to the next
+        //    incomplete step instead of restarting from /kyc/upload.
+        //
+        //    Step-to-route mapping:
+        //      "pan" or "aadhaar" -> /kyc/upload   (document upload page)
+        //      "photo"            -> /kyc/photo    (live photo capture)
+        //      "signature"        -> /kyc/signature (signature draw/upload)
+        //      null (all done)    -> /kyc/verify   (review & submit)
+        //
         //    Using replace() so the user cannot navigate back to this bootstrap
         //    page (the token would be visible in the URL bar).
-        router.replace('/kyc/upload');
+        const stepRouteMap: Record<string, string> = {
+          pan: '/kyc/upload',
+          aadhaar: '/kyc/upload',
+          photo: '/kyc/photo',
+          signature: '/kyc/signature',
+        };
+        const nextStep = data.currentStep;
+        const targetRoute = nextStep ? (stepRouteMap[nextStep] || '/kyc/upload') : '/kyc/verify';
+
+        router.replace(targetRoute);
       } catch (err) {
         console.error('[kyc/start] Failed to validate session token:', err);
         setStatus('error');

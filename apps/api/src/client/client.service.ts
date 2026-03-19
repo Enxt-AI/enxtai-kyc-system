@@ -1,10 +1,87 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { WebhookService } from '../webhooks/webhook.service';
 import { WebhookEvent } from '../webhooks/webhook-events.enum';
 import { Client, InternalStatus, FinalStatus } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
+
+// -----------------------------------------------------------------------
+// KYC Step Progress Types
+//
+// Used by computeStepProgress() to derive step-level completion from document
+// URL fields on a KYC submission. Consumed by the client-facing status API
+// (GET /v1/client/submissions/:id) and the initiation API (POST /v1/kyc/initiate)
+// so external clients (e.g., SMC) can display accurate progress indicators
+// and resume the user at the correct step.
+// -----------------------------------------------------------------------
+
+/**
+ * The ordered list of KYC flow steps. Matches the frontend page sequence:
+ * /kyc/upload (pan + aadhaar) -> /kyc/photo -> /kyc/signature -> /kyc/verify
+ */
+const KYC_STEP_ORDER = ['pan', 'aadhaar', 'photo', 'signature'] as const;
+
+type KycStep = typeof KYC_STEP_ORDER[number];
+
+interface StepProgress {
+  /** Steps that the user has completed (documents uploaded). */
+  completedSteps: KycStep[];
+  /** The next step the user needs to complete, or null if all steps are done. */
+  currentStep: KycStep | null;
+  /** Total number of steps in the KYC flow. Always 4. */
+  totalSteps: number;
+}
+
+/**
+ * Compute Step Progress
+ *
+ * Derives step-level progress from the document URL fields stored on a KYC submission.
+ * No new database columns are needed -- progress is computed from existing nullable
+ * document URL fields.
+ *
+ * Step completion rules:
+ *   - "pan":       panDocumentUrl is non-null
+ *   - "aadhaar":   (aadhaarFrontUrl AND aadhaarBackUrl) OR aadhaarDocumentUrl is non-null
+ *   - "photo":     livePhotoUrl is non-null
+ *   - "signature": signatureUrl is non-null
+ *
+ * currentStep is the first step in KYC_STEP_ORDER that is not yet complete.
+ * If all steps are done, currentStep is null.
+ *
+ * @param submission - KYCSubmission record (needs document URL fields)
+ * @returns StepProgress with completedSteps, currentStep, and totalSteps
+ */
+export function computeStepProgress(submission: {
+  panDocumentUrl: string | null;
+  aadhaarDocumentUrl: string | null;
+  aadhaarFrontUrl: string | null;
+  aadhaarBackUrl: string | null;
+  livePhotoUrl: string | null;
+  signatureUrl: string | null;
+}): StepProgress {
+  // Evaluate each step independently based on document presence.
+  const stepStatus: Record<KycStep, boolean> = {
+    pan: Boolean(submission.panDocumentUrl),
+    aadhaar: Boolean(
+      submission.aadhaarDocumentUrl ||
+      (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
+    ),
+    photo: Boolean(submission.livePhotoUrl),
+    signature: Boolean(submission.signatureUrl),
+  };
+
+  const completedSteps = KYC_STEP_ORDER.filter((step) => stepStatus[step]);
+
+  // currentStep is the first incomplete step in the ordered sequence.
+  const currentStep = KYC_STEP_ORDER.find((step) => !stepStatus[step]) ?? null;
+
+  return {
+    completedSteps: completedSteps as KycStep[],
+    currentStep,
+    totalSteps: KYC_STEP_ORDER.length,
+  };
+}
 
 /**
  * Client Service
@@ -559,6 +636,11 @@ export class ClientService {
       generateUrl(submission.signatureUrl, 'signature'),
     ]);
 
+    // Compute step-level progress from document URL fields.
+    // This allows external clients (e.g., SMC) to display accurate progress
+    // indicators and route users to the correct KYC resumption step.
+    const stepProgress = computeStepProgress(submission);
+
     return {
       id: submission.id,
       externalUserId: submission.user.externalUserId,
@@ -582,6 +664,13 @@ export class ClientService {
       documentQuality: null, // Not in schema yet
       rejectionReason: submission.rejectionReason,
       presignedUrls,
+      // Step-level progress fields for KYC state management.
+      // completedSteps: array of completed step names (e.g., ["pan", "aadhaar"])
+      // currentStep: the next step to complete, or null if all done
+      // totalSteps: always 4 (pan, aadhaar, photo, signature)
+      completedSteps: stepProgress.completedSteps,
+      currentStep: stepProgress.currentStep,
+      totalSteps: stepProgress.totalSteps,
     };
   }
 
