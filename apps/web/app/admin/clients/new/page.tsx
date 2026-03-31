@@ -79,6 +79,20 @@ export default function CreateClientPage() {
     setTimeout(() => setCopied({ ...copied, [field]: false }), 2000);
   };
 
+  const downloadCredentials = () => {
+    if (!createdClient) return;
+    const content = `Client Credentials for ${createdClient.name}\n\nAPI Key: ${createdClient.apiKey}\nDefault Admin Email: ${createdClient.defaultAdminEmail}\nDefault Admin Password (Temporary): ${createdClient.defaultAdminPassword}\n\nPlease change the temporary password on the first login via /client/login.\n`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${createdClient.name.replace(/\s+/g, '_')}_credentials.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Show credentials modal after creation
   if (createdClient) {
     return (
@@ -165,13 +179,22 @@ export default function CreateClientPage() {
             </p>
           </div>
 
-          {/* Confirm Button */}
-          <button
-            onClick={() => router.push('/admin/clients')}
-            className="w-full px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-          >
-            I've Copied the Credentials
-          </button>
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={downloadCredentials}
+              className="w-full px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Download text file
+            </button>
+            <button
+              onClick={() => router.push('/admin/clients')}
+              className="w-full px-4 py-2 border border-slate-300 text-slate-700 bg-white rounded-lg hover:bg-slate-50"
+            >
+              I've Saved the Credentials, Continue
+            </button>
+          </div>
         </div>
       </div>
     );
