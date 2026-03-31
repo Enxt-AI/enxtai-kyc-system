@@ -201,7 +201,7 @@ export default function CreateClientPage() {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-            placeholder="e.g., SMC Private Wealth"
+            placeholder="e.g., A B C Private Limited"
           />
         </div>
 
