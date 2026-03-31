@@ -17,6 +17,9 @@ import {
 import { DocumentUpload, DocumentUploadRef } from "@/components/DocumentUpload";
 import {
   getKycApiKey,
+  getKycReturnUrl,
+  clearKycReturnUrl,
+  clearKycApiKey,
   initiateKyc,
   initiateDigiLockerAuth,
   fetchDigiLockerDocuments,
@@ -31,6 +34,35 @@ export default function KycUploadPage() {
   const [userId, setUserId] = useState<string>("");
   const [isReady, setIsReady] = useState(false);
   const [kycInitiated, setKycInitiated] = useState(false);
+
+  /**
+   * Return URL for external client flow.
+   * When present, indicates the user was redirected from an external client
+   * application and a "Cancel & Return" button should be shown.
+   */
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReturnUrl(getKycReturnUrl());
+  }, []);
+
+  /**
+   * Handle Cancel / Exit to Client Application
+   *
+   * Called when the user clicks "Cancel & Return" during the external client
+   * KYC flow. Clears all session data and redirects back to the client
+   * application with status=cancelled.
+   */
+  const handleCancelToClient = () => {
+    if (!returnUrl) return;
+    const target = new URL(returnUrl);
+    target.searchParams.set('status', 'cancelled');
+    localStorage.removeItem('kyc_submission_id');
+    localStorage.removeItem('kyc_user_id');
+    clearKycApiKey();
+    clearKycReturnUrl();
+    window.location.href = target.toString();
+  };
 
   /**
    * API Key Validation Guard
@@ -318,13 +350,26 @@ export default function KycUploadPage() {
       <div className="px-4 pt-10 sm:px-6 lg:px-8">
         <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="flex-1">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors mb-6 group"
-            >
-              <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-              Back to Home
-            </Link>
+            <div className="flex items-center gap-4 mb-6">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors group"
+              >
+                <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                Back to Home
+              </Link>
+
+              {/* Cancel button for external client flow */}
+              {returnUrl && (
+                <button
+                  type="button"
+                  onClick={handleCancelToClient}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-700 transition-colors"
+                >
+                  Cancel &amp; Return to App
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-3 mb-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-500/20">
@@ -392,6 +437,7 @@ export default function KycUploadPage() {
                 {!digiLockerAuthorized ? (
                   <button
                     type="button"
+                    disabled
                     onClick={handleDigiLockerAuth}
                     className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white shadow hover:bg-blue-500 transition"
                   >

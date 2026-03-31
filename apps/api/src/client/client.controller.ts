@@ -21,6 +21,7 @@ import { AuthService } from '../auth/auth.service';
 import { ForgotPasswordDto } from '../auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '../auth/dto/reset-password.dto';
 import { ChangePasswordDto } from '../auth/dto/change-password.dto';
+import { RejectSubmissionDto } from './dto/reject-submission.dto';
 
 /**
  * Client Controller
@@ -559,6 +560,116 @@ export class ClientController {
     }
 
     return this.clientService.getSubmissionDetail(clientId, submissionId);
+  }
+
+  /**
+   * Approve a KYC Submission
+   *
+   * Marks a submission as VERIFIED/COMPLETE and fires a KYC_STATUS_CHANGED
+   * webhook to the client's configured webhook URL.
+   *
+   * @remarks
+   * **Endpoint**: POST /api/v1/client/submissions/:id/approve
+   * **Authentication**: Requires valid NextAuth session token
+   *
+   * **Success Response** (200 OK):
+   * ```json
+   * {
+   *   "success": true,
+   *   "message": "Submission approved successfully",
+   *   "submission": {
+   *     "id": "uuid",
+   *     "internalStatus": "VERIFIED",
+   *     "finalStatus": "COMPLETE"
+   *   }
+   * }
+   * ```
+   *
+   * **Error Scenarios**:
+   * - 400: Submission is already VERIFIED or REJECTED (terminal state)
+   * - 400: Client ID not found in session
+   * - 404: Submission not found or belongs to different client
+   *
+   * **Side Effects**:
+   * - Fires KYC_STATUS_CHANGED webhook with status VERIFIED
+   *
+   * @param req - Request object with clientId from session
+   * @param submissionId - UUID of KYC submission to approve
+   * @returns Approval confirmation with updated submission status
+   */
+  @Post('submissions/:id/approve')
+  async approveSubmission(@Req() req: any, @Param('id') submissionId: string) {
+    const clientId = req.user?.clientId || req.clientId;
+
+    if (!clientId) {
+      throw new BadRequestException('Client ID not found in session');
+    }
+
+    return this.clientService.approveSubmission(clientId, submissionId);
+  }
+
+  /**
+   * Reject a KYC Submission
+   *
+   * Marks a submission as REJECTED with a mandatory reason and fires a
+   * KYC_STATUS_CHANGED webhook including the rejection reason.
+   *
+   * @remarks
+   * **Endpoint**: POST /api/v1/client/submissions/:id/reject
+   * **Authentication**: Requires valid NextAuth session token
+   *
+   * **Request Body**:
+   * ```json
+   * {
+   *   "rejectionReason": "PAN document image is blurry and unreadable"
+   * }
+   * ```
+   *
+   * **Success Response** (200 OK):
+   * ```json
+   * {
+   *   "success": true,
+   *   "message": "Submission rejected",
+   *   "submission": {
+   *     "id": "uuid",
+   *     "internalStatus": "REJECTED",
+   *     "finalStatus": "REJECTED",
+   *     "rejectionReason": "PAN document image is blurry and unreadable"
+   *   }
+   * }
+   * ```
+   *
+   * **Error Scenarios**:
+   * - 400: Submission is already VERIFIED or REJECTED (terminal state)
+   * - 400: Client ID not found in session
+   * - 400: Rejection reason is empty or missing
+   * - 404: Submission not found or belongs to different client
+   *
+   * **Side Effects**:
+   * - Fires KYC_STATUS_CHANGED webhook with status REJECTED and rejectionReason
+   *
+   * @param req - Request object with clientId from session
+   * @param submissionId - UUID of KYC submission to reject
+   * @param rejectSubmissionDto - Rejection reason
+   * @returns Rejection confirmation with updated submission status
+   */
+  @Post('submissions/:id/reject')
+  async rejectSubmission(
+    @Req() req: any,
+    @Param('id') submissionId: string,
+    @Body() rejectSubmissionDto: RejectSubmissionDto,
+  ) {
+    const clientId = req.user?.clientId || req.clientId;
+
+    if (!clientId) {
+      throw new BadRequestException('Client ID not found in session');
+    }
+
+    return this.clientService.rejectSubmission(
+      clientId,
+      submissionId,
+      rejectSubmissionDto.rejectionReason,
+    );
   }
 
   /**

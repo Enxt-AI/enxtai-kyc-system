@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { KycService } from '../kyc/kyc.service';
 import { DigiLockerAuthService } from '../digilocker/digilocker-auth.service';
@@ -11,6 +11,8 @@ import {
 import { InternalStatus } from '@enxtai/shared-types';
 import { DocumentSource } from '@prisma/client';
 import type { MultipartFile } from '@fastify/multipart';
+import * as jwt from 'jsonwebtoken';
+import { computeStepProgress } from '../client/client.service';
 
 /**
  * Client KYC Service
@@ -40,6 +42,8 @@ import type { MultipartFile } from '@fastify/multipart';
  */
 @Injectable()
 export class ClientKycService {
+  private readonly logger = new Logger(ClientKycService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly kycService: KycService,
@@ -116,38 +120,40 @@ export class ClientKycService {
   /**
    * Initiate KYC Session
    *
-   * Creates a new KYC verification session for a client's end-user. Returns session ID
-   * and upload URLs for document submission.
+   * Creates a new KYC verification session for a client's end-user. Returns session ID,
+   * upload URLs, and a tokenized kycFlowUrl for redirecting the user to the EnxtAI
+   * KYC frontend.
    *
    * **Workflow:**
    * 1. Map externalUserId to internal UUID (create user if new)
    * 2. Create KYCSubmission record with PENDING status
-   * 3. Return session ID and upload endpoints
+   * 3. Generate a short-lived JWT (25 min) containing session context
+   * 4. Build kycFlowUrl pointing to the EnxtAI frontend /kyc/start page with the JWT
+   * 5. Return session ID, upload endpoints, and kycFlowUrl
+   *
+   * **JWT Payload:**
+   * The JWT embeds the following claims so the frontend can bootstrap the KYC session
+   * without the client app exposing the raw API key in the redirect URL:
+   * - clientId: UUID of the authenticated client organization
+   * - userId: Internal user UUID (mapped from externalUserId)
+   * - externalUserId: The client's own user identifier (echoed back in webhooks)
+   * - kycSessionId: The KYC submission UUID
+   * - apiKey: The raw API key from the request header (needed by frontend for API calls)
+   * - returnUrl: Optional URL to redirect the user back to after KYC completion/cancellation
    *
    * **Authentication:**
    * - Requires X-API-Key header (validated by TenantMiddleware)
    * - clientId extracted from API key and injected into request context
    *
    * @param clientId - UUID of client organization (from TenantMiddleware)
-   * @param dto - Request payload with externalUserId, email, phone, metadata
-   * @returns Session ID, status, and upload URLs
-   *
-   * @example
-   * const response = await initiateKyc('client-abc-123', {
-   *   externalUserId: 'customer-456',
-   *   email: 'john@example.com',
-   *   phone: '+919876543210',
-   *   metadata: { transactionId: 'txn-789' }
-   * });
-   * // Returns: {
-   * //   kycSessionId: 'a1b2c3d4-...',
-   * //   status: 'PENDING',
-   * //   uploadUrls: { pan: '/v1/kyc/upload/pan', ... }
-   * // }
+   * @param dto - Request payload with externalUserId, email, phone, metadata, returnUrl
+   * @param apiKey - Raw plaintext API key from request header (from TenantMiddleware)
+   * @returns Session ID, status, upload URLs, and kycFlowUrl
    */
   async initiateKyc(
     clientId: string,
     dto: InitiateKycDto,
+    apiKey: string,
   ): Promise<InitiateKycResponseDto> {
     // Map external user ID to internal UUID
     const userId = await this.getOrCreateUserByExternalId(
@@ -157,15 +163,105 @@ export class ClientKycService {
       dto.phone,
     );
 
-    // Create submission with tenant context
-    const submission = await this.prisma.kYCSubmission.create({
-      data: {
+    // ------------------------------------------------------------------
+    // Re-initiation handling: reuse existing non-terminal submissions.
+    //
+    // When a user clicks "Continue Verification" on the client app (e.g., SMC),
+    // the client calls POST /v1/kyc/initiate again. Without this check, a new
+    // orphan submission would be created every time, losing all prior upload
+    // progress.
+    //
+    // Strategy:
+    // - Look for the most recent submission for this (userId, clientId) pair
+    //   that is NOT in a terminal state (VERIFIED or REJECTED).
+    // - If found, reuse it -- the user can resume from where they left off.
+    // - If not found (first initiation or all prior submissions are terminal),
+    //   create a new submission.
+    //
+    // Terminal states (VERIFIED, REJECTED) are excluded because a user who was
+    // previously verified/rejected may need to re-verify (e.g., document expired).
+    // Non-terminal states that ARE reused: PENDING, DOCUMENTS_UPLOADED,
+    // OCR_COMPLETED, FACE_VERIFIED, PENDING_REVIEW.
+    // ------------------------------------------------------------------
+    let submission = await this.prisma.kYCSubmission.findFirst({
+      where: {
         userId,
         clientId,
-        internalStatus: InternalStatus.PENDING,
-        documentSource: DocumentSource.MANUAL_UPLOAD,
+        internalStatus: {
+          notIn: [
+            'VERIFIED' as any,
+            'REJECTED' as any,
+          ],
+        },
       },
+      orderBy: { submissionDate: 'desc' },
     });
+
+    const isResuming = Boolean(submission);
+
+    if (!submission) {
+      // No existing non-terminal submission found -- create a new one.
+      submission = await this.prisma.kYCSubmission.create({
+        data: {
+          userId,
+          clientId,
+          internalStatus: InternalStatus.PENDING,
+          documentSource: DocumentSource.MANUAL_UPLOAD,
+        },
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Generate a short-lived JWT for the KYC redirect flow.
+    //
+    // This token is embedded in the kycFlowUrl that the client app redirects
+    // the user's browser to. The EnxtAI frontend /kyc/start page validates
+    // this token server-side (via /api/kyc/validate-token) and uses the
+    // decoded payload to bootstrap sessionStorage (API key, user ID, etc.)
+    // without ever exposing the raw API key in the URL.
+    //
+    // Token expiry: 25 minutes (enough time for the user to complete the
+    // KYC flow, but short enough to limit abuse if the URL is leaked).
+    // ------------------------------------------------------------------
+    const jwtSecret = process.env.JWT_KYC_SESSION_SECRET;
+    if (!jwtSecret) {
+      this.logger.error('JWT_KYC_SESSION_SECRET is not configured. Cannot generate kycFlowUrl.');
+      throw new BadRequestException(
+        'KYC session token generation is not configured. Contact system administrator.',
+      );
+    }
+
+    // Compute step-level progress before building the JWT so the token
+    // carries the current completion state. This lets the /kyc/start page
+    // route the user directly to their next incomplete step on resume.
+    const stepProgress = computeStepProgress(submission);
+
+    const tokenPayload = {
+      clientId,
+      userId,
+      externalUserId: dto.externalUserId,
+      kycSessionId: submission.id,
+      apiKey,
+      returnUrl: dto.returnUrl || null,
+      // Embed step progress in the token so the frontend can determine
+      // the correct entry point without an extra API call.
+      completedSteps: stepProgress.completedSteps,
+      currentStep: stepProgress.currentStep,
+    };
+
+    const sessionToken = jwt.sign(tokenPayload, jwtSecret, {
+      expiresIn: '25m',
+    });
+
+    // Build the kycFlowUrl using the frontend URL from environment config.
+    // Falls back to http://localhost:3000 for local development.
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const kycFlowUrl = `${frontendUrl}/kyc/start?token=${sessionToken}`;
+
+    this.logger.log(
+      `KYC session ${isResuming ? 'resumed' : 'initiated'} for client ${clientId}, ` +
+      `externalUserId=${dto.externalUserId}, kycSessionId=${submission.id}`,
+    );
 
     return {
       kycSessionId: submission.id,
@@ -176,6 +272,11 @@ export class ClientKycService {
         aadhaarBack: '/v1/kyc/upload/aadhaar/back',
         livePhoto: '/v1/kyc/upload/live-photo',
       },
+      kycFlowUrl,
+      // Step-level progress for KYC state management / resumption.
+      completedSteps: stepProgress.completedSteps,
+      currentStep: stepProgress.currentStep,
+      totalSteps: stepProgress.totalSteps,
     };
   }
 
@@ -404,8 +505,14 @@ export class ClientKycService {
       throw new ForbiddenException('Access denied to this KYC session');
     }
 
-    // Calculate progress percentage
+    // Calculate overall progress percentage (0-100 numeric value).
     const progress = this.calculateProgress(submission);
+
+    // Compute step-level progress so the calling application (e.g., SMC)
+    // can determine which KYC steps the user has completed and which step
+    // they should resume from. This uses the same helper that initiateKyc()
+    // and getSubmissionDetail() use, ensuring consistent step derivation.
+    const stepProgress = computeStepProgress(submission);
 
     // Map internal fields to client-friendly response
     return {
@@ -417,6 +524,12 @@ export class ClientKycService {
       verificationScores: this.buildVerificationScores(submission),
       createdAt: submission.createdAt.toISOString(),
       updatedAt: submission.updatedAt.toISOString(),
+      // Step-level progress for KYC state management / resumption.
+      // These fields let the client app show granular progress (e.g.,
+      // "2 of 4 steps completed") and route users to the correct step.
+      completedSteps: stepProgress.completedSteps,
+      currentStep: stepProgress.currentStep,
+      totalSteps: stepProgress.totalSteps,
     };
   }
 

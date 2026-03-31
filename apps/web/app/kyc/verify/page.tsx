@@ -1,21 +1,100 @@
+/**
+ * KYC Verification Complete Page
+ *
+ * This page is shown after the user completes all KYC steps (document upload,
+ * photo capture, signature). It has two distinct behaviors:
+ *
+ * 1. **External client flow** (returnUrl is present in sessionStorage):
+ *    Shows a brief success message with a countdown, then redirects the user
+ *    back to the client application's returnUrl with status query parameters.
+ *    Redirect URL format: {returnUrl}?status=submitted&sessionId={kycSessionId}
+ *
+ * 2. **Direct/standalone flow** (no returnUrl):
+ *    Shows the original success page with submission details and a button to
+ *    start a new KYC process. This preserves backward compatibility.
+ */
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { clearKycApiKey } from '@/lib/api-client';
+import { useEffect, useState, useCallback } from 'react';
+import { clearKycApiKey, getKycReturnUrl, clearKycReturnUrl } from '@/lib/api-client';
 
 export default function VerifyPage() {
   const router = useRouter();
   const [submissionId, setSubmissionId] = useState<string | null>(null);
+  // returnUrl is set when the user arrived via an external client redirect.
+  // null means the user accessed the KYC flow directly (standalone mode).
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+  // Countdown timer for auto-redirect in the external client flow.
+  const [countdown, setCountdown] = useState<number>(5);
+  // Whether the auto-redirect has already been triggered (prevents double-redirect).
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    // Retrieve submissionId from localStorage
+    // Retrieve submissionId and returnUrl from browser storage
     const storedId = localStorage.getItem('kyc_submission_id');
     setSubmissionId(storedId);
+
+    const storedReturnUrl = getKycReturnUrl();
+    setReturnUrl(storedReturnUrl);
   }, []);
 
   /**
-   * Handle Starting New KYC Process
+   * Redirect to Client Application
+   *
+   * Builds the redirect URL with status query parameters and navigates
+   * the user back to the client application. Clears all KYC session data
+   * before redirecting.
+   *
+   * Query parameters appended to returnUrl:
+   *   - status: 'submitted' (KYC flow completed successfully)
+   *   - sessionId: The KYC submission ID for the client to track
+   */
+  const redirectToClient = useCallback(() => {
+    if (!returnUrl || redirecting) return;
+    setRedirecting(true);
+
+    // Build the redirect URL with status information
+    const redirectTarget = new URL(returnUrl);
+    redirectTarget.searchParams.set('status', 'submitted');
+    if (submissionId) {
+      redirectTarget.searchParams.set('sessionId', submissionId);
+    }
+
+    // Clean up all KYC session data before leaving
+    localStorage.removeItem('kyc_submission_id');
+    localStorage.removeItem('kyc_user_id');
+    clearKycApiKey(); // Also clears returnUrl from sessionStorage
+    clearKycReturnUrl();
+
+    // Navigate to the client application
+    window.location.href = redirectTarget.toString();
+  }, [returnUrl, submissionId, redirecting]);
+
+  /**
+   * Auto-redirect countdown for external client flow.
+   * Counts down from 5 seconds and then triggers the redirect.
+   */
+  useEffect(() => {
+    // Only auto-redirect if we have a returnUrl (external client flow)
+    if (!returnUrl) return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          redirectToClient();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [returnUrl, redirectToClient]);
+
+  /**
+   * Handle Starting New KYC Process (standalone flow only)
    *
    * Clears all KYC-related data from storage and redirects to home.
    *
@@ -82,13 +161,35 @@ export default function VerifyPage() {
             </ul>
           </div>
 
-          {/* Action Button */}
-          <button
-            onClick={handleStartNewKYC}
-            className="w-full rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700 transition"
-          >
-            Start New KYC Submission
-          </button>
+          {/*
+            External Client Flow: Show a "Returning to app" message with
+            countdown and a manual redirect button.
+
+            Standalone Flow: Show the original "Start New KYC" button.
+          */}
+          {returnUrl ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Returning you to the application in{' '}
+                <span className="font-semibold text-blue-600">{countdown}</span>{' '}
+                second{countdown !== 1 ? 's' : ''}...
+              </p>
+              <button
+                onClick={redirectToClient}
+                disabled={redirecting}
+                className="w-full rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {redirecting ? 'Redirecting...' : 'Return to Application Now'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleStartNewKYC}
+              className="w-full rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700 transition"
+            >
+              Start New KYC Submission
+            </button>
+          )}
         </div>
       </div>
     </div>

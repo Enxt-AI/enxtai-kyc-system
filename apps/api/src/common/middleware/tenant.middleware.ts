@@ -159,6 +159,12 @@ export class TenantMiddleware implements NestMiddleware {
     req.clientId = client.id;
     req.client = client;
 
+    // Preserve the raw plaintext API key on the request object.
+    // This is needed by ClientKycService.initiateKyc() to embed the key in the
+    // short-lived KYC session JWT. The JWT is used by the /kyc/start page to
+    // bootstrap sessionStorage without exposing the key in the redirect URL.
+    req.apiKey = apiKey;
+
     this.logger.debug(
       `Authenticated client ${client.name} (${client.id}) for ${req.method} ${req.url}`,
     );

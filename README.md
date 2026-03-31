@@ -739,249 +739,39 @@ Check that uploads are isolated per client:
 - **Custom Domain:** Point your domain to server IP (no ngrok needed)
 - **Cloud Hosting:** Deploy to AWS/Azure/GCP with SSL certificates
 
-## �🐳 Deployment
+## Deployment (AWS Staging)
 
-### Docker Build
+This repository uses a backend-focused AWS staging deployment:
 
-```bash
-# Build API image
-cd apps/api
-docker build -t enxtai-kyc-api:latest .
+- Backend services run from `docker-compose.aws.yml`.
+- Web frontend remains deployed on Vercel.
+- PostgreSQL and Redis are external managed services.
+- MinIO runs in the staging compose stack.
 
-# Build Web image
-cd apps/web
-docker build -t enxtai-kyc-web:latest .
-```
-
-### Production Environment Variables
-
-Update `.env` files with production values:
-
-- **DATABASE_URL**: Use managed PostgreSQL (AWS RDS, Azure Database, etc.)
-- **REDIS_URL**: Use managed Redis (AWS ElastiCache, Azure Cache, etc.)
-- **MINIO_ENDPOINT**: Use production MinIO or AWS S3
-- **MINIO_USE_SSL**: Set to `"true"`
-- **JWT_SECRET**: Generate strong secret: `openssl rand -base64 32`
-- **NEXT_PUBLIC_API_URL**: Set to production API domain
-
-### Docker Compose (Production)
-
-See `docker-compose.prod.yml` (to be created) for production-ready configuration with:
-- Nginx reverse proxy
-- SSL/TLS termination
-- Health checks
-- Resource limits
-- Logging
-
-## � Production Deployment
-
-### Environment Setup
-
-#### Production Environment Variables
-
-Create production `.env` files for secure deployment:
-
-**`apps/api/.env.production`**
-```env
-# Database
-DATABASE_URL="postgresql://username:password@prod-db:5432/kyc_production"
-
-# Redis
-REDIS_URL="redis://prod-redis:6379"
-
-# MinIO S3 Storage
-MINIO_ENDPOINT="prod-minio"
-MINIO_PORT="9000"
-MINIO_ACCESS_KEY="production_access_key"
-MINIO_SECRET_KEY="production_secret_key_change_me"
-MINIO_USE_SSL="true"
-MINIO_PAN_BUCKET="kyc-pan"
-MINIO_AADHAAR_BUCKET="kyc-aadhaar-cards"
-MINIO_LIVE_PHOTO_BUCKET="kyc-live-photos"
-
-# JWT & Security
-JWT_SECRET="secure-production-jwt-secret-256-bits"
-JWT_EXPIRES_IN="24h"
-
-# API Rate Limiting
-THROTTLE_TTL="60000"
-THROTTLE_LIMIT="100"
-
-# Logging
-NODE_ENV="production"
-LOG_LEVEL="info"
-
-# Health & Monitoring
-PORT="3001"
-HEALTH_CHECK_TIMEOUT="30000"
-
-# Face Recognition
-FACE_API_MODELS_PATH="./node_modules/@vladmandic/face-api/model"
-FACE_API_MATCH_THRESHOLD="0.8"
-FACE_API_LIVENESS_THRESHOLD="0.8"
-```
-
-**`apps/web/.env.production`**
-```env
-# API Configuration
-NEXT_PUBLIC_API_URL="https://api.your-domain.com"
-NEXT_PUBLIC_APP_ENV="production"
-
-# Security
-NEXTAUTH_SECRET="secure-nextjs-secret-change-in-production"
-NEXTAUTH_URL="https://kyc.your-domain.com"
-
-# Feature Flags
-NEXT_PUBLIC_ENABLE_FACE_DETECTION="true"
-NEXT_PUBLIC_ENABLE_ADMIN_PANEL="true"
-```
-
-### Docker Production Build
-
-#### Build Production Images
+### Staging Build and Run
 
 ```bash
-# Build API image
-cd apps/api
-docker build -t enxtai/kyc-api:latest .
-
-# Build Web image
-cd ../web
-docker build -t enxtai/kyc-web:latest .
+docker compose --env-file .env.aws -f docker-compose.aws.yml build api
+docker compose --env-file .env.aws -f docker-compose.aws.yml up -d
 ```
 
-#### Production Docker Compose
-
-**`docker-compose.prod.yml`**
-```yaml
-version: '3.8'
-
-services:
-  api:
-    image: enxtai/kyc-api:latest
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=production
-    env_file:
-      - ./apps/api/.env.production
-    depends_on:
-      - postgres
-      - redis
-      - minio
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  web:
-    image: enxtai/kyc-web:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    env_file:
-      - ./apps/web/.env.production
-    depends_on:
-      - api
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: kyc_production
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: secure_prod_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: production_access_key
-      MINIO_ROOT_PASSWORD: production_secret_key_change_me
-    volumes:
-      - minio_data:/data
-    command: server /data --console-address ":9001"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-```
-
-### Database Migration
+### Verification
 
 ```bash
-# Run Prisma migrations in production
-cd apps/api
-npx prisma migrate deploy
-
-# Generate Prisma client
-npx prisma generate
+docker compose --env-file .env.aws -f docker-compose.aws.yml ps
+docker compose --env-file .env.aws -f docker-compose.aws.yml logs -f api
+curl http://localhost:3001/health
 ```
 
-### Deployment Steps
+### Environment Contract
 
-1. **Infrastructure Setup**
-   ```bash
-   # Clone repository to production server
-   git clone https://github.com/enxtai/kyc-system.git
-   cd kyc-system
+Use root `.env.aws` (gitignored) for staging values. It includes external database/cache URLs, MinIO configuration, DigiLocker credentials, and API runtime variables.
 
-   # Create production environment files
-   cp apps/api/.env.example apps/api/.env.production
-   cp apps/web/.env.example apps/web/.env.production
-   # Edit files with production values
-   ```
+### Migration Behavior
 
-2. **Build and Deploy**
-   ```bash
-   # Build production images
-   docker-compose -f docker-compose.prod.yml build
+The API container startup executes `prisma migrate deploy` before booting the NestJS server. Automatic seed-on-boot is intentionally disabled.
 
-   # Start services
-   docker-compose -f docker-compose.prod.yml up -d
-
-   # Run database migrations
-   docker-compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
-   ```
-
-3. **Verify Deployment**
-   ```bash
-   # Check service health
-   curl http://localhost:3001/health
-
-   # Check application status
-   curl http://localhost:3000
-
-   # Test client API
-   cd apps/api
-   pnpm test:client-api --apiKey="your-production-key" --baseUrl="http://localhost:3001"
-   ```
+For complete EC2 workflow and operations, see `DEPLOYMENT.md`.
 
 ### SSL/HTTPS Configuration
 

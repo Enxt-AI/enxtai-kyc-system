@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsEmail, IsOptional, IsUrl } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -80,4 +80,29 @@ export class InitiateKycDto {
   })
   @IsOptional()
   metadata?: Record<string, any>;
+
+  /**
+   * Return URL for redirect after KYC flow completion or cancellation.
+   *
+   * After the user completes the KYC flow on the EnxtAI frontend, they are
+   * redirected back to this URL with query parameters indicating the outcome:
+   * - Completion: {returnUrl}?status=submitted&sessionId={kycSessionId}
+   * - Cancellation: {returnUrl}?status=cancelled
+   *
+   * If omitted, the user sees the default EnxtAI KYC completion page instead
+   * of being redirected.
+   *
+   * @example 'https://smc-app.com/kyc'
+   */
+  @ApiPropertyOptional({
+    description: 'URL to redirect the user to after KYC completion or cancellation',
+    example: 'https://smc-app.com/kyc',
+    type: String,
+  })
+  @IsUrl(
+    { protocols: ['https', 'http'], require_protocol: true, require_tld: false },
+    { message: 'returnUrl must be a valid URL with protocol (https:// or http://)' },
+  )
+  @IsOptional()
+  returnUrl?: string;
 }

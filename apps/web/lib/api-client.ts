@@ -18,7 +18,7 @@ import { getSession } from 'next-auth/react';
  *
  * @remarks
  * **Base Configuration**:
- * - Base URL: Process.env.NEXT_PUBLIC_API_URL or localhost:3001
+ * - Base URL: Process.env.NEXT_PUBLIC_API_URL or localhost:5001
  * - Timeout: 15 seconds
  * - Automatic error handling
  *
@@ -32,7 +32,12 @@ import { getSession } from 'next-auth/react';
  * 2. Response: Centralized error handling (passthrough for now)
  */
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  // In the browser, calling an http:// backend from an https:// Vercel site is blocked
+  // (Mixed Content). Route browser requests through a same-origin proxy instead.
+  baseURL:
+    typeof window === 'undefined'
+      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'
+      : '/api/backend',
   timeout: 15000,
 });
 
@@ -252,6 +257,51 @@ export function clearKycApiKey(): void {
   if (typeof window === 'undefined') return;
 
   sessionStorage.removeItem('kycApiKey');
+  // Also clear the return URL when clearing the API key, since both belong
+  // to the same KYC session lifecycle. This prevents stale returnUrl data
+  // from persisting across separate KYC sessions.
+  sessionStorage.removeItem('kyc_return_url');
+}
+
+/**
+ * Set KYC Return URL
+ *
+ * Stores the client application's return URL in sessionStorage. After the user
+ * completes or cancels the KYC flow, the /kyc/verify page reads this URL and
+ * redirects the user back to the client application with status query params.
+ *
+ * This value is set by the /kyc/start page after validating the session JWT
+ * from the kycFlowUrl.
+ *
+ * @param url - The client application's return URL (e.g., 'https://smc-app.com/kyc')
+ */
+export function setKycReturnUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem('kyc_return_url', url);
+}
+
+/**
+ * Get KYC Return URL
+ *
+ * Retrieves the stored return URL from sessionStorage. Returns null if not set
+ * (indicating the user accessed the KYC flow directly, without a client redirect).
+ *
+ * @returns The client application's return URL, or null if not configured
+ */
+export function getKycReturnUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem('kyc_return_url');
+}
+
+/**
+ * Clear KYC Return URL
+ *
+ * Removes the return URL from sessionStorage. Called after the redirect is
+ * performed to prevent reuse.
+ */
+export function clearKycReturnUrl(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem('kyc_return_url');
 }
 
   /**
@@ -812,6 +862,85 @@ export async function getClientSubmissionDetail(
 ): Promise<ClientSubmissionDetail> {
   const response = await api.get<ClientSubmissionDetail>(
     `/api/v1/client/submissions/${submissionId}`
+  );
+  return response.data;
+}
+
+/**
+ * Approve a KYC Submission
+ *
+ * Sends a POST request to approve a submission, transitioning it to
+ * VERIFIED/COMPLETE status. The backend also fires a KYC_STATUS_CHANGED
+ * webhook to the client's configured webhook URL.
+ *
+ * @remarks
+ * **Endpoint**: POST /api/v1/client/submissions/:id/approve
+ * **Authentication**: Session-based (NextAuth bearer token)
+ *
+ * **Preconditions**:
+ * - Submission must not be in a terminal state (VERIFIED or REJECTED)
+ *
+ * **Error Handling**:
+ * - 400: Submission already in terminal state
+ * - 404: Submission not found or access denied
+ *
+ * @param submissionId - UUID of the KYC submission to approve
+ * @returns Approval confirmation with updated submission status
+ *
+ * @example
+ * ```typescript
+ * const result = await approveSubmission('123e4567-e89b-12d3-a456-426614174000');
+ * // { success: true, message: 'Submission approved successfully', submission: { ... } }
+ * ```
+ */
+export async function approveSubmission(
+  submissionId: string
+): Promise<{ success: boolean; message: string; submission: any }> {
+  const response = await api.post(
+    `/api/v1/client/submissions/${submissionId}/approve`
+  );
+  return response.data;
+}
+
+/**
+ * Reject a KYC Submission
+ *
+ * Sends a POST request to reject a submission with a mandatory reason.
+ * Transitions the submission to REJECTED status. The backend fires a
+ * KYC_STATUS_CHANGED webhook with the rejection reason in the payload.
+ *
+ * @remarks
+ * **Endpoint**: POST /api/v1/client/submissions/:id/reject
+ * **Authentication**: Session-based (NextAuth bearer token)
+ *
+ * **Preconditions**:
+ * - Submission must not be in a terminal state (VERIFIED or REJECTED)
+ * - Rejection reason must be non-empty (max 1000 chars)
+ *
+ * **Error Handling**:
+ * - 400: Submission already in terminal state or empty reason
+ * - 404: Submission not found or access denied
+ *
+ * @param submissionId - UUID of the KYC submission to reject
+ * @param rejectionReason - Human-readable reason for rejection
+ * @returns Rejection confirmation with updated submission status
+ *
+ * @example
+ * ```typescript
+ * const result = await rejectSubmission(
+ *   '123e4567-e89b-12d3-a456-426614174000',
+ *   'PAN document is blurry and unreadable'
+ * );
+ * // { success: true, message: 'Submission rejected', submission: { ... } }
+ * ```
+ */
+export async function rejectSubmission(
+  submissionId: string,
+  rejectionReason: string
+): Promise<{ success: boolean; message: string; submission: any }> {
+  const response = await api.post(
+    `/api/v1/client/submissions/${submissionId}/reject`,
+    { rejectionReason }
   );
   return response.data;
 }

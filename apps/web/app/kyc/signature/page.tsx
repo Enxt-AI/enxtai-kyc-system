@@ -3,7 +3,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createKYCSubmission, getKYCSubmission, uploadSignature, getKycApiKey } from '@/lib/api-client';
+import {
+  uploadSignature,
+  getKycApiKey,
+  getKycReturnUrl,
+  clearKycReturnUrl,
+  clearKycApiKey,
+} from '@/lib/api-client';
 
 export default function KycSignaturePage() {
   const router = useRouter();
@@ -19,6 +25,32 @@ export default function KycSignaturePage() {
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+
+  /**
+   * Return URL for external client flow.
+   * When present, a "Cancel & Return" button is shown in the header.
+   */
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReturnUrl(getKycReturnUrl());
+  }, []);
+
+  /**
+   * Handle Cancel / Exit to Client Application
+   *
+   * Clears session data and redirects back to the client app with status=cancelled.
+   */
+  const handleCancelToClient = () => {
+    if (!returnUrl) return;
+    const target = new URL(returnUrl);
+    target.searchParams.set('status', 'cancelled');
+    localStorage.removeItem('kyc_submission_id');
+    localStorage.removeItem('kyc_user_id');
+    clearKycApiKey();
+    clearKycReturnUrl();
+    window.location.href = target.toString();
+  };
 
   /**
    * API Key Validation Guard
@@ -62,25 +94,17 @@ export default function KycSignaturePage() {
     };
   };
 
+  // Read the submission ID from localStorage. This was set during the
+  // /kyc/start session bootstrap (from the kycSessionId in the JWT token).
+  // No need to call the legacy getKYCSubmission/createKYCSubmission endpoints.
   useEffect(() => {
-    async function init() {
-      try {
-        const existing = await getKYCSubmission(userId);
-        if (existing?.id) {
-          setSubmissionId(existing.id);
-          localStorage.setItem('kyc_submission_id', existing.id);
-        } else {
-          const res = await createKYCSubmission(userId);
-          setSubmissionId(res.id);
-          localStorage.setItem('kyc_submission_id', res.id);
-        }
-      } catch (err: any) {
-        const message = err?.response?.data?.message || 'Unable to start submission';
-        setError(message);
-      }
+    const storedSubmissionId = localStorage.getItem('kyc_submission_id');
+    if (storedSubmissionId) {
+      setSubmissionId(storedSubmissionId);
+    } else {
+      setError('No KYC submission found. Please restart the KYC process.');
     }
-    void init();
-  }, [userId]);
+  }, []);
 
   const initializeCanvas = () => {
     const canvas = canvasRef.current;
@@ -275,9 +299,22 @@ export default function KycSignaturePage() {
               Draw your signature or upload a scanned signature image (PNG/JPEG, max 5MB).
             </p>
           </div>
-          <Link href="/kyc/photo" className="text-blue-600 hover:underline text-sm font-semibold">
-            Back to Live Photo
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/kyc/photo" className="text-blue-600 hover:underline text-sm font-semibold">
+              Back to Live Photo
+            </Link>
+
+            {/* Cancel button for external client flow */}
+            {returnUrl && (
+              <button
+                type="button"
+                onClick={handleCancelToClient}
+                className="text-sm font-semibold text-red-500 hover:text-red-700 transition-colors"
+              >
+                Cancel &amp; Return to App
+              </button>
+            )}
+          </div>
         </header>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm space-y-6">

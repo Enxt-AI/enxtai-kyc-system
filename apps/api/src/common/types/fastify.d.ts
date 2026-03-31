@@ -14,5 +14,13 @@ declare module 'fastify' {
     clientId?: string;
     /** Full Client object from database injected by TenantMiddleware */
     client?: Client;
+    /**
+     * Raw plaintext API key from the X-API-Key header.
+     * Injected by TenantMiddleware after successful authentication.
+     * Used by ClientKycService.initiateKyc() to embed in the short-lived
+     * KYC session JWT so the frontend can bootstrap the KYC flow without
+     * the client app exposing the API key in the redirect URL.
+     */
+    apiKey?: string;
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getClientSubmissionDetail } from '@/lib/api-client';
+import { getClientSubmissionDetail, approveSubmission, rejectSubmission } from '@/lib/api-client';
 import type { ClientSubmissionDetail } from '@enxtai/shared-types';
 import Link from 'next/link';
 
@@ -49,6 +49,12 @@ export default function SubmissionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Approve/Reject UI state
+  const [actionLoading, setActionLoading] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+
   useEffect(() => {
     if (submissionId) {
       loadSubmissionDetail();
@@ -70,6 +76,78 @@ export default function SubmissionDetailPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * Determines if the submission can be approved or rejected.
+   *
+   * The buttons should only appear when the KYC flow is truly complete,
+   * meaning the user has uploaded all required documents (PAN, Aadhaar
+   * front, Aadhaar back, live photo). We cannot rely solely on
+   * internalStatus because each individual document upload sets it to
+   * DOCUMENTS_UPLOADED -- even if only one document has been uploaded.
+   *
+   * Instead, we check that all required document presigned URLs are present
+   * (proving the documents exist in storage) AND that the status is not
+   * a terminal state (VERIFIED or REJECTED).
+   */
+  const hasAllRequiredDocuments =
+    submission &&
+    submission.presignedUrls.panDocument &&
+    submission.presignedUrls.aadhaarFront &&
+    submission.presignedUrls.aadhaarBack &&
+    submission.presignedUrls.livePhoto &&
+    submission.presignedUrls.signature;
+  const terminalStatuses = ['VERIFIED', 'REJECTED'];
+  const canTakeAction =
+    submission &&
+    hasAllRequiredDocuments &&
+    !terminalStatuses.includes(submission.internalStatus);
+
+  /**
+   * Handle submission approval.
+   * Calls the approve API, then reloads submission data to reflect the new status.
+   */
+  const handleApprove = async () => {
+    if (!submission) return;
+    try {
+      setActionLoading(true);
+      setActionError(null);
+      await approveSubmission(submission.id);
+      // Reload submission data to reflect updated status
+      await loadSubmissionDetail();
+    } catch (err: any) {
+      console.error('Failed to approve submission:', err);
+      setActionError(
+        err.response?.data?.message || 'Failed to approve submission'
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  /**
+   * Handle submission rejection.
+   * Validates the rejection reason, calls the reject API, then reloads data.
+   */
+  const handleReject = async () => {
+    if (!submission || !rejectionReason.trim()) return;
+    try {
+      setActionLoading(true);
+      setActionError(null);
+      await rejectSubmission(submission.id, rejectionReason.trim());
+      setShowRejectModal(false);
+      setRejectionReason('');
+      // Reload submission data to reflect updated status
+      await loadSubmissionDetail();
+    } catch (err: any) {
+      console.error('Failed to reject submission:', err);
+      setActionError(
+        err.response?.data?.message || 'Failed to reject submission'
+      );
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -191,11 +269,88 @@ export default function SubmissionDetailPage() {
             <h1 className="text-3xl font-bold text-gray-900">Submission Details</h1>
             <p className="mt-2 text-gray-600">User ID: {submission.externalUserId}</p>
           </div>
-          <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${getStatusBadgeColor(submission.internalStatus)}`}>
-            {submission.internalStatus.replace(/_/g, ' ')}
-          </span>
+          <div className="flex items-center gap-4">
+            {/* Approve/Reject action buttons -- only shown for non-terminal statuses */}
+            {canTakeAction && (
+              <>
+                <button
+                  onClick={handleApprove}
+                  disabled={actionLoading}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {actionLoading ? 'Processing...' : 'Approve'}
+                </button>
+                <button
+                  onClick={() => setShowRejectModal(true)}
+                  disabled={actionLoading}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Reject
+                </button>
+              </>
+            )}
+            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${getStatusBadgeColor(submission.internalStatus)}`}>
+              {submission.internalStatus.replace(/_/g, ' ')}
+            </span>
+          </div>
         </div>
+
+        {/* Action error message */}
+        {actionError && (
+          <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-700">{actionError}</p>
+          </div>
+        )}
       </div>
+
+      {/* Rejection Reason Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Reject Submission
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Please provide a reason for rejecting this KYC submission.
+              This reason will be sent to the integrating application via webhook.
+            </p>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              rows={4}
+              maxLength={1000}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1 text-right">
+              {rejectionReason.length}/1000
+            </p>
+            {actionError && (
+              <p className="text-sm text-red-600 mt-2">{actionError}</p>
+            )}
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectionReason('');
+                  setActionError(null);
+                }}
+                disabled={actionLoading}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={actionLoading || !rejectionReason.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {actionLoading ? 'Rejecting...' : 'Confirm Rejection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: User Information */}

@@ -224,7 +224,7 @@ function ChangePasswordForm() {
 
       // Call change password API
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/v1/client/change-password`,
+        `/api/backend/api/v1/client/change-password`,
         {
           method: "POST",
           headers: {
