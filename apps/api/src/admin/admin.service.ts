@@ -251,8 +251,16 @@ export class AdminService {
    * - Consider pagination if client count exceeds 100
    */
   async getAllClients(): Promise<AdminClientListItem[]> {
-    // Fetch all clients with KYC counts
+    // Fetch all clients with KYC counts, excluding system/demo clients
     const clients = await this.prisma.client.findMany({
+      where: {
+        id: {
+          notIn: [
+            '00000000-0000-0000-0000-000000000000', // Legacy Client
+            '00000000-0000-0000-0000-000000000001', // TestFinTech (if still in DB)
+          ],
+        },
+      },
       include: {
         _count: {
           select: { kycSubmissions: true },
