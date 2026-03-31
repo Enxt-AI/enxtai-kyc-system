@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomBytes, createHash } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -9,14 +8,10 @@ const prisma = new PrismaClient();
  *
  * Seeds the database with:
  * 1. SUPER_ADMIN: Platform administrator (admin@enxtai.com) with null clientId
- * 2. Demo Client: TestFinTech organization for end-to-end testing
- * 3. Demo ClientUser: admin@testfintech.com for client portal access
- * 4. Password Reset: All demo accounts require password change on first login
+ * 2. Password Reset: Requires password change on first login
  *
  * ⚠️ SECURITY WARNING:
- * - Change all passwords before production deployment
- * - Remove demo client and user (TestFinTech, admin@testfintech.com) in production
- * - Regenerate API keys for production clients
+ * - Change admin password before production deployment
  */
 async function main() {
   console.log('🌱 Seeding database...');
