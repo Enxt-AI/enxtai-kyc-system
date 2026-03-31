@@ -280,27 +280,7 @@ export default function ClientLoginPage() {
               </form>
             </div>
 
-            <div className="bg-zinc-50 border-t border-zinc-100 p-6">
-              <div className="flex items-center justify-center gap-2 text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
-                <svg
-                  className="w-4 h-4 text-zinc-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                Demo Credentials
-              </div>
-              <code className="block text-center text-xs font-mono text-zinc-600 bg-white border border-zinc-200 py-2 px-3 rounded-md">
-                admin@testfintech.com / client123
-              </code>
-            </div>
+
           </div>
 
           <div className="text-center pt-4">
