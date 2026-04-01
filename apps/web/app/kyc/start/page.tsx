@@ -131,24 +131,25 @@ function KycStartContent() {
         //
         //    If the user is resuming a partially completed session (e.g., PAN
         //    and Aadhaar already uploaded), we skip them directly to the next
-        //    incomplete step instead of restarting from /kyc/upload.
+        //    Depending on the step, we append a `&step=` parameter so the SPA knows
+        //    where to resume.
         //
         //    Step-to-route mapping:
-        //      "pan" or "aadhaar" -> /kyc/upload   (document upload page)
-        //      "photo"            -> /kyc/photo    (live photo capture)
-        //      "signature"        -> /kyc/signature (signature draw/upload)
-        //      null (all done)    -> /kyc/verify   (review & submit)
+        //      "pan" or "aadhaar" -> /kyc?verification=...&step=upload
+        //      "photo"            -> /kyc?verification=...&step=photo
+        //      "signature"        -> /kyc?verification=...&step=signature
+        //      null (all done)    -> /kyc/verify
         //
         //    Using replace() so the user cannot navigate back to this bootstrap
         //    page (the token would be visible in the URL bar).
         const stepRouteMap: Record<string, string> = {
-          pan: '/kyc/upload',
-          aadhaar: '/kyc/upload',
-          photo: '/kyc/photo',
-          signature: '/kyc/signature',
+          pan: `/kyc?verification=${data.externalUserId || ''}&step=upload`,
+          aadhaar: `/kyc?verification=${data.externalUserId || ''}&step=upload`,
+          photo: `/kyc?verification=${data.externalUserId || ''}&step=photo`,
+          signature: `/kyc?verification=${data.externalUserId || ''}&step=signature`,
         };
         const nextStep = data.currentStep;
-        const targetRoute = nextStep ? (stepRouteMap[nextStep] || '/kyc/upload') : '/kyc/verify';
+        const targetRoute = nextStep ? (stepRouteMap[nextStep] || `/kyc?verification=${data.externalUserId || ''}&step=upload`) : '/kyc/verify';
 
         router.replace(targetRoute);
       } catch (err) {

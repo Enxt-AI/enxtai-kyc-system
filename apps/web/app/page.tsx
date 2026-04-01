@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
 import { validateApiKey, setKycApiKey } from "@/lib/api-client";
 
 /**
@@ -111,6 +112,9 @@ function ErrorBanner({ onError }: { onError: (error: string | null) => void }) {
             "Please enter your API key to access the KYC verification flow.",
           );
           break;
+        case "missing_verification_id":
+          // Do nothing, just silently redirect without a banner (handled below)
+          break;
         default:
           onError("An error occurred. Please try again.");
       }
@@ -169,8 +173,11 @@ export default function HomePage() {
       if (result.valid) {
         // Store API key using helper function (sets key + 30min expiry)
         setKycApiKey(trimmedKey);
+        
+        // Generate a fresh session verification ID for manual entry
+        const verificationId = uuidv4();
         // Redirect to KYC upload flow
-        router.push("/kyc/upload");
+        router.push(`/kyc?verification=${verificationId}`);
       } else {
         setError(result.error || "Invalid API key provided");
       }

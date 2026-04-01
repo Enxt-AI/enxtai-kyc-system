@@ -320,7 +320,7 @@ function ChangePasswordForm() {
     <>
       {/* Success confirmation - render first to guarantee it shows */}
       {(success || successRef.current) && (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
           <div className="max-w-md w-full space-y-8">
             <div className="rounded-md bg-green-50 p-4 animate-fade-in">
               <div className="text-center">
@@ -346,7 +346,7 @@ function ChangePasswordForm() {
 
       {/* Main form - only render when not in success state */}
       {!success && !successRef.current && (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
           <div className="max-w-md w-full space-y-8">
             <div>
               <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -412,7 +412,7 @@ function ChangePasswordForm() {
                 </div>
 
                 {/* New Password Field */}
-                <div>
+                <div className="relative">
                   <label htmlFor="newPassword" className="sr-only">
                     New Password
                   </label>
@@ -422,7 +422,7 @@ function ChangePasswordForm() {
                     type="password"
                     autoComplete="new-password"
                     required
-                    className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                    className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm pr-16"
                     placeholder="New Password"
                     value={newPassword}
                     onChange={(e) => {
@@ -430,32 +430,23 @@ function ChangePasswordForm() {
                       setError(""); // Clear errors on change
                     }}
                   />
-                </div>
-
-                {/* Password Strength Indicator */}
-                {newPassword && (
-                  <div className="px-3 py-2 bg-gray-50 border-l border-r border-gray-300">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-600">Strength:</span>
-                      <div className="flex space-x-1">
+                  {/* Password Strength Indicator inside input */}
+                  {newPassword && (
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-20">
+                      <div className="flex space-x-1" title={`Strength: ${passwordStrength}`}>
                         <div
-                          className={`h-2 w-6 rounded ${passwordStrength === "weak" ? "bg-red-500" : passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500"}`}
+                          className={`h-1.5 w-3 rounded-full ${passwordStrength === "weak" ? "bg-red-500" : passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500"}`}
                         ></div>
                         <div
-                          className={`h-2 w-6 rounded ${passwordStrength === "medium" || passwordStrength === "strong" ? (passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500") : "bg-gray-200"}`}
+                          className={`h-1.5 w-3 rounded-full ${passwordStrength === "medium" || passwordStrength === "strong" ? (passwordStrength === "medium" ? "bg-yellow-500" : "bg-green-500") : "bg-gray-200"}`}
                         ></div>
                         <div
-                          className={`h-2 w-6 rounded ${passwordStrength === "strong" ? "bg-green-500" : "bg-gray-200"}`}
+                          className={`h-1.5 w-3 rounded-full ${passwordStrength === "strong" ? "bg-green-500" : "bg-gray-200"}`}
                         ></div>
                       </div>
-                      <span
-                        className={`text-xs capitalize ${passwordStrength === "weak" ? "text-red-600" : passwordStrength === "medium" ? "text-yellow-600" : "text-green-600"}`}
-                      >
-                        {passwordStrength}
-                      </span>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Confirm Password Field */}
                 <div>
