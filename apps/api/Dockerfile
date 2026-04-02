@@ -8,14 +8,16 @@ FROM node:20-alpine AS base
 RUN apk add --no-cache \
 	libc6-compat \
 	python3 \
-	build-essential \
-	libcairo2-dev \
-	libjpeg-dev \
-	libpango1.0-dev \
-	libgif-dev \
-	librsvg2-dev \
+	make \
+	g++ \
+	pkgconfig \
+	pixman-dev \
+	cairo-dev \
+	pango-dev \
+	jpeg-dev \
+	giflib-dev \
+	librsvg-dev \
 	openssl \
-	&& rm -rf /var/lib/apt/lists/* \
 	&& corepack enable pnpm
 WORKDIR /app
 
