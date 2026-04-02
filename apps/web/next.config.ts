@@ -52,14 +52,7 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: '/api/digilocker/:path*',
-        destination: 'http://localhost:5001/api/digilocker/:path*',
-      },
-    ];
-  },
+  // Rewrites removed so that Vercel App Router can proxy cleanly
   experimental: {
     allowedDevOrigins: ['https://abram-gymnogenous-victor.ngrok-free.dev'],
   },

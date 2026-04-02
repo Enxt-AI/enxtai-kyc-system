@@ -15,3 +15,5 @@ redis_data/
 minio_data/
 *.pem
 .env.aws
+enxtai-kyc
+enxtai-kyc.pub
