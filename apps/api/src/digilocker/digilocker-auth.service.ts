@@ -105,7 +105,7 @@ export class DigiLockerAuthService {
         params.append('code_challenge_method', 'S256');
       }
 
-      const authorizationUrl = `${config.authorizeUrl}?${params.toString()}`;
+      const authorizationUrl = `${config.authorizeUrl}?${params.toString().replace(/\+/g, '%20')}`;
 
       // DEBUG: Log full authorization details
       this.logger.log(`=== DigiLocker Authorization Debug ===`);
