@@ -18,7 +18,7 @@ import { AppModule } from './app.module';
  *
  * **Request Context**:
  * - clientId: Tenant identifier (from TenantMiddleware)
- * - userId: End-user identifier
+ * - userId: End-clientUser identifier
  * - method: HTTP method (GET, POST, etc.)
  * - url: Request path
  * - statusCode: Response status

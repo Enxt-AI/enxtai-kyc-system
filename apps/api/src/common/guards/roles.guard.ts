@@ -9,7 +9,7 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
  *
  * @remarks
  * **Purpose**:
- * Restricts endpoint access based on user roles defined via @Roles decorator.
+ * Restricts endpoint access based on clientUser roles defined via @Roles decorator.
  * Must be used in combination with SessionAuthGuard.
  *
  * **Usage**:
@@ -22,16 +22,16 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
  *
  * **Authorization Flow**:
  * 1. Reads roles from @Roles decorator metadata
- * 2. Retrieves user role from request.user (set by SessionAuthGuard)
- * 3. Checks if user's role matches any required roles
+ * 2. Retrieves clientUser role from request.clientUser (set by SessionAuthGuard)
+ * 3. Checks if clientUser's role matches any required roles
  * 4. Allows access if role matches, otherwise throws 403 Forbidden
  *
  * **Role Sources**:
- * - For client portal users: ClientUserRole (ADMIN, VIEWER)
+ * - For client portal clientUsers: ClientUserRole (ADMIN, VIEWER)
  * - For super admins: role field set to 'SUPER_ADMIN' in session token
  *
  * **Security**:
- * - Requires SessionAuthGuard to run first (sets request.user)
+ * - Requires SessionAuthGuard to run first (sets request.clientUser)
  * - Uses case-sensitive role matching
  * - Returns 403 Forbidden (not 401) to indicate authorization failure
  */
@@ -51,15 +51,15 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const user = request.user;
+    const clientUser = request.clientUser;
 
-    // User should be set by SessionAuthGuard
-    if (!user || !user.role) {
+    // ClientUser should be set by SessionAuthGuard
+    if (!clientUser || !clientUser.role) {
       throw new ForbiddenException('Access denied: No role information found');
     }
 
-    // Check if user's role matches any of the required roles
-    const hasRole = requiredRoles.includes(user.role);
+    // Check if clientUser's role matches any of the required roles
+    const hasRole = requiredRoles.includes(clientUser.role);
     if (!hasRole) {
       throw new ForbiddenException(`Access denied: Requires one of [${requiredRoles.join(', ')}] roles`);
     }

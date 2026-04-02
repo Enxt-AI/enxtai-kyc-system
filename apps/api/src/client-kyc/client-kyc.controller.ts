@@ -47,7 +47,7 @@ import {
  *
  * **Error Codes:**
  * - `INVALID_API_KEY`: Missing or invalid X-API-Key header (401)
- * - `USER_NOT_FOUND`: External user ID not found (404)
+ * - `USER_NOT_FOUND`: External clientUser ID not found (404)
  * - `SUBMISSION_NOT_FOUND`: KYC session ID not found (404)
  * - `TENANT_MISMATCH`: Session belongs to different client (403)
  * - `FILE_TOO_LARGE`: Upload exceeds 5MB limit (413)
@@ -106,7 +106,7 @@ export class ClientKycController {
   /**
    * POST /v1/kyc/initiate
    *
-   * Initiates a new KYC verification session for a client's end-user. Returns session ID
+   * Initiates a new KYC verification session for a client's end-clientUser. Returns session ID
    * and upload URLs for document submission.
    *
    * **Request Headers:**
@@ -160,7 +160,7 @@ export class ClientKycController {
   @Post('initiate')
   @ApiOperation({
     summary: 'Initiate KYC Session',
-    description: 'Creates a new KYC verification session for a client end-user. Returns session ID, upload URLs, and a tokenized kycFlowUrl for browser redirect.',
+    description: 'Creates a new KYC verification session for a client end-clientUser. Returns session ID, upload URLs, and a tokenized kycFlowUrl for browser redirect.',
   })
   @ApiResponse({
     status: 201,
@@ -192,7 +192,7 @@ export class ClientKycController {
    * - `Content-Type`: multipart/form-data
    *
    * **Multipart Form Fields:**
-   * - `externalUserId` (text): Client's user identifier (e.g., "customer-12345")
+   * - `externalUserId` (text): Client's clientUser identifier (e.g., "customer-12345")
    * - `file` (file): PAN card image (JPEG/PNG, max 5MB)
    *
    * **File Validation:**
@@ -206,7 +206,7 @@ export class ClientKycController {
    * {
    *   "success": true,
    *   "kycSessionId": "a1b2c3d4-...",
-   *   "documentUrl": "kyc-abc123-pan/user-uuid/PAN_CARD_1735987654321.jpg"
+   *   "documentUrl": "kyc-abc123-pan/clientUser-uuid/PAN_CARD_1735987654321.jpg"
    * }
    * ```
    *
@@ -253,7 +253,7 @@ export class ClientKycController {
   /**
    * POST /v1/kyc/upload/aadhaar/front
    *
-   * Uploads Aadhaar card front side. Front side must contain user's photograph
+   * Uploads Aadhaar card front side. Front side must contain clientUser's photograph
    * for face verification.
    *
    * **Request Headers:**
@@ -261,7 +261,7 @@ export class ClientKycController {
    * - `Content-Type`: multipart/form-data
    *
    * **Multipart Form Fields:**
-   * - `externalUserId` (text): Client's user identifier
+   * - `externalUserId` (text): Client's clientUser identifier
    * - `file` (file): Aadhaar front image (JPEG/PNG, max 5MB)
    *
    * **Document Requirements:**
@@ -274,7 +274,7 @@ export class ClientKycController {
    * {
    *   "success": true,
    *   "kycSessionId": "a1b2c3d4-...",
-   *   "documentUrl": "kyc-abc123-aadhaar-cards/user-uuid/AADHAAR_CARD_FRONT_..."
+   *   "documentUrl": "kyc-abc123-aadhaar-cards/clientUser-uuid/AADHAAR_CARD_FRONT_..."
    * }
    * ```
    *
@@ -331,7 +331,7 @@ export class ClientKycController {
    * - `Content-Type`: multipart/form-data
    *
    * **Multipart Form Fields:**
-   * - `externalUserId` (text): Client's user identifier
+   * - `externalUserId` (text): Client's clientUser identifier
    * - `file` (file): Aadhaar back image (JPEG/PNG, max 5MB)
    *
    * **Document Requirements:**
@@ -344,7 +344,7 @@ export class ClientKycController {
    * {
    *   "success": true,
    *   "kycSessionId": "a1b2c3d4-...",
-   *   "documentUrl": "kyc-abc123-aadhaar-cards/user-uuid/AADHAAR_CARD_BACK_..."
+   *   "documentUrl": "kyc-abc123-aadhaar-cards/clientUser-uuid/AADHAAR_CARD_BACK_..."
    * }
    * ```
    *
@@ -390,7 +390,7 @@ export class ClientKycController {
   /**
    * POST /v1/kyc/upload/live-photo
    *
-   * Uploads user's live photograph for face verification. This photo is compared
+   * Uploads clientUser's live photograph for face verification. This photo is compared
    * against the photograph on Aadhaar front side using face-api.js.
    *
    * **Request Headers:**
@@ -398,7 +398,7 @@ export class ClientKycController {
    * - `Content-Type`: multipart/form-data
    *
    * **Multipart Form Fields:**
-   * - `externalUserId` (text): Client's user identifier
+   * - `externalUserId` (text): Client's clientUser identifier
    * - `file` (file): Live photo (JPEG/PNG, max 5MB)
    *
    * **Verification Logic:**
@@ -412,7 +412,7 @@ export class ClientKycController {
    * {
    *   "success": true,
    *   "kycSessionId": "a1b2c3d4-...",
-   *   "documentUrl": "kyc-abc123-live-photos/user-uuid/LIVE_PHOTO_..."
+   *   "documentUrl": "kyc-abc123-live-photos/clientUser-uuid/LIVE_PHOTO_..."
    * }
    * ```
    *
@@ -458,14 +458,14 @@ export class ClientKycController {
   /**
    * POST /v1/kyc/upload/signature
    *
-   * Uploads user's signature image for verification.
+   * Uploads clientUser's signature image for verification.
    *
    * **Request Headers:**
    * - `X-API-Key`: Client's API key (required)
    * - `Content-Type`: multipart/form-data
    *
    * **Multipart Fields:**
-   * - `externalUserId` (string, required): Client's user identifier
+   * - `externalUserId` (string, required): Client's clientUser identifier
    * - `file` (binary, required): Signature image file (JPEG/PNG)
    *
    * **cURL Example:**
@@ -483,7 +483,7 @@ export class ClientKycController {
   @Post('upload/signature')
   @ApiOperation({
     summary: 'Upload Signature',
-    description: 'Uploads user signature image for verification.',
+    description: 'Uploads clientUser signature image for verification.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -686,7 +686,7 @@ export class ClientKycController {
   })
   @ApiResponse({ status: 200, description: 'PAN document deleted successfully' })
   @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 404, description: 'ClientUser not found' })
   async deletePan(
     @Client() client: any,
     @Body() body: { externalUserId: string },
@@ -719,7 +719,7 @@ export class ClientKycController {
   })
   @ApiResponse({ status: 200, description: 'Aadhaar front document deleted successfully' })
   @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 404, description: 'ClientUser not found' })
   async deleteAadhaarFront(
     @Client() client: any,
     @Body() body: { externalUserId: string },
@@ -752,7 +752,7 @@ export class ClientKycController {
   })
   @ApiResponse({ status: 200, description: 'Aadhaar back document deleted successfully' })
   @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 404, description: 'ClientUser not found' })
   async deleteAadhaarBack(
     @Client() client: any,
     @Body() body: { externalUserId: string },
@@ -763,8 +763,8 @@ export class ClientKycController {
   /**
    * Initiate DigiLocker Authorization
    *
-   * Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access.
-   * The generated URL should be used to redirect the user to DigiLocker for authorization.
+   * Generates DigiLocker OAuth 2.0 authorization URL for end-clientUser to authorize document access.
+   * The generated URL should be used to redirect the clientUser to DigiLocker for authorization.
    *
    * @param client - Authenticated client from API key
    * @param submissionId - KYC session identifier
@@ -780,7 +780,7 @@ export class ClientKycController {
   @Post(':submissionId/digilocker/initiate')
   @ApiOperation({
     summary: 'Initiate DigiLocker Authorization',
-    description: 'Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access',
+    description: 'Generates DigiLocker OAuth 2.0 authorization URL for end-clientUser to authorize document access',
   })
   @ApiParam({
     name: 'submissionId',
@@ -800,8 +800,8 @@ export class ClientKycController {
         },
         instructions: {
           type: 'string',
-          description: 'Instructions for user',
-          example: 'Redirect user to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
+          description: 'Instructions for clientUser',
+          example: 'Redirect clientUser to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
         },
         expiresIn: {
           type: 'number',
@@ -828,8 +828,8 @@ export class ClientKycController {
   /**
    * Fetch Documents from DigiLocker
    *
-   * Downloads specified documents from user's DigiLocker account and triggers automatic OCR processing.
-   * User must have completed DigiLocker OAuth authorization before calling this endpoint.
+   * Downloads specified documents from clientUser's DigiLocker account and triggers automatic OCR processing.
+   * ClientUser must have completed DigiLocker OAuth authorization before calling this endpoint.
    *
    * @param client - Authenticated client from API key
    * @param submissionId - KYC session identifier
@@ -847,7 +847,7 @@ export class ClientKycController {
   @Post(':submissionId/digilocker/fetch')
   @ApiOperation({
     summary: 'Fetch Documents from DigiLocker',
-    description: 'Downloads specified documents from user\'s DigiLocker account and triggers automatic OCR processing',
+    description: 'Downloads specified documents from clientUser\'s DigiLocker account and triggers automatic OCR processing',
   })
   @ApiParam({
     name: 'submissionId',
@@ -887,15 +887,15 @@ export class ClientKycController {
         documentUrls: {
           type: 'object',
           properties: {
-            panDocumentUrl: { type: 'string', example: 'kyc-client-pan/user-uuid/pan.jpg' },
-            aadhaarFrontUrl: { type: 'string', example: 'kyc-client-aadhaar/user-uuid/aadhaar.jpg' },
+            panDocumentUrl: { type: 'string', example: 'kyc-client-pan/clientUser-uuid/pan.jpg' },
+            aadhaarFrontUrl: { type: 'string', example: 'kyc-client-aadhaar/clientUser-uuid/aadhaar.jpg' },
           },
         },
         processingStatus: { type: 'string', example: 'OCR and face verification processing initiated' },
       },
     },
   })
-  @ApiResponse({ status: 400, description: 'Invalid document types or user not authorized' })
+  @ApiResponse({ status: 400, description: 'Invalid document types or clientUser not authorized' })
   @ApiResponse({ status: 401, description: 'Invalid API key' })
   @ApiResponse({ status: 404, description: 'Documents not found in DigiLocker' })
   @ApiResponse({ status: 429, description: 'DigiLocker rate limit exceeded' })
@@ -927,7 +927,7 @@ export class ClientKycController {
    * Get DigiLocker Status
    *
    * Retrieves DigiLocker authorization status and available documents for a KYC session.
-   * Use this endpoint to check if user has authorized DigiLocker access and what documents are available.
+   * Use this endpoint to check if clientUser has authorized DigiLocker access and what documents are available.
    *
    * @param client - Authenticated client from API key
    * @param submissionId - KYC session identifier
@@ -955,7 +955,7 @@ export class ClientKycController {
     schema: {
       type: 'object',
       properties: {
-        authorized: { type: 'boolean', description: 'Whether user has authorized DigiLocker' },
+        authorized: { type: 'boolean', description: 'Whether clientUser has authorized DigiLocker' },
         documentsFetched: { type: 'boolean', description: 'Whether documents have been fetched' },
         documentSource: {
           type: 'string',

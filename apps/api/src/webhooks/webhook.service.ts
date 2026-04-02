@@ -50,7 +50,7 @@ import { firstValueFrom } from 'rxjs';
  *   WebhookEvent.KYC_DOCUMENTS_UPLOADED,
  *   {
  *     kycSessionId: submission.id,
- *     externalUserId: user.externalUserId,
+ *     externalUserId: clientUser.externalUserId,
  *     status: submission.internalStatus,
  *   }
  * );

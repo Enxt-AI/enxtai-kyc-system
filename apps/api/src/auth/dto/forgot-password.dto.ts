@@ -24,7 +24,7 @@ import { IsEmail } from 'class-validator';
  * @example
  * ```json
  * {
- *   "email": "user@example.com"
+ *   "email": "clientUser@example.com"
  * }
  * ```
  */

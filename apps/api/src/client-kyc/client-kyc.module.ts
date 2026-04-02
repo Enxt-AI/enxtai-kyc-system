@@ -11,11 +11,11 @@ import { DigiLockerModule } from '../digilocker/digilocker.module';
  *
  * Organizes client-facing KYC API components with multi-tenant architecture.
  * Provides REST endpoints at `/v1/kyc/*` for FinTech integrators to verify
- * their end-users' identities.
+ * their end-clientUsers' identities.
  *
  * **Module Architecture:**
  * - Controller: REST endpoints at `/v1/kyc/*` (protected by TenantMiddleware)
- * - Service: Tenant-aware wrapper around KycService with external user ID mapping
+ * - Service: Tenant-aware wrapper around KycService with external clientUser ID mapping
  * - Dependencies: PrismaModule (database), KycModule (core logic), ClientModule (auth)
  *
  * **Multi-Tenancy Strategy:**

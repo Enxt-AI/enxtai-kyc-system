@@ -33,7 +33,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
  * - `/api/v1/*`: Client-facing APIs (require API key authentication via TenantMiddleware)
  * - `/api/kyc/*`: Internal APIs (used by frontend, no API key required)
  * - `/api/admin/*`: Admin panel APIs (separate authentication in future)
- * - `/api/auth/client/*`: Client user authentication endpoints
+ * - `/api/auth/client/*`: Client clientUser authentication endpoints
  *
  * **Middleware Order**:
  * 1. TenantMiddleware (authentication for /api/v1/* routes)
@@ -71,7 +71,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
             method: req.method,
             url: req.url,
             clientId: req.clientId,
-            userId: req.user?.userId || req.userId,
+            userId: req.clientUser?.userId || req.userId,
             action: `${req.method} ${req.url}`,
           }),
           res: (res) => ({
@@ -114,7 +114,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     OcrModule,
     KycModule,
     AdminModule,
-    AuthModule, // Client user authentication
+    AuthModule, // Client clientUser authentication
     ClientKycModule, // Client-facing KYC APIs at /v1/kyc/* (protected by TenantMiddleware)
     ClientModule,
     WebhookModule, // Webhook delivery infrastructure for event notifications

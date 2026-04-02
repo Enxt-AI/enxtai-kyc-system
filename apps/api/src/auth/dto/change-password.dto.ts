@@ -19,13 +19,13 @@ import { IsString, MinLength, Matches } from 'class-validator';
  * 1. Validate session and extract userId
  * 2. Verify current password matches
  * 3. Hash new password with bcrypt (12 salt rounds)
- * 4. Update user password
+ * 4. Update clientUser password
  * 5. Clear mustChangePassword flag (set to false)
  * 6. Don't clear reset token (not applicable for session-based changes)
  *
  * **Use Cases**:
  * - Forced password reset on first login (mustChangePassword = true)
- * - Voluntary password change by authenticated user
+ * - Voluntary password change by authenticated clientUser
  *
  * @example
  * ```json

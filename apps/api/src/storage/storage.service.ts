@@ -100,8 +100,8 @@ export class StorageService implements OnModuleInit {
    *
    * **Object Path Structure**:
    * - Format: {bucket}/{userId}/{documentType}_{timestamp}.{ext}
-   * - Example: kyc-client-abc-123-pan/user-456/PAN_CARD_1234567890.jpg
-   * - userId prefix allows efficient per-user queries
+   * - Example: kyc-client-abc-123-pan/clientUser-456/PAN_CARD_1234567890.jpg
+   * - userId prefix allows efficient per-clientUser queries
    *
    * **Security**:
    * - File size validated before upload (MAX_FILE_SIZE)
@@ -111,7 +111,7 @@ export class StorageService implements OnModuleInit {
    *
    * @param documentType - Type of document (PAN_CARD, AADHAAR_CARD, etc.)
    * @param clientId - UUID of the client organization (tenant identifier)
-   * @param userId - UUID of the user uploading the document
+   * @param userId - UUID of the clientUser uploading the document
    * @param file - File data including buffer, filename, and mimetype
    * @param suffix - Optional suffix for filename uniqueness (e.g., 'front', 'back')
    * @returns Full object path in format {bucket}/{objectName}
@@ -121,10 +121,10 @@ export class StorageService implements OnModuleInit {
    * const path = await uploadDocument(
    *   DocumentType.PAN_CARD,
    *   'abc-123-def-456',
-   *   'user-789',
+   *   'clientUser-789',
    *   { buffer: Buffer.from('...'), filename: 'pan.jpg', mimetype: 'image/jpeg' }
    * );
-   * // Returns: "kyc-abc-123-def-456-pan/user-789/PAN_CARD_1704470400000.jpg"
+   * // Returns: "kyc-abc-123-def-456-pan/clientUser-789/PAN_CARD_1704470400000.jpg"
    */
   async uploadDocument(
     documentType: DocumentType,
@@ -177,12 +177,12 @@ export class StorageService implements OnModuleInit {
    * 
    * **Error Handling Strategy**:
    * - Wraps MinIO errors in StorageDownloadException for consistent API
-   * - HTTP 404 status for missing documents (user-friendly)
+   * - HTTP 404 status for missing documents (clientUser-friendly)
    * - Preserves original error message for debugging
    * - Includes bucket and object context for troubleshooting
    * 
    * @param bucket - MinIO bucket name (e.g., 'kyc-client-123-pan')
-   * @param objectName - Object path within bucket (e.g., 'user-456/PAN_CARD_123.jpg')
+   * @param objectName - Object path within bucket (e.g., 'clientUser-456/PAN_CARD_123.jpg')
    * @returns Promise<DownloadDocumentResult> - Stream and metadata for document
    * 
    * @throws {StorageDownloadException} When document not found or download fails (HTTP 404)
@@ -190,7 +190,7 @@ export class StorageService implements OnModuleInit {
    * @example
    * ```typescript
    * try {
-   *   const { stream } = await this.downloadDocument('kyc-client-123-pan', 'user/doc.jpg');
+   *   const { stream } = await this.downloadDocument('kyc-client-123-pan', 'clientUser/doc.jpg');
    *   const buffer = await streamToBuffer(stream);
    *   // Process document buffer
    * } catch (error) {
@@ -213,7 +213,7 @@ export class StorageService implements OnModuleInit {
   /**
    * Delete Document from MinIO Storage
    * 
-   * Removes document from MinIO bucket permanently. Used when users delete
+   * Removes document from MinIO bucket permanently. Used when clientUsers delete
    * uploaded documents or during submission cleanup.
    * 
    * **Deletion Behavior**:
@@ -222,10 +222,10 @@ export class StorageService implements OnModuleInit {
    * - Returns true on successful deletion
    * 
    * **Use Cases**:
-   * - User requests document re-upload
+   * - ClientUser requests document re-upload
    * - Admin deletes problematic submissions
    * - Cleanup during submission cancellation
-   * - GDPR/privacy compliance (user data deletion)
+   * - GDPR/privacy compliance (clientUser data deletion)
    * 
    * **Error Scenarios**:
    * - Network issues: Connection timeout or MinIO unavailable
@@ -239,7 +239,7 @@ export class StorageService implements OnModuleInit {
    * - Includes bucket and object context for troubleshooting
    * 
    * @param bucket - MinIO bucket name (e.g., 'kyc-client-123-pan')
-   * @param objectName - Object path within bucket (e.g., 'user-456/PAN_CARD_123.jpg')
+   * @param objectName - Object path within bucket (e.g., 'clientUser-456/PAN_CARD_123.jpg')
    * @returns Promise<boolean> - True when deletion succeeds
    * 
    * @throws {StorageDeleteException} When deletion operation fails (HTTP 500)
@@ -247,7 +247,7 @@ export class StorageService implements OnModuleInit {
    * @example
    * ```typescript
    * try {
-   *   const deleted = await this.deleteDocument('kyc-client-123-pan', 'user/doc.jpg');
+   *   const deleted = await this.deleteDocument('kyc-client-123-pan', 'clientUser/doc.jpg');
    *   console.log('Document deleted:', deleted);
    * } catch (error) {
    *   if (error instanceof StorageDeleteException) {
@@ -301,7 +301,7 @@ export class StorageService implements OnModuleInit {
    * - Includes bucket and object context for troubleshooting
    * 
    * @param bucket - MinIO bucket name (e.g., 'kyc-client-123-pan')
-   * @param objectName - Object path within bucket (e.g., 'user-456/PAN_CARD_123.jpg')
+   * @param objectName - Object path within bucket (e.g., 'clientUser-456/PAN_CARD_123.jpg')
    * @param expirySeconds - URL expiration time in seconds (default: 3600 = 1 hour)
    * @returns Promise<string> - Signed URL for temporary document access
    * 
@@ -310,7 +310,7 @@ export class StorageService implements OnModuleInit {
    * @example
    * ```typescript
    * try {
-   *   const url = await this.generatePresignedUrl('kyc-client-123-pan', 'user/doc.jpg', 3600);
+   *   const url = await this.generatePresignedUrl('kyc-client-123-pan', 'clientUser/doc.jpg', 3600);
    *   // Use URL for direct document access (expires in 1 hour)
    * } catch (error) {
    *   if (error instanceof StoragePresignedUrlException) {

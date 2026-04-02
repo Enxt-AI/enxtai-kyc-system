@@ -109,11 +109,11 @@ export interface WebhookPayload {
     kycSessionId: string;
 
     /**
-     * Client's user identifier
+     * Client's clientUser identifier
      * 
      * @remarks
-     * The external user ID provided by the client during KYC initiation. This
-     * allows clients to correlate webhook events with their own user records
+     * The external clientUser ID provided by the client during KYC initiation. This
+     * allows clients to correlate webhook events with their own clientUser records
      * without storing internal KYC session IDs.
      * 
      * @example 'customer-456'
@@ -253,7 +253,7 @@ export interface WebhookPayload {
      * 
      * @remarks
      * Human-readable explanation for why the KYC submission was rejected.
-     * Provided by admin user during manual rejection.
+     * Provided by admin clientUser during manual rejection.
      * 
      * Only included in:
      * - `KYC_STATUS_CHANGED` event when status is `REJECTED`

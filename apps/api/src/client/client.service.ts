@@ -13,7 +13,7 @@ import { createHash, randomBytes } from 'crypto';
 // URL fields on a KYC submission. Consumed by the client-facing status API
 // (GET /v1/client/submissions/:id) and the initiation API (POST /v1/kyc/initiate)
 // so external clients (e.g., SMC) can display accurate progress indicators
-// and resume the user at the correct step.
+// and resume the clientUser at the correct step.
 // -----------------------------------------------------------------------
 
 /**
@@ -25,9 +25,9 @@ const KYC_STEP_ORDER = ['pan', 'aadhaar', 'photo', 'signature'] as const;
 type KycStep = typeof KYC_STEP_ORDER[number];
 
 interface StepProgress {
-  /** Steps that the user has completed (documents uploaded). */
+  /** Steps that the clientUser has completed (documents uploaded). */
   completedSteps: KycStep[];
-  /** The next step the user needs to complete, or null if all steps are done. */
+  /** The next step the clientUser needs to complete, or null if all steps are done. */
   currentStep: KycStep | null;
   /** Total number of steps in the KYC flow. Always 4. */
   totalSteps: number;
@@ -185,7 +185,7 @@ export class ClientService {
    * 2. System generates secure API key (see `generateApiKey()`)
    * 3. Client record created with status ACTIVE
    * 4. Plaintext key returned in response (shown once in UI)
-   * 5. Caller must display key to user, then call `clearApiKeyPlaintext()`
+   * 5. Caller must display key to clientUser, then call `clearApiKeyPlaintext()`
    * 6. Client stores key securely (environment variables, secrets manager)
    *
    * **Field Requirements**:
@@ -419,17 +419,17 @@ export class ClientService {
    * 1. Admin creates client via admin panel
    * 2. System displays `apiKeyPlaintext` in response
    * 3. Admin UI shows key in modal/alert with "Copy" button
-   * 4. After user acknowledges, frontend calls this method
+   * 4. After clientUser acknowledges, frontend calls this method
    * 5. Database field set to null permanently
    *
    * **Alternative Approaches** (not implemented):
    * - Auto-clear after N seconds (timer-based)
    * - Auto-clear after first read (database trigger)
-   * - Current approach: Manual clear after user confirmation
+   * - Current approach: Manual clear after clientUser confirmation
    *
    * @example
    * ```typescript
-   * // After displaying API key to user
+   * // After displaying API key to clientUser
    * await clientService.clearApiKeyPlaintext(client.id);
    * // client.apiKeyPlaintext is now null in database
    * ```
@@ -526,9 +526,9 @@ export class ClientService {
       if (filters.endDate) where.submissionDate.lte = filters.endDate;
     }
 
-    // Search in user fields (externalUserId, email)
+    // Search in clientUser fields (externalUserId, email)
     if (filters.search) {
-      where.user = {
+      where.clientUser = {
         is: {
           OR: [
             { externalUserId: { contains: filters.search, mode: 'insensitive' } },
@@ -542,12 +542,12 @@ export class ClientService {
     const skip = (page - 1) * limit;
     const take = Math.min(limit, 100); // Max 100 per page
 
-    // Query submissions with user data
+    // Query submissions with clientUser data
     const [submissions, total] = await Promise.all([
       this.prisma.kYCSubmission.findMany({
         where,
         include: {
-          user: {
+          clientUser: {
             select: {
               externalUserId: true,
               email: true,
@@ -565,9 +565,9 @@ export class ClientService {
     return {
       submissions: submissions.map(s => ({
         id: s.id,
-        externalUserId: s.user.externalUserId,
-        email: s.user.email,
-        phone: s.user.phone,
+        externalUserId: s.clientUser.externalUserId,
+        email: s.clientUser.email,
+        phone: s.clientUser.phone,
         internalStatus: s.internalStatus,
         finalStatus: s.finalStatus,
         faceMatchScore: s.faceMatchScore,
@@ -601,7 +601,7 @@ export class ClientService {
     const submission = await this.prisma.kYCSubmission.findFirst({
       where: { id: submissionId, clientId },
       include: {
-        user: {
+        clientUser: {
           select: {
             externalUserId: true,
             email: true,
@@ -638,14 +638,14 @@ export class ClientService {
 
     // Compute step-level progress from document URL fields.
     // This allows external clients (e.g., SMC) to display accurate progress
-    // indicators and route users to the correct KYC resumption step.
+    // indicators and route clientUsers to the correct KYC resumption step.
     const stepProgress = computeStepProgress(submission);
 
     return {
       id: submission.id,
-      externalUserId: submission.user.externalUserId,
-      email: submission.user.email,
-      phone: submission.user.phone,
+      externalUserId: submission.clientUser.externalUserId,
+      email: submission.clientUser.email,
+      phone: submission.clientUser.phone,
       internalStatus: submission.internalStatus,
       finalStatus: submission.finalStatus,
       submissionDate: submission.submissionDate.toISOString(),
@@ -689,7 +689,7 @@ export class ClientService {
    * ```json
    * {
    *   "kycSessionId": "submission-uuid",
-   *   "externalUserId": "external-user-id",
+   *   "externalUserId": "external-clientUser-id",
    *   "status": "VERIFIED",
    *   "finalStatus": "COMPLETE",
    *   "previousStatus": "PENDING_REVIEW"
@@ -707,7 +707,7 @@ export class ClientService {
     const submission = await this.prisma.kYCSubmission.findFirst({
       where: { id: submissionId, clientId },
       include: {
-        user: {
+        clientUser: {
           select: { externalUserId: true },
         },
       },
@@ -742,7 +742,7 @@ export class ClientService {
     // so the approve response returns immediately to the UI.
     this.webhookService.sendWebhook(clientId, WebhookEvent.KYC_STATUS_CHANGED, {
       kycSessionId: submission.id,
-      externalUserId: submission.user.externalUserId,
+      externalUserId: submission.clientUser.externalUserId,
       status: InternalStatus.VERIFIED,
       finalStatus: FinalStatus.COMPLETE,
       previousStatus,
@@ -775,7 +775,7 @@ export class ClientService {
    * ```json
    * {
    *   "kycSessionId": "submission-uuid",
-   *   "externalUserId": "external-user-id",
+   *   "externalUserId": "external-clientUser-id",
    *   "status": "REJECTED",
    *   "finalStatus": "REJECTED",
    *   "previousStatus": "PENDING_REVIEW",
@@ -799,7 +799,7 @@ export class ClientService {
     const submission = await this.prisma.kYCSubmission.findFirst({
       where: { id: submissionId, clientId },
       include: {
-        user: {
+        clientUser: {
           select: { externalUserId: true },
         },
       },
@@ -835,7 +835,7 @@ export class ClientService {
     // so the reject response returns immediately to the UI.
     this.webhookService.sendWebhook(clientId, WebhookEvent.KYC_STATUS_CHANGED, {
       kycSessionId: submission.id,
-      externalUserId: submission.user.externalUserId,
+      externalUserId: submission.clientUser.externalUserId,
       status: InternalStatus.REJECTED,
       finalStatus: FinalStatus.REJECTED,
       previousStatus,

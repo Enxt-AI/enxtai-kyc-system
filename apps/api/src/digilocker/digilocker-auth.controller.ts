@@ -22,7 +22,7 @@ import { CallbackDto } from './dto/callback.dto';
  *
  * **Integration**:
  * - Frontend calls `/initiate` to get authorization URL
- * - User is redirected to DigiLocker for authorization
+ * - ClientUser is redirected to DigiLocker for authorization
  * - DigiLocker redirects to `/callback` with authorization code
  * - Frontend polls for completion or receives webhook notification
  */
@@ -36,7 +36,7 @@ export class DigiLockerAuthController {
    * Initiate DigiLocker Authorization
    *
    * Generates DigiLocker OAuth 2.0 authorization URL with PKCE.
-   * Frontend should redirect user to the returned URL.
+   * Frontend should redirect clientUser to the returned URL.
    *
    * @param query - Query parameters with userId and optional state
    * @returns Authorization URL and metadata
@@ -48,14 +48,14 @@ export class DigiLockerAuthController {
    * {
    *   "authorizationUrl": "https://entity.digilocker.gov.in/public/oauth2/1/authorize?...",
    *   "userId": "550e8400-e29b-41d4-a716-446655440000",
-   *   "message": "Redirect user to this URL to authorize DigiLocker access"
+   *   "message": "Redirect clientUser to this URL to authorize DigiLocker access"
    * }
    */
   @Get('initiate')
   @HttpCode(HttpStatus.OK)
   async initiateAuth(@Query() query: InitiateAuthDto) {
     try {
-      this.logger.log(`Initiating DigiLocker auth for user ${query.userId}`);
+      this.logger.log(`Initiating DigiLocker auth for clientUser ${query.userId}`);
 
       const authorizationUrl = await this.digiLockerAuthService.generateAuthorizationUrl(
         query.userId,
@@ -65,10 +65,10 @@ export class DigiLockerAuthController {
       return {
         authorizationUrl,
         userId: query.userId,
-        message: 'Redirect user to this URL to authorize DigiLocker access',
+        message: 'Redirect clientUser to this URL to authorize DigiLocker access',
       };
     } catch (error) {
-      this.logger.error(`Failed to initiate DigiLocker auth for user ${query.userId}`, error);
+      this.logger.error(`Failed to initiate DigiLocker auth for clientUser ${query.userId}`, error);
 
       if (error instanceof DigiLockerException) {
         throw error;
@@ -91,7 +91,7 @@ export class DigiLockerAuthController {
    * @returns Success response with token expiry information
    *
    * @example
-   * GET /api/digilocker/auth/callback?code=abc123&state=user-uuid
+   * GET /api/digilocker/auth/callback?code=abc123&state=clientUser-uuid
    *
    * Response:
    * {

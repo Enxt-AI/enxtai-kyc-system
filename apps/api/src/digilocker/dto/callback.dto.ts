@@ -15,8 +15,8 @@ import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
  * - error_description: Human-readable error message
  *
  * @example
- * Success: ?code=abc123&state=user-uuid
- * Error: ?error=access_denied&error_description=User+denied+access
+ * Success: ?code=abc123&state=clientUser-uuid
+ * Error: ?error=access_denied&error_description=ClientUser+denied+access
  */
 export class CallbackDto {
   @IsOptional()

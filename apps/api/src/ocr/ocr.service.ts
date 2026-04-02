@@ -426,8 +426,8 @@ export class OcrService {
    * - Image-only requirement ensures consistent OCR processing
    * - Simpler error handling and validation flow
    *
-   * **User Experience**:
-   * - Clear error message guides users to provide image format
+   * **ClientUser Experience**:
+   * - Clear error message guides clientUsers to provide image format
    * - HTTP 415 Unsupported Media Type indicates format issue
    * - Prevents wasted processing time on unsupported formats
    *
@@ -478,7 +478,7 @@ export class OcrService {
    * **Error Handling Strategy**:
    * - HTTP 422 Unprocessable Entity for quality issues
    * - Detailed logging with confidence scores for debugging
-   * - User-friendly message requesting better image quality
+   * - ClientUser-friendly message requesting better image quality
    *
    * @param confidence - OCR confidence score from Tesseract.js (0-100)
    * @param submissionId - Submission ID for error context and logging

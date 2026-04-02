@@ -14,7 +14,7 @@ import type { UpdateClientDto } from './dto/update-client.dto';
 /**
  * Admin Service
  *
- * Provides admin-only operations for managing KYC submissions, users, and clients.
+ * Provides admin-only operations for managing KYC submissions, clientUsers, and clients.
  *
  * @remarks
  * **Webhook Integration**:
@@ -35,7 +35,7 @@ export class AdminService {
     return this.prisma.kYCSubmission.findMany({
       where: { internalStatus: InternalStatus.PENDING_REVIEW },
       include: {
-        user: {
+        clientUser: {
           select: { email: true, phone: true },
         },
       },
@@ -50,7 +50,7 @@ export class AdminService {
    * and triggers webhook notification to client.
    *
    * @param submissionId - KYC submission UUID
-   * @param adminUserId - Admin user UUID (for audit trail)
+   * @param adminUserId - Admin clientUser UUID (for audit trail)
    * @param notes - Optional approval notes
    * @returns Updated submission object
    */
@@ -87,7 +87,7 @@ export class AdminService {
    * stores rejection reason, and triggers webhook notification to client.
    *
    * @param submissionId - KYC submission UUID
-   * @param adminUserId - Admin user UUID (for audit trail)
+   * @param adminUserId - Admin clientUser UUID (for audit trail)
    * @param reason - Rejection reason (included in webhook payload)
    * @returns Updated submission object
    */
@@ -144,7 +144,7 @@ export class AdminService {
    * Trigger Webhook Helper
    *
    * Sends webhook notification to client's configured endpoint after admin status change.
-   * Fetches user details, builds webhook payload, and delegates to WebhookService.
+   * Fetches clientUser details, builds webhook payload, and delegates to WebhookService.
    *
    * **Error Isolation**:
    * - Webhook failures are caught and logged but do NOT throw exceptions
@@ -157,8 +157,8 @@ export class AdminService {
    */
   private async triggerWebhook(submission: any, event: any): Promise<void> {
     try {
-      // Fetch user to get externalUserId and clientId
-      const user = await this.prisma.user.findUnique({
+      // Fetch clientUser to get externalUserId and clientId
+      const clientUser = await this.prisma.clientUser.findUnique({
         where: { id: submission.userId },
         select: {
           externalUserId: true,
@@ -166,14 +166,14 @@ export class AdminService {
         },
       });
 
-      if (!user) {
-        throw new Error(`User not found for submission ${submission.id}`);
+      if (!clientUser) {
+        throw new Error(`ClientUser not found for submission ${submission.id}`);
       }
 
       // Build webhook data payload
       const webhookData: any = {
         kycSessionId: submission.id,
-        externalUserId: user.externalUserId,
+        externalUserId: clientUser.externalUserId,
         status: submission.internalStatus,
       };
 
@@ -201,7 +201,7 @@ export class AdminService {
       }
 
       // Send webhook (errors caught internally by WebhookService)
-      await this.webhookService.sendWebhook(user.clientId, event, webhookData);
+      await this.webhookService.sendWebhook(clientUser.clientId, event, webhookData);
     } catch (error) {
       // Log error but don't throw (webhook failures should not break admin operations)
       console.error(`Failed to trigger webhook for submission ${submission.id}:`, error);
@@ -367,7 +367,7 @@ export class AdminService {
   /**
    * Create Client (Admin Onboarding)
    *
-   * Creates a new client organization with API key, MinIO buckets, and default admin user.
+   * Creates a new client organization with API key, MinIO buckets, and default admin clientUser.
    * This is the primary onboarding flow for new FinTech clients.
    *
    * @param dto - CreateClientDto with name, email, optional webhook config
@@ -379,7 +379,7 @@ export class AdminService {
    * 2. Create Client record in database
    * 3. Create MinIO buckets (kyc-{clientId}-pan, etc.)
    * 4. Generate temporary password (16 chars, alphanumeric)
-   * 5. Create default ClientUser (email from DTO, bcrypt password)
+   * 5. Create default User (email from DTO, bcrypt password)
    * 6. Clear apiKeyPlaintext from database
    * 7. Return plaintext credentials (SHOW ONCE)
    *
@@ -405,7 +405,7 @@ export class AdminService {
     const tempPassword = this.generateTempPassword();
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
-    // Create client and default admin user in transaction
+    // Create client and default admin clientUser in transaction
     const client = await this.prisma.$transaction(async (tx) => {
       // Create client
       const newClient = await tx.client.create({
@@ -423,8 +423,8 @@ export class AdminService {
         },
       });
 
-      // Create default admin user
-      await tx.clientUser.create({
+      // Create default admin clientUser
+      await tx.user.create({
         data: {
           clientId: newClient.id,
           email: dto.email,
@@ -516,7 +516,7 @@ export class AdminService {
    * - Plaintext key shown once, then cleared from database
    *
    * **Notification**:
-   * - Consider sending email to client admin users
+   * - Consider sending email to client admin clientUsers
    * - Log regeneration event to AuditLog
    *
    * **Rollback**:
@@ -618,14 +618,14 @@ export class AdminService {
   /**
    * Generate Temporary Password
    *
-   * Generates a secure random password for default admin user.
+   * Generates a secure random password for default admin clientUser.
    *
    * @returns 16-character alphanumeric password
    *
    * @remarks
    * **Format**: 16 characters, alphanumeric (A-Z, a-z, 0-9)
    * **Entropy**: ~95 bits (cryptographically secure)
-   * **Usage**: Default admin user must change on first login
+   * **Usage**: Default admin clientUser must change on first login
    */
   private generateTempPassword(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

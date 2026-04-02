@@ -35,12 +35,12 @@ describe('KycService', () => {
 
   beforeEach(async () => {
     prisma = {
-      user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', clientId: '00000000-0000-0000-0000-000000000000' }),
+      clientUser: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'clientUser-1', clientId: '00000000-0000-0000-0000-000000000000' }),
       },
       kYCSubmission: {
-        create: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'user-1', internalStatus: InternalStatus.PENDING }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'user-1', internalStatus: InternalStatus.PENDING }),
+        create: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'clientUser-1', internalStatus: InternalStatus.PENDING }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'clientUser-1', internalStatus: InternalStatus.PENDING }),
         update: jest
           .fn()
           .mockResolvedValue({ id: 'sub-1', panDocumentUrl: 'path', aadhaarDocumentUrl: 'path', livePhotoUrl: 'path' }),
@@ -79,8 +79,8 @@ describe('KycService', () => {
 
   it('uploads PAN document with validations', async () => {
     const file = mockFile('image/jpeg', 1024 * 1024);
-    const res = await service.uploadPanDocument('user-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.PAN_CARD, '00000000-0000-0000-0000-000000000000', 'user-1', expect.any(Object));
+    const res = await service.uploadPanDocument('clientUser-1', file);
+    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.PAN_CARD, '00000000-0000-0000-0000-000000000000', 'clientUser-1', expect.any(Object));
     expect(prisma.kYCSubmission.update).toHaveBeenCalledWith({
       where: { id: 'sub-1' },
       data: {
@@ -93,24 +93,24 @@ describe('KycService', () => {
 
   it('rejects invalid file type', async () => {
     const file = mockFile('text/plain', 1024);
-    await expect(service.uploadPanDocument('user-1', file)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects oversized file', async () => {
     const file = mockFile('image/jpeg', 6 * 1024 * 1024);
-    await expect(service.uploadPanDocument('user-1', file)).rejects.toBeInstanceOf(PayloadTooLargeException);
+    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(PayloadTooLargeException);
   });
 
   it('rejects invalid dimensions', async () => {
     metadataMock.mockResolvedValueOnce({ width: 100, height: 100 });
     const file = mockFile('image/jpeg', 1024);
-    await expect(service.uploadPanDocument('user-1', file)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('uploads Aadhaar document and updates submission', async () => {
     const file = mockFile('image/png', 500000);
-    const res = await service.uploadAadhaarDocument('user-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD, '00000000-0000-0000-0000-000000000000', 'user-1', expect.any(Object));
+    const res = await service.uploadAadhaarDocument('clientUser-1', file);
+    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD, '00000000-0000-0000-0000-000000000000', 'clientUser-1', expect.any(Object));
     expect(prisma.kYCSubmission.update).toHaveBeenCalled();
     expect(res.aadhaarDocumentUrl).toBeDefined();
   });
@@ -120,18 +120,18 @@ describe('KycService', () => {
       .fn()
       .mockResolvedValue({
         id: 'sub-1',
-        userId: 'user-1',
+        userId: 'clientUser-1',
         panDocumentUrl: 'pan-path',
         aadhaarDocumentUrl: 'aadhaar-front',
         internalStatus: InternalStatus.PENDING,
       } as any);
 
     const file = mockFile('image/jpeg', 500000);
-    const res = await service.uploadLivePhotoDocument('user-1', file);
+    const res = await service.uploadLivePhotoDocument('clientUser-1', file);
     expect(storage.uploadDocument).toHaveBeenCalledWith(
       DocumentType.LIVE_PHOTO,
       '00000000-0000-0000-0000-000000000000',
-      'user-1',
+      'clientUser-1',
       expect.any(Object),
     );
     expect(prisma.kYCSubmission.update).toHaveBeenCalledWith({
@@ -146,6 +146,6 @@ describe('KycService', () => {
 
   it('rejects live photo with non-image type', async () => {
     const file = mockFile('application/pdf', 1024);
-    await expect(service.uploadLivePhotoDocument('user-1', file)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.uploadLivePhotoDocument('clientUser-1', file)).rejects.toBeInstanceOf(BadRequestException);
   });
 });

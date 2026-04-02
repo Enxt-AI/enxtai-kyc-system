@@ -3,7 +3,7 @@ import { IsEmail, IsString, MinLength } from 'class-validator';
 /**
  * Login DTO
  * 
- * Data Transfer Object for client user authentication.
+ * Data Transfer Object for client clientUser authentication.
  * 
  * @remarks
  * **Validation Rules**:
@@ -18,26 +18,26 @@ import { IsEmail, IsString, MinLength } from 'class-validator';
  * @example
  * ```json
  * {
- *   "email": "user@example.com",
+ *   "email": "clientUser@example.com",
  *   "password": "securePassword123"
  * }
  * ```
  */
 export class LoginDto {
   /**
-   * User's email address
+   * ClientUser's email address
    * 
    * @remarks
    * Used as primary identifier for authentication.
-   * Must match email stored in ClientUser table.
+   * Must match email stored in User table.
    * 
-   * @example 'user@example.com'
+   * @example 'clientUser@example.com'
    */
   @IsEmail({}, { message: 'Invalid email format' })
   email!: string;
 
   /**
-   * User's password
+   * ClientUser's password
    * 
    * @remarks
    * Minimum 8 characters required for security.

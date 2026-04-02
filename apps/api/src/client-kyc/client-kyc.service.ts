@@ -18,10 +18,10 @@ import { computeStepProgress } from '../client/client.service';
  * Client KYC Service
  *
  * Tenant-aware wrapper service that provides client-facing KYC APIs with external
- * user ID mapping and tenant isolation. This service bridges the gap between
+ * clientUser ID mapping and tenant isolation. This service bridges the gap between
  * client-provided identifiers and internal UUIDs while enforcing multi-tenant security.
  *
- * **External User ID Mapping Strategy:**
+ * **External ClientUser ID Mapping Strategy:**
  * - Clients send `externalUserId` (e.g., "customer-123" from their system)
  * - Service maps to internal UUID using `(clientId, externalUserId)` composite key
  * - Composite unique index prevents duplicate external IDs within a tenant
@@ -51,11 +51,11 @@ export class ClientKycService {
   ) {}
 
   /**
-   * Get or Create User by External ID
+   * Get or Create ClientUser by External ID
    *
-   * Maps client-provided external user ID to internal UUID. Creates user if not found.
+   * Maps client-provided external clientUser ID to internal UUID. Creates clientUser if not found.
    * This method implements the external-to-internal ID mapping layer that allows clients
-   * to reference their own user identifiers without exposing internal database UUIDs.
+   * to reference their own clientUser identifiers without exposing internal database UUIDs.
    *
    * **Composite Key Lookup:**
    * - Queries: `WHERE clientId = ? AND externalUserId = ?`
@@ -63,16 +63,16 @@ export class ClientKycService {
    * - Prevents duplicate external IDs within same client
    *
    * **Auto-Creation Logic:**
-   * - If user not found, creates new record with provided email/phone
+   * - If clientUser not found, creates new record with provided email/phone
    * - Falls back to generated email/phone if not provided
-   * - Generated email: `user-{first8CharsOfUuid}@kyc-temp.local`
+   * - Generated email: `clientUser-{first8CharsOfUuid}@kyc-temp.local`
    * - Generated phone: `999{timestamp7Digits}` (avoids collisions)
    *
    * @param clientId - UUID of client organization (from TenantMiddleware)
-   * @param externalUserId - Client's own user identifier (e.g., "customer-123")
-   * @param email - Optional user email (or generated if omitted)
-   * @param phone - Optional user phone (or generated if omitted)
-   * @returns Internal user UUID for use with KycService
+   * @param externalUserId - Client's own clientUser identifier (e.g., "customer-123")
+   * @param email - Optional clientUser email (or generated if omitted)
+   * @param phone - Optional clientUser phone (or generated if omitted)
+   * @returns Internal clientUser UUID for use with KycService
    *
    * @example
    * const userId = await getOrCreateUserByExternalId(
@@ -89,8 +89,8 @@ export class ClientKycService {
     email?: string,
     phone?: string,
   ): Promise<string> {
-    // Lookup user by composite key
-    let user = await this.prisma.user.findUnique({
+    // Lookup clientUser by composite key
+    let clientUser = await this.prisma.clientUser.findUnique({
       where: {
         clientId_externalUserId: {
           clientId,
@@ -99,12 +99,12 @@ export class ClientKycService {
       },
     });
 
-    if (!user) {
-      // Auto-create user with provided or generated email/phone
-      const generatedEmail = `user-${externalUserId.substring(0, 8)}@kyc-temp.local`;
+    if (!clientUser) {
+      // Auto-create clientUser with provided or generated email/phone
+      const generatedEmail = `clientUser-${externalUserId.substring(0, 8)}@kyc-temp.local`;
       const generatedPhone = this.generateTempPhone();
 
-      user = await this.prisma.user.create({
+      clientUser = await this.prisma.clientUser.create({
         data: {
           clientId,
           externalUserId,
@@ -114,18 +114,18 @@ export class ClientKycService {
       });
     }
 
-    return user.id;
+    return clientUser.id;
   }
 
   /**
    * Initiate KYC Session
    *
-   * Creates a new KYC verification session for a client's end-user. Returns session ID,
-   * upload URLs, and a tokenized kycFlowUrl for redirecting the user to the EnxtAI
+   * Creates a new KYC verification session for a client's end-clientUser. Returns session ID,
+   * upload URLs, and a tokenized kycFlowUrl for redirecting the clientUser to the EnxtAI
    * KYC frontend.
    *
    * **Workflow:**
-   * 1. Map externalUserId to internal UUID (create user if new)
+   * 1. Map externalUserId to internal UUID (create clientUser if new)
    * 2. Create KYCSubmission record with PENDING status
    * 3. Generate a short-lived JWT (25 min) containing session context
    * 4. Build kycFlowUrl pointing to the EnxtAI frontend /kyc/start page with the JWT
@@ -135,11 +135,11 @@ export class ClientKycService {
    * The JWT embeds the following claims so the frontend can bootstrap the KYC session
    * without the client app exposing the raw API key in the redirect URL:
    * - clientId: UUID of the authenticated client organization
-   * - userId: Internal user UUID (mapped from externalUserId)
-   * - externalUserId: The client's own user identifier (echoed back in webhooks)
+   * - userId: Internal clientUser UUID (mapped from externalUserId)
+   * - externalUserId: The client's own clientUser identifier (echoed back in webhooks)
    * - kycSessionId: The KYC submission UUID
    * - apiKey: The raw API key from the request header (needed by frontend for API calls)
-   * - returnUrl: Optional URL to redirect the user back to after KYC completion/cancellation
+   * - returnUrl: Optional URL to redirect the clientUser back to after KYC completion/cancellation
    *
    * **Authentication:**
    * - Requires X-API-Key header (validated by TenantMiddleware)
@@ -155,7 +155,7 @@ export class ClientKycService {
     dto: InitiateKycDto,
     apiKey: string,
   ): Promise<InitiateKycResponseDto> {
-    // Map external user ID to internal UUID
+    // Map external clientUser ID to internal UUID
     const userId = await this.getOrCreateUserByExternalId(
       clientId,
       dto.externalUserId,
@@ -166,7 +166,7 @@ export class ClientKycService {
     // ------------------------------------------------------------------
     // Re-initiation handling: reuse existing non-terminal submissions.
     //
-    // When a user clicks "Continue Verification" on the client app (e.g., SMC),
+    // When a clientUser clicks "Continue Verification" on the client app (e.g., SMC),
     // the client calls POST /v1/kyc/initiate again. Without this check, a new
     // orphan submission would be created every time, losing all prior upload
     // progress.
@@ -174,11 +174,11 @@ export class ClientKycService {
     // Strategy:
     // - Look for the most recent submission for this (userId, clientId) pair
     //   that is NOT in a terminal state (VERIFIED or REJECTED).
-    // - If found, reuse it -- the user can resume from where they left off.
+    // - If found, reuse it -- the clientUser can resume from where they left off.
     // - If not found (first initiation or all prior submissions are terminal),
     //   create a new submission.
     //
-    // Terminal states (VERIFIED, REJECTED) are excluded because a user who was
+    // Terminal states (VERIFIED, REJECTED) are excluded because a clientUser who was
     // previously verified/rejected may need to re-verify (e.g., document expired).
     // Non-terminal states that ARE reused: PENDING, DOCUMENTS_UPLOADED,
     // OCR_COMPLETED, FACE_VERIFIED, PENDING_REVIEW.
@@ -215,12 +215,12 @@ export class ClientKycService {
     // Generate a short-lived JWT for the KYC redirect flow.
     //
     // This token is embedded in the kycFlowUrl that the client app redirects
-    // the user's browser to. The EnxtAI frontend /kyc/start page validates
+    // the clientUser's browser to. The EnxtAI frontend /kyc/start page validates
     // this token server-side (via /api/kyc/validate-token) and uses the
-    // decoded payload to bootstrap sessionStorage (API key, user ID, etc.)
+    // decoded payload to bootstrap sessionStorage (API key, clientUser ID, etc.)
     // without ever exposing the raw API key in the URL.
     //
-    // Token expiry: 25 minutes (enough time for the user to complete the
+    // Token expiry: 25 minutes (enough time for the clientUser to complete the
     // KYC flow, but short enough to limit abuse if the URL is leaked).
     // ------------------------------------------------------------------
     const jwtSecret = process.env.JWT_KYC_SESSION_SECRET;
@@ -233,7 +233,7 @@ export class ClientKycService {
 
     // Compute step-level progress before building the JWT so the token
     // carries the current completion state. This lets the /kyc/start page
-    // route the user directly to their next incomplete step on resume.
+    // route the clientUser directly to their next incomplete step on resume.
     const stepProgress = computeStepProgress(submission);
 
     const tokenPayload = {
@@ -283,11 +283,11 @@ export class ClientKycService {
   /**
    * Upload PAN Document
    *
-   * Uploads PAN card image for a client's end-user. Delegates to KycService for actual
+   * Uploads PAN card image for a client's end-clientUser. Delegates to KycService for actual
    * upload and validation logic.
    *
    * **Tenant Isolation:**
-   * - Validates user belongs to clientId (composite key lookup)
+   * - Validates clientUser belongs to clientId (composite key lookup)
    * - Documents stored in client-specific bucket: `kyc-{clientId}-pan`
    *
    * **File Validation:**
@@ -297,10 +297,10 @@ export class ClientKycService {
    * - Max dimensions: 8192x8192px
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @param file - Multipart file upload
    * @returns Upload success response with session ID and document URL
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    *
    * @example
    * const response = await uploadPan('client-abc', 'customer-123', panFile);
@@ -327,15 +327,15 @@ export class ClientKycService {
    * Uploads Aadhaar card front side (contains photo for face matching).
    *
    * **Document Requirements:**
-   * - Front side must include user's photograph
+   * - Front side must include clientUser's photograph
    * - Used for face verification against live photo
    * - Stored in: `kyc-{clientId}-aadhaar-cards` bucket
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @param file - Multipart file upload
    * @returns Upload success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async uploadAadhaarFront(
     clientId: string,
@@ -363,10 +363,10 @@ export class ClientKycService {
    * - Stored in: `kyc-{clientId}-aadhaar-cards` bucket
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @param file - Multipart file upload
    * @returns Upload success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async uploadAadhaarBack(
     clientId: string,
@@ -386,7 +386,7 @@ export class ClientKycService {
   /**
    * Upload Live Photo Document
    *
-   * Uploads user's live photograph for face verification against ID documents.
+   * Uploads clientUser's live photograph for face verification against ID documents.
    *
    * **Verification Logic:**
    * - Live photo compared against Aadhaar front (contains photo)
@@ -395,10 +395,10 @@ export class ClientKycService {
    * - Stored in: `kyc-{clientId}-live-photos` bucket
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @param file - Multipart file upload
    * @returns Upload success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async uploadLivePhoto(
     clientId: string,
@@ -418,17 +418,17 @@ export class ClientKycService {
   /**
    * Upload Signature Document
    *
-   * Uploads user's signature image for verification.
+   * Uploads clientUser's signature image for verification.
    *
    * **Document Requirements:**
    * - Clear signature on white background preferred
    * - Stored in: `kyc-{clientId}-signatures` bucket
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @param file - Multipart file upload
    * @returns Upload success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async uploadSignature(
     clientId: string,
@@ -493,7 +493,7 @@ export class ClientKycService {
   ): Promise<KycStatusResponseDto> {
     const submission = await this.prisma.kYCSubmission.findUnique({
       where: { id: kycSessionId },
-      include: { user: true },
+      include: { clientUser: true },
     });
 
     if (!submission) {
@@ -509,7 +509,7 @@ export class ClientKycService {
     const progress = this.calculateProgress(submission);
 
     // Compute step-level progress so the calling application (e.g., SMC)
-    // can determine which KYC steps the user has completed and which step
+    // can determine which KYC steps the clientUser has completed and which step
     // they should resume from. This uses the same helper that initiateKyc()
     // and getSubmissionDetail() use, ensuring consistent step derivation.
     const stepProgress = computeStepProgress(submission);
@@ -517,7 +517,7 @@ export class ClientKycService {
     // Map internal fields to client-friendly response
     return {
       kycSessionId: submission.id,
-      externalUserId: submission.user.externalUserId,
+      externalUserId: submission.clientUser.externalUserId,
       status: submission.internalStatus as InternalStatus,
       progress,
       extractedData: this.buildExtractedData(submission),
@@ -526,7 +526,7 @@ export class ClientKycService {
       updatedAt: submission.updatedAt.toISOString(),
       // Step-level progress for KYC state management / resumption.
       // These fields let the client app show granular progress (e.g.,
-      // "2 of 4 steps completed") and route users to the correct step.
+      // "2 of 4 steps completed") and route clientUsers to the correct step.
       completedSteps: stepProgress.completedSteps,
       currentStep: stepProgress.currentStep,
       totalSteps: stepProgress.totalSteps,
@@ -582,22 +582,22 @@ export class ClientKycService {
   }
 
   /**
-   * Lookup User by External ID (Helper)
+   * Lookup ClientUser by External ID (Helper)
    *
-   * Queries user by composite key (clientId, externalUserId). Throws NotFoundException
-   * if user not found (unlike getOrCreateUserByExternalId which auto-creates).
+   * Queries clientUser by composite key (clientId, externalUserId). Throws NotFoundException
+   * if clientUser not found (unlike getOrCreateUserByExternalId which auto-creates).
    *
    * @param clientId - UUID of client organization
-   * @param externalUserId - Client's user identifier
-   * @returns Internal user UUID
-   * @throws NotFoundException if user not found
+   * @param externalUserId - Client's clientUser identifier
+   * @returns Internal clientUser UUID
+   * @throws NotFoundException if clientUser not found
    * @private
    */
   private async lookupUserByExternalId(
     clientId: string,
     externalUserId: string,
   ): Promise<string> {
-    const user = await this.prisma.user.findUnique({
+    const clientUser = await this.prisma.clientUser.findUnique({
       where: {
         clientId_externalUserId: {
           clientId,
@@ -606,13 +606,13 @@ export class ClientKycService {
       },
     });
 
-    if (!user) {
+    if (!clientUser) {
       throw new NotFoundException(
-        `User not found: externalUserId=${externalUserId}. Call POST /v1/kyc/initiate first.`,
+        `ClientUser not found: externalUserId=${externalUserId}. Call POST /v1/kyc/initiate first.`,
       );
     }
 
-    return user.id;
+    return clientUser.id;
   }
 
   /**
@@ -708,12 +708,12 @@ export class ClientKycService {
    * Delete PAN Document
    *
    * Deletes PAN card document from storage and clears URL in database.
-   * Tenant-isolated: only deletes if user belongs to specified client.
+   * Tenant-isolated: only deletes if clientUser belongs to specified client.
    *
    * @param clientId - Authenticated client ID
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @returns Success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async deletePan(
     clientId: string,
@@ -728,12 +728,12 @@ export class ClientKycService {
    * Delete Aadhaar Front Document
    *
    * Deletes Aadhaar front document from storage and clears URL in database.
-   * Tenant-isolated: only deletes if user belongs to specified client.
+   * Tenant-isolated: only deletes if clientUser belongs to specified client.
    *
    * @param clientId - Authenticated client ID
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @returns Success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async deleteAadhaarFront(
     clientId: string,
@@ -748,12 +748,12 @@ export class ClientKycService {
    * Delete Aadhaar Back Document
    *
    * Deletes Aadhaar back document from storage and clears URL in database.
-   * Tenant-isolated: only deletes if user belongs to specified client.
+   * Tenant-isolated: only deletes if clientUser belongs to specified client.
    *
    * @param clientId - Authenticated client ID
-   * @param externalUserId - Client's user identifier
+   * @param externalUserId - Client's clientUser identifier
    * @returns Success response
-   * @throws NotFoundException if user not found
+   * @throws NotFoundException if clientUser not found
    */
   async deleteAadhaarBack(
     clientId: string,
@@ -767,8 +767,8 @@ export class ClientKycService {
   /**
    * Initiate DigiLocker Authorization
    *
-   * Generates DigiLocker OAuth 2.0 authorization URL for end-user to authorize document access.
-   * Validates submission ownership and maps external user ID to internal UUID.
+   * Generates DigiLocker OAuth 2.0 authorization URL for end-clientUser to authorize document access.
+   * Validates submission ownership and maps external clientUser ID to internal UUID.
    *
    * @param clientId - Client tenant identifier
    * @param submissionId - KYC session identifier
@@ -806,7 +806,7 @@ export class ClientKycService {
 
     return {
       authorizationUrl,
-      instructions: 'Redirect user to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
+      instructions: 'Redirect clientUser to this URL to authorize DigiLocker access. The authorization URL expires in 10 minutes.',
       expiresIn: 600, // 10 minutes
     };
   }
@@ -814,8 +814,8 @@ export class ClientKycService {
   /**
    * Fetch Documents from DigiLocker
    *
-   * Downloads specified documents from user's DigiLocker account and triggers automatic OCR processing.
-   * Validates submission ownership and maps external user ID to internal UUID.
+   * Downloads specified documents from clientUser's DigiLocker account and triggers automatic OCR processing.
+   * Validates submission ownership and maps external clientUser ID to internal UUID.
    *
    * @param clientId - Client tenant identifier
    * @param submissionId - KYC session identifier
@@ -824,7 +824,7 @@ export class ClientKycService {
    *
    * @throws NotFoundException if submission not found
    * @throws ForbiddenException if submission belongs to different client
-   * @throws BadRequestException if user not authorized with DigiLocker
+   * @throws BadRequestException if clientUser not authorized with DigiLocker
    */
   async fetchDigiLockerDocuments(
     clientId: string,
@@ -883,7 +883,7 @@ export class ClientKycService {
    * Get DigiLocker Status
    *
    * Retrieves DigiLocker authorization status and available documents for a KYC session.
-   * Validates submission ownership and maps external user ID to internal UUID.
+   * Validates submission ownership and maps external clientUser ID to internal UUID.
    *
    * @param clientId - Client tenant identifier
    * @param submissionId - KYC session identifier

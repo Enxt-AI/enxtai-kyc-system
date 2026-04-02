@@ -16,13 +16,13 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Create super admin user
+  // Create super admin clientUser
   const hashedPassword = await bcrypt.hash('admin123', 10);
 
-  const admin = await prisma.clientUser.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: 'admin@enxtai.com' },
     update: {
-      mustChangePassword: true, // Ensure existing users also require password reset
+      mustChangePassword: true, // Ensure existing clientUsers also require password reset
     },
     create: {
       email: 'admin@enxtai.com',

@@ -287,7 +287,7 @@ export class AdminController {
   /**
    * Admin Forgot Password
    *
-   * Initiates password reset flow for Super Admin users.
+   * Initiates password reset flow for Super Admin clientUsers.
    * Generates reset token and prepares email with magic link.
    *
    * @remarks
@@ -311,7 +311,7 @@ export class AdminController {
    * **Security Considerations**:
    * - Generic success response regardless of email existence (prevents enumeration)
    * - Rate limited to 3 requests per hour per email
-   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Only allows Super Admin clientUsers (clientId = null, role = SUPER_ADMIN)
    * - Reset link logged to console (MVP - future: email integration)
    * - HTTPS enforced by infrastructure
    *
@@ -327,7 +327,7 @@ export class AdminController {
   /**
    * Admin Reset Password
    *
-   * Resets Super Admin user password using valid reset token.
+   * Resets Super Admin clientUser password using valid reset token.
    * Validates token, updates password, and clears reset token.
    *
    * @remarks
@@ -353,7 +353,7 @@ export class AdminController {
    * **Security Considerations**:
    * - Token validated for format (UUID) and expiry (1 hour)
    * - Single-use tokens (cleared after successful reset)
-   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Only allows Super Admin clientUsers (clientId = null, role = SUPER_ADMIN)
    * - Password hashed with bcrypt (12 salt rounds)
    * - mustChangePassword flag cleared
    * - HTTPS enforced by infrastructure
@@ -364,24 +364,24 @@ export class AdminController {
   @UseGuards() // Override controller guards - unauthenticated endpoint
   @Post('reset-password')
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    const user = await this.authService.validateResetToken(resetPasswordDto.token);
-    if (!user) {
+    const clientUser = await this.authService.validateResetToken(resetPasswordDto.token);
+    if (!clientUser) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    // Additional validation: ensure user is Super Admin
-    if (user.role !== 'SUPER_ADMIN' || user.clientId !== null) {
+    // Additional validation: ensure clientUser is Super Admin
+    if (clientUser.role !== 'SUPER_ADMIN' || clientUser.clientId !== null) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    await this.authService.updatePassword(user.id, resetPasswordDto.newPassword);
+    await this.authService.updatePassword(clientUser.id, resetPasswordDto.newPassword);
     return { success: true, message: 'Password reset successfully' };
   }
 
   /**
    * Admin Change Password (Session-Based)
    *
-   * Allows authenticated Super Admin users to change their password.
+   * Allows authenticated Super Admin clientUsers to change their password.
    * Used for voluntary password changes (no forced reset for Super Admin).
    *
    * @remarks
@@ -418,15 +418,15 @@ export class AdminController {
   @Roles('SUPER_ADMIN')
   @Post('change-password')
   async changePassword(@Req() req: any, @Body() changePasswordDto: ChangePasswordDto) {
-    const userId = req.user?.userId;
+    const userId = req.clientUser?.userId;
 
     if (!userId) {
-      throw new BadRequestException('User ID not found in session');
+      throw new BadRequestException('ClientUser ID not found in session');
     }
 
-    // Validate user is Super Admin (additional safety check)
-    const user = await this.authService.findClientUserById(userId);
-    if (!user || user.role !== 'SUPER_ADMIN') {
+    // Validate clientUser is Super Admin (additional safety check)
+    const clientUser = await this.authService.findClientUserById(userId);
+    if (!clientUser || clientUser.role !== 'SUPER_ADMIN') {
       throw new BadRequestException('Unauthorized: Super Admin access required');
     }
 

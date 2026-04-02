@@ -26,7 +26,7 @@ import { RejectSubmissionDto } from './dto/reject-submission.dto';
 /**
  * Client Controller
  *
- * Handles client portal API endpoints for authenticated client users.
+ * Handles client portal API endpoints for authenticated client clientUsers.
  *
  * @remarks
  * **Purpose**:
@@ -101,7 +101,7 @@ export class ClientController {
   @Get('settings')
   async getSettings(@Req() req: any) {
     // Extract clientId from session token (injected by SessionAuthGuard or middleware)
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -169,7 +169,7 @@ export class ClientController {
    */
   @Put('webhook')
   async updateWebhook(@Req() req: any, @Body() dto: UpdateWebhookDto) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -255,7 +255,7 @@ export class ClientController {
    */
   @Post('webhook/test')
   async testWebhook(@Req() req: any) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -370,7 +370,7 @@ export class ClientController {
     @Query('page') page: string,
     @Query('limit') limit: string,
   ) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -433,7 +433,7 @@ export class ClientController {
    */
   @Get('stats')
   async getStats(@Req() req: any) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -464,8 +464,8 @@ export class ClientController {
    *   "submissions": [
    *     {
    *       "id": "uuid",
-   *       "externalUserId": "client-user-123",
-   *       "email": "user@example.com",
+   *       "externalUserId": "client-clientUser-123",
+   *       "email": "clientUser@example.com",
    *       "phone": "+919876543210",
    *       "internalStatus": "VERIFIED",
    *       "finalStatus": "COMPLETE",
@@ -496,7 +496,7 @@ export class ClientController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -528,8 +528,8 @@ export class ClientController {
    * ```json
    * {
    *   "id": "uuid",
-   *   "externalUserId": "client-user-123",
-   *   "email": "user@example.com",
+   *   "externalUserId": "client-clientUser-123",
+   *   "email": "clientUser@example.com",
    *   "internalStatus": "VERIFIED",
    *   "panNumber": "ABCDE1234F",
    *   "aadhaarNumber": "XXXX XXXX 1234",
@@ -553,7 +553,7 @@ export class ClientController {
    */
   @Get('submissions/:id')
   async getSubmissionDetail(@Req() req: any, @Param('id') submissionId: string) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -599,7 +599,7 @@ export class ClientController {
    */
   @Post('submissions/:id/approve')
   async approveSubmission(@Req() req: any, @Param('id') submissionId: string) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -659,7 +659,7 @@ export class ClientController {
     @Param('id') submissionId: string,
     @Body() rejectSubmissionDto: RejectSubmissionDto,
   ) {
-    const clientId = req.user?.clientId || req.clientId;
+    const clientId = req.clientUser?.clientId || req.clientId;
 
     if (!clientId) {
       throw new BadRequestException('Client ID not found in session');
@@ -675,7 +675,7 @@ export class ClientController {
   /**
    * Client Forgot Password
    *
-   * Initiates password reset flow for client users.
+   * Initiates password reset flow for client clientUsers.
    * Generates reset token and prepares email with magic link.
    *
    * @remarks
@@ -685,7 +685,7 @@ export class ClientController {
    * **Request Body**:
    * ```json
    * {
-   *   "email": "user@example.com"
+   *   "email": "clientUser@example.com"
    * }
    * ```
    *
@@ -714,7 +714,7 @@ export class ClientController {
   /**
    * Client Reset Password
    *
-   * Resets client user password using valid reset token.
+   * Resets client clientUser password using valid reset token.
    * Validates token, updates password, and clears reset token.
    *
    * @remarks
@@ -750,19 +750,19 @@ export class ClientController {
   @UseGuards() // Override controller guards - unauthenticated endpoint
   @Post('reset-password')
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    const user = await this.authService.validateResetToken(resetPasswordDto.token);
-    if (!user) {
+    const clientUser = await this.authService.validateResetToken(resetPasswordDto.token);
+    if (!clientUser) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    await this.authService.updatePassword(user.id, resetPasswordDto.newPassword);
+    await this.authService.updatePassword(clientUser.id, resetPasswordDto.newPassword);
     return { success: true, message: 'Password reset successfully' };
   }
 
   /**
    * Change Password (Session-Based)
    *
-   * Allows authenticated client users to change their password.
+   * Allows authenticated client clientUsers to change their password.
    * Used for forced first-login password reset and voluntary password changes.
    *
    * @remarks
@@ -796,10 +796,10 @@ export class ClientController {
    */
   @Post('change-password')
   async changePassword(@Req() req: any, @Body() changePasswordDto: ChangePasswordDto) {
-    const userId = req.user?.userId;
+    const userId = req.clientUser?.userId;
 
     if (!userId) {
-      throw new BadRequestException('User ID not found in session');
+      throw new BadRequestException('ClientUser ID not found in session');
     }
 
     await this.authService.updatePassword(userId, changePasswordDto.newPassword, false, changePasswordDto.currentPassword);

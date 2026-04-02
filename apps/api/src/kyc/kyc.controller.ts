@@ -28,7 +28,7 @@ import { ProcessDigiLockerDocumentsDto } from './dto/process-digilocker-document
  * @remarks
  * - All file uploads buffer streams immediately to prevent Fastify stream closure issues
  * - Supports both single-file (PAN, live photo) and multi-file (Aadhaar front/back) uploads
- * - Auto-creates users and submissions if they don't exist (for MVP convenience)
+ * - Auto-creates clientUsers and submissions if they don't exist (for MVP convenience)
  * - Fastify multipart streams must be consumed during the `req.parts()` iteration
  *
  * @see {@link KycService} for business logic implementation
@@ -40,7 +40,7 @@ export class KycController {
   /**
    * Create KYC Submission
    *
-   * Creates a new KYC submission for the given user. Auto-creates the user if they don't exist.
+   * Creates a new KYC submission for the given clientUser. Auto-creates the clientUser if they don't exist.
    * This endpoint is typically called by the frontend before document uploads.
    *
    * @param dto - Contains userId (UUID v4)
@@ -60,12 +60,12 @@ export class KycController {
   /**
    * Get KYC Status
    *
-   * Retrieves the current KYC verification status for a user, including progress percentage
+   * Retrieves the current KYC verification status for a clientUser, including progress percentage
    * and status label. Used by the frontend to display status indicators.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Object containing submission details, progress (0-100), and status label
-   * @throws NotFoundException if user has no KYC submission
+   * @throws NotFoundException if clientUser has no KYC submission
    *
    * @example
    * GET /api/kyc/status/550e8400-e29b-41d4-a716-446655440000
@@ -79,10 +79,10 @@ export class KycController {
   /**
    * Get KYC Submission
    *
-   * Retrieves the full KYC submission details for a user, including all document URLs,
+   * Retrieves the full KYC submission details for a clientUser, including all document URLs,
    * extracted data, and verification scores.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Full KYC submission object
    * @throws HttpException with 404 status if submission not found
    *
@@ -103,7 +103,7 @@ export class KycController {
    * Upload PAN Card Document
    *
    * Accepts a single image file (JPEG/PNG) and stores it in MinIO. Creates a new KYC submission
-   * if one doesn't exist for the user. Updates submission status to DOCUMENTS_UPLOADED.
+   * if one doesn't exist for the clientUser. Updates submission status to DOCUMENTS_UPLOADED.
    *
    * **Important**: Buffers the file stream immediately during multipart parsing to prevent
    * Fastify stream closure issues. Fastify closes streams after `req.parts()` iteration completes.
@@ -119,7 +119,7 @@ export class KycController {
    * POST /api/kyc/upload/pan
    * Content-Type: multipart/form-data
    * Body: { userId: "550e8400-...", file: <binary> }
-   * Response: { success: true, submissionId: "abc123", documentUrl: "kyc-pan/user-id/PAN_CARD_1234567890.jpg" }
+   * Response: { success: true, submissionId: "abc123", documentUrl: "kyc-pan/clientUser-id/PAN_CARD_1234567890.jpg" }
    */
   @Post('upload/pan')
   async uploadPan(@Req() req: FastifyRequest) {
@@ -196,8 +196,8 @@ export class KycController {
    * Response: {
    *   success: true,
    *   submissionId: "abc123",
-   *   front: { submissionId: "abc123", documentUrl: "kyc-aadhaar/user-id/AADHAAR_CARD_FRONT_123.jpg" },
-   *   back: { submissionId: "abc123", documentUrl: "kyc-aadhaar/user-id/AADHAAR_CARD_BACK_456.jpg" }
+   *   front: { submissionId: "abc123", documentUrl: "kyc-aadhaar/clientUser-id/AADHAAR_CARD_FRONT_123.jpg" },
+   *   back: { submissionId: "abc123", documentUrl: "kyc-aadhaar/clientUser-id/AADHAAR_CARD_BACK_456.jpg" }
    * }
    */
   @Post('upload/aadhaar')
@@ -298,7 +298,7 @@ export class KycController {
    * Upload Live Photo (Selfie)
    *
    * Accepts a live photo captured from webcam for face verification. Photo must contain
-   * the user's face and is used to compare against the photo on PAN/Aadhaar documents.
+   * the clientUser's face and is used to compare against the photo on PAN/Aadhaar documents.
    *
    * **Prerequisites**: PAN or Aadhaar document must be uploaded first (face verification
    * requires a reference photo from identity documents).
@@ -314,7 +314,7 @@ export class KycController {
    * POST /api/kyc/upload/live-photo
    * Content-Type: multipart/form-data
    * Body: { userId: "550e...", file: <binary> }
-   * Response: { success: true, submissionId: "abc123", documentUrl: "kyc-live-photos/user-id/LIVE_PHOTO_123.jpg" }
+   * Response: { success: true, submissionId: "abc123", documentUrl: "kyc-live-photos/clientUser-id/LIVE_PHOTO_123.jpg" }
    */
   @Post('upload/live-photo')
   async uploadLivePhoto(@Req() req: FastifyRequest) {
@@ -566,12 +566,12 @@ export class KycController {
   /**
    * Fetch Documents from DigiLocker
    *
-   * Initiates document fetch from DigiLocker for the specified user and document types.
+   * Initiates document fetch from DigiLocker for the specified clientUser and document types.
    * Documents are automatically stored in MinIO and the submission is updated.
    *
    * @param dto - Request body with userId and documentTypes
    * @returns Success response with submission details and fetched document URLs
-   * @throws BadRequestException if user not authorized with DigiLocker
+   * @throws BadRequestException if clientUser not authorized with DigiLocker
    * @throws NotFoundException if requested documents not available
    *
    * @example
@@ -611,9 +611,9 @@ export class KycController {
   /**
    * Get DigiLocker Fetch Status
    *
-   * Checks DigiLocker authorization status and available documents for a user.
+   * Checks DigiLocker authorization status and available documents for a clientUser.
    *
-   * @param userId - User UUID from path parameter
+   * @param userId - ClientUser UUID from path parameter
    * @returns Status object with authorization and document availability
    *
    * @example

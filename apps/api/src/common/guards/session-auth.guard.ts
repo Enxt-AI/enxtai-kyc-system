@@ -36,11 +36,11 @@ import {
  * 5. Inject validated data into request context
  *
  * **Request Context Injection**:
- * After successful validation, the following fields are added to `request.user`:
- * - `userId`: Authenticated user's ID
+ * After successful validation, the following fields are added to `request.clientUser`:
+ * - `userId`: Authenticated clientUser's ID
  * - `clientId`: Client organization ID (for tenant isolation)
- * - `role`: User role (ADMIN, VIEWER, etc.)
- * - `email`: User's email address
+ * - `role`: ClientUser role (ADMIN, VIEWER, etc.)
+ * - `email`: ClientUser's email address
  *
  * **Security Considerations**:
  * - Token should be short-lived (e.g., 30 days, refreshed by NextAuth)
@@ -66,7 +66,7 @@ import {
  * **Future Enhancements**:
  * - Add JWT signature verification using NextAuth secret
  * - Implement token expiration checking
- * - Add rate limiting per user/client
+ * - Add rate limiting per clientUser/client
  * - Log authentication attempts for security auditing
  * - Support refresh token flow
  */
@@ -108,7 +108,7 @@ export class SessionAuthGuard implements CanActivate {
       const sessionData = JSON.parse(decoded);
 
       // Validate required fields
-      // Note: clientId can be null for SUPER_ADMIN users (platform administrators)
+      // Note: clientId can be null for SUPER_ADMIN clientUsers (platform administrators)
       if (
         !sessionData.userId ||
         !sessionData.role ||
@@ -126,12 +126,12 @@ export class SessionAuthGuard implements CanActivate {
         }
       } else {
         if (!sessionData.clientId) {
-          throw new UnauthorizedException('Client users must have a valid clientId');
+          throw new UnauthorizedException('Client clientUsers must have a valid clientId');
         }
       }
 
       // Inject session data into request context
-      request.user = {
+      request.clientUser = {
         userId: sessionData.userId,
         clientId: sessionData.clientId, // Can be null for SUPER_ADMIN
         role: sessionData.role,

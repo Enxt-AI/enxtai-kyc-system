@@ -9,11 +9,11 @@ import { BadRequestException } from '@nestjs/common';
 /**
  * Authentication Controller
  *
- * Handles client user and Super Admin authentication endpoints.
+ * Handles client clientUser and Super Admin authentication endpoints.
  *
  * @remarks
  * **Endpoints**:
- * - POST /api/auth/client/login - Client user login
+ * - POST /api/auth/client/login - Client clientUser login
  * - POST /api/auth/admin/login - Super Admin login
  * - POST /api/auth/client/forgot-password - Request password reset (client)
  * - POST /api/auth/client/reset-password - Reset password with token (client)
@@ -41,15 +41,15 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * Client User Login
+   * Client ClientUser Login
    *
-   * Authenticates client user and returns user data for session creation.
+   * Authenticates client clientUser and returns clientUser data for session creation.
    *
    * @remarks
    * **Request Body**:
    * ```json
    * {
-   *   "email": "user@example.com",
+   *   "email": "clientUser@example.com",
    *   "password": "securePassword123"
    * }
    * ```
@@ -57,8 +57,8 @@ export class AuthController {
    * **Success Response** (200 OK):
    * ```json
    * {
-   *   "id": "user-uuid-123",
-   *   "email": "user@example.com",
+   *   "id": "clientUser-uuid-123",
+   *   "email": "clientUser@example.com",
    *   "clientId": "client-uuid-456",
    *   "role": "VIEWER"
    * }
@@ -75,7 +75,7 @@ export class AuthController {
    * - HTTPS enforced by infrastructure
    *
    * @param loginDto - Email and password credentials
-   * @returns User object without password field
+   * @returns ClientUser object without password field
    * @throws BadRequestException if validation fails
    * @throws UnauthorizedException if credentials invalid
    *
@@ -83,12 +83,12 @@ export class AuthController {
    * ```typescript
    * // Successful login
    * POST /api/auth/client/login
-   * { "email": "user@example.com", "password": "securePassword123" }
+   * { "email": "clientUser@example.com", "password": "securePassword123" }
    * // Returns: { id: "...", email: "...", clientId: "...", role: "VIEWER" }
    *
    * // Invalid credentials
    * POST /api/auth/client/login
-   * { "email": "user@example.com", "password": "wrongPassword" }
+   * { "email": "clientUser@example.com", "password": "wrongPassword" }
    * // Returns: 401 Unauthorized { message: "Invalid credentials" }
    * ```
    */
@@ -104,8 +104,8 @@ export class AuthController {
   /**
    * Super Admin Login
    *
-   * Authenticates Super Admin user and returns user data for session creation.
-   * Only allows users with SUPER_ADMIN role and null clientId.
+   * Authenticates Super Admin clientUser and returns clientUser data for session creation.
+   * Only allows clientUsers with SUPER_ADMIN role and null clientId.
    *
    * @remarks
    * **Request Body**:
@@ -138,7 +138,7 @@ export class AuthController {
    * - HTTPS enforced by infrastructure
    *
    * @param loginDto - Email and password credentials
-   * @returns Super Admin user object without password field
+   * @returns Super Admin clientUser object without password field
    * @throws BadRequestException if validation fails
    * @throws UnauthorizedException if credentials invalid or not Super Admin
    *
@@ -151,7 +151,7 @@ export class AuthController {
    *
    * // Invalid credentials or not Super Admin
    * POST /api/auth/admin/login
-   * { "email": "user@example.com", "password": "wrongPassword" }
+   * { "email": "clientUser@example.com", "password": "wrongPassword" }
    * // Returns: 401 Unauthorized { message: "Invalid credentials" }
    * ```
    */
@@ -167,14 +167,14 @@ export class AuthController {
   /**
    * Client Forgot Password
    *
-   * Initiates password reset flow for client users.
+   * Initiates password reset flow for client clientUsers.
    * Generates reset token and prepares email with magic link.
    *
    * @remarks
    * **Request Body**:
    * ```json
    * {
-   *   "email": "user@example.com"
+   *   "email": "clientUser@example.com"
    * }
    * ```
    *
@@ -204,9 +204,9 @@ export class AuthController {
    * ```typescript
    * // Request password reset
    * POST /api/auth/client/forgot-password
-   * { "email": "user@example.com" }
+   * { "email": "clientUser@example.com" }
    * // Returns: { success: true }
-   * // Console logs: 🔗 Password reset link for user@example.com: http://localhost:3000/reset-password?token=uuid-token
+   * // Console logs: 🔗 Password reset link for clientUser@example.com: http://localhost:3000/reset-password?token=uuid-token
    * ```
    */
   @Post('client/forgot-password')
@@ -218,7 +218,7 @@ export class AuthController {
   /**
    * Client Reset Password
    *
-   * Resets client user password using valid reset token.
+   * Resets client clientUser password using valid reset token.
    * Validates token, updates password, and clears reset token.
    *
    * @remarks
@@ -268,19 +268,19 @@ export class AuthController {
   @Post('client/reset-password')
   @HttpCode(HttpStatus.OK)
   async clientResetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    const user = await this.authService.validateResetToken(resetPasswordDto.token);
-    if (!user) {
+    const clientUser = await this.authService.validateResetToken(resetPasswordDto.token);
+    if (!clientUser) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    await this.authService.updatePassword(user.id, resetPasswordDto.newPassword);
+    await this.authService.updatePassword(clientUser.id, resetPasswordDto.newPassword);
     return { success: true, message: 'Password reset successfully' };
   }
 
   /**
    * Client Change Password
    *
-   * Allows authenticated client users to change their password.
+   * Allows authenticated client clientUsers to change their password.
    * Requires current session validation (handled by NextAuth middleware).
    *
    * @remarks
@@ -312,7 +312,7 @@ export class AuthController {
    * - HTTPS enforced by infrastructure
    *
    * @param changePasswordDto - Current and new passwords
-   * @param req - Request object with authenticated user
+   * @param req - Request object with authenticated clientUser
    * @returns Success confirmation
    * @throws BadRequestException if password validation fails
    * @throws UnauthorizedException if current password incorrect
@@ -331,7 +331,7 @@ export class AuthController {
   @Post('client/change-password')
   @HttpCode(HttpStatus.OK)
   async clientChangePassword(@Body() changePasswordDto: ChangePasswordDto) {
-    // Note: User ID would come from authenticated session (NextAuth middleware)
+    // Note: ClientUser ID would come from authenticated session (NextAuth middleware)
     // For now, this is a placeholder - actual implementation needs session context
     throw new Error('Not implemented: Requires authenticated session context');
   }
@@ -339,7 +339,7 @@ export class AuthController {
   /**
    * Admin Forgot Password
    *
-   * Initiates password reset flow for Super Admin users.
+   * Initiates password reset flow for Super Admin clientUsers.
    * Generates reset token and prepares email with magic link.
    *
    * @remarks
@@ -364,7 +364,7 @@ export class AuthController {
    * **Security Considerations**:
    * - Generic success response regardless of email existence (prevents enumeration)
    * - Rate limited to 3 requests per hour per email
-   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Only allows Super Admin clientUsers (clientId = null, role = SUPER_ADMIN)
    * - Reset link logged to console (MVP - future: email integration)
    * - HTTPS enforced by infrastructure
    *
@@ -391,7 +391,7 @@ export class AuthController {
   /**
    * Admin Reset Password
    *
-   * Resets Super Admin user password using valid reset token.
+   * Resets Super Admin clientUser password using valid reset token.
    * Validates token, updates password, and clears reset token.
    *
    * @remarks
@@ -419,7 +419,7 @@ export class AuthController {
    * **Security Considerations**:
    * - Token validated for format (UUID) and expiry (1 hour)
    * - Single-use tokens (cleared after successful reset)
-   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Only allows Super Admin clientUsers (clientId = null, role = SUPER_ADMIN)
    * - Password hashed with bcrypt (12 salt rounds)
    * - mustChangePassword flag cleared
    * - HTTPS enforced by infrastructure
@@ -442,24 +442,24 @@ export class AuthController {
   @Post('admin/reset-password')
   @HttpCode(HttpStatus.OK)
   async adminResetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    const user = await this.authService.validateResetToken(resetPasswordDto.token);
-    if (!user) {
+    const clientUser = await this.authService.validateResetToken(resetPasswordDto.token);
+    if (!clientUser) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    // Additional validation: ensure user is Super Admin
-    if (user.role !== 'SUPER_ADMIN' || user.clientId !== null) {
+    // Additional validation: ensure clientUser is Super Admin
+    if (clientUser.role !== 'SUPER_ADMIN' || clientUser.clientId !== null) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    await this.authService.updatePassword(user.id, resetPasswordDto.newPassword);
+    await this.authService.updatePassword(clientUser.id, resetPasswordDto.newPassword);
     return { success: true, message: 'Password reset successfully' };
   }
 
   /**
    * Admin Change Password
    *
-   * Allows authenticated Super Admin users to change their password.
+   * Allows authenticated Super Admin clientUsers to change their password.
    * Requires current session validation (handled by NextAuth middleware).
    *
    * @remarks
@@ -486,13 +486,13 @@ export class AuthController {
    * **Security Considerations**:
    * - Requires authentication (session validation by middleware)
    * - Validates current password before allowing change
-   * - Only allows Super Admin users (clientId = null, role = SUPER_ADMIN)
+   * - Only allows Super Admin clientUsers (clientId = null, role = SUPER_ADMIN)
    * - Password hashed with bcrypt (12 salt rounds)
    * - mustChangePassword flag cleared
    * - HTTPS enforced by infrastructure
    *
    * @param changePasswordDto - Current and new passwords
-   * @param req - Request object with authenticated user
+   * @param req - Request object with authenticated clientUser
    * @returns Success confirmation
    * @throws BadRequestException if password validation fails
    * @throws UnauthorizedException if current password incorrect
@@ -511,7 +511,7 @@ export class AuthController {
   @Post('admin/change-password')
   @HttpCode(HttpStatus.OK)
   async adminChangePassword(@Body() changePasswordDto: ChangePasswordDto) {
-    // Note: User ID would come from authenticated session (NextAuth middleware)
+    // Note: ClientUser ID would come from authenticated session (NextAuth middleware)
     // For now, this is a placeholder - actual implementation needs session context
     throw new Error('Not implemented: Requires authenticated session context');
   }

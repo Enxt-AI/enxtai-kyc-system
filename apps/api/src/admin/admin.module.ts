@@ -10,7 +10,7 @@ import { AuthModule } from '../auth/auth.module';
 /**
  * Admin Module
  *
- * Provides admin-only endpoints for managing KYC submissions, users, and clients.
+ * Provides admin-only endpoints for managing KYC submissions, clientUsers, and clients.
  *
  * @remarks
  * **Webhook Integration**:

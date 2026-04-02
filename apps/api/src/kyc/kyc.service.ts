@@ -46,14 +46,14 @@ const MAX_HEIGHT = 8192;
  * 5. Admin Review: If confidence <80%, manual approval required
  *
  * **Auto-Creation Strategy (MVP)**:
- * - Users and submissions are auto-created if they don't exist during uploads
+ * - ClientUsers and submissions are auto-created if they don't exist during uploads
  * - Simplifies frontend logic by eliminating pre-creation API calls
- * - Generated emails/phones are placeholders (e.g., user-xxx@kyc-temp.local)
+ * - Generated emails/phones are placeholders (e.g., clientUser-xxx@kyc-temp.local)
  *
  * **Multi-Tenancy**:
  * - All operations scoped to clientId (extracted from X-API-Key by TenantMiddleware)
  * - Documents stored in client-specific MinIO buckets (kyc-{clientId}-{suffix})
- * - User lookups constrained by (clientId, externalUserId) composite unique key
+ * - ClientUser lookups constrained by (clientId, externalUserId) composite unique key
  * - Legacy internal endpoints use clientId '00000000-0000-0000-0000-000000000000'
  *
  * **Webhook Integration**:
@@ -90,13 +90,13 @@ export class KycService {
   }
 
   /**
-   * Get or Create User (Helper)
+   * Get or Create ClientUser (Helper)
    *
-   * Auto-creates user if they don't exist in the database. This MVP convenience feature
-   * allows the frontend to start document uploads without pre-creating user accounts.
+   * Auto-creates clientUser if they don't exist in the database. This MVP convenience feature
+   * allows the frontend to start document uploads without pre-creating clientUser accounts.
    *
    * **Generated Fields**:
-   * - Email: user-{first8CharsOfUuid}@kyc-temp.local
+   * - Email: clientUser-{first8CharsOfUuid}@kyc-temp.local
    * - Phone: 999{timestamp7Digits} (ensures uniqueness)
    *
    * **Multi-Tenancy (Dual-Mode Operation)**:
@@ -106,20 +106,20 @@ export class KycService {
    *
    * @param userId - UUID v4 string
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
-   * @returns User object (existing or newly created)
+   * @returns ClientUser object (existing or newly created)
    * @private
    */
   private async getOrCreateUser(userId: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
-    let user = await this.prisma.user.findUnique({ where: { id: userId } });
+    let clientUser = await this.prisma.clientUser.findUnique({ where: { id: userId } });
 
-    if (!user) {
-      // Auto-create user with generated email/phone
-      const email = `user-${userId.substring(0, 8)}@kyc-temp.local`;
+    if (!clientUser) {
+      // Auto-create clientUser with generated email/phone
+      const email = `clientUser-${userId.substring(0, 8)}@kyc-temp.local`;
 
       // Retry a few times to avoid UNIQUE(phone) collisions in fast sequential calls
       for (let i = 0; i < 3; i++) {
         try {
-          user = await this.prisma.user.create({
+          clientUser = await this.prisma.clientUser.create({
             data: {
               id: userId,
               clientId, // Use provided clientId (defaults to legacy for backward compatibility)
@@ -138,10 +138,10 @@ export class KycService {
         }
       }
 
-      if (!user) {
+      if (!clientUser) {
         // Last-resort fallback with userId-derived digits to guarantee uniqueness
         const numericFromId = userId.replace(/\D/g, '').padEnd(10, '0').slice(0, 10);
-        user = await this.prisma.user.create({
+        clientUser = await this.prisma.clientUser.create({
           data: {
             id: userId,
             clientId, // Use provided clientId (defaults to legacy for backward compatibility)
@@ -153,19 +153,19 @@ export class KycService {
       }
     }
 
-    return user;
+    return clientUser;
   }
 
   /**
    * Get or Create Submission (Helper)
    *
-   * Retrieves most recent submission for user or creates new one if not found.
+   * Retrieves most recent submission for clientUser or creates new one if not found.
    *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns KYCSubmission object (existing or newly created)
    * @private
@@ -194,7 +194,7 @@ export class KycService {
    * Trigger Webhook Helper
    *
    * Sends webhook notification to client's configured endpoint with KYC event data.
-   * Fetches user details, builds webhook payload, and delegates to WebhookService.
+   * Fetches clientUser details, builds webhook payload, and delegates to WebhookService.
    *
    * **Error Isolation**:
    * - Webhook failures are caught and logged but do NOT throw exceptions
@@ -203,7 +203,7 @@ export class KycService {
    *
    * **Data Mapping**:
    * - `kycSessionId`: Submission ID (for client API correlation)
-   * - `externalUserId`: Client's user identifier (from User.externalUserId)
+   * - `externalUserId`: Client's clientUser identifier (from ClientUser.externalUserId)
    * - `status`: Current submission status
    * - `extractedData`: OCR results (PAN number, Aadhaar number, name, DOB)
    * - `verificationScores`: Face match and liveness scores (if verification completed)
@@ -236,8 +236,8 @@ export class KycService {
     event: any,
   ): Promise<void> {
     try {
-      // Fetch user to get externalUserId and clientId
-      const user = await this.prisma.user.findUnique({
+      // Fetch clientUser to get externalUserId and clientId
+      const clientUser = await this.prisma.clientUser.findUnique({
         where: { id: submission.userId },
         select: {
           externalUserId: true,
@@ -245,15 +245,15 @@ export class KycService {
         },
       });
 
-      if (!user) {
-        // Should never happen (submission references user via FK)
-        throw new Error(`User not found for submission ${submission.id}`);
+      if (!clientUser) {
+        // Should never happen (submission references clientUser via FK)
+        throw new Error(`ClientUser not found for submission ${submission.id}`);
       }
 
       // Build webhook data payload
       const webhookData: any = {
         kycSessionId: submission.id,
-        externalUserId: user.externalUserId,
+        externalUserId: clientUser.externalUserId,
         status: submission.internalStatus,
       };
 
@@ -281,7 +281,7 @@ export class KycService {
       }
 
       // Send webhook (errors caught internally by WebhookService)
-      await this.webhookService.sendWebhook(user.clientId, event, webhookData);
+      await this.webhookService.sendWebhook(clientUser.clientId, event, webhookData);
     } catch (error) {
       // Log error but don't throw (webhook failures should not break KYC flow)
       console.error(`Failed to trigger webhook for submission ${submission.id}:`, error);
@@ -431,7 +431,7 @@ export class KycService {
     if (submissionId) {
       const submission = await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } });
       if (!submission || submission.userId !== userId) {
-        throw new NotFoundException('Submission not found for user');
+        throw new NotFoundException('Submission not found for clientUser');
       }
       return submission;
     }
@@ -442,7 +442,7 @@ export class KycService {
     });
 
     if (!submission) {
-      throw new NotFoundException('Submission not found for user');
+      throw new NotFoundException('Submission not found for clientUser');
     }
 
     return submission;
@@ -451,18 +451,18 @@ export class KycService {
   /**
    * Create KYC Submission
    *
-   * Creates a new KYC verification submission for a user.
+   * Creates a new KYC verification submission for a clientUser.
    *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Created KYCSubmission object
    */
   async createSubmission(userId: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
-    const user = await this.getOrCreateUser(userId, clientId);
+    const clientUser = await this.getOrCreateUser(userId, clientId);
     return this.prisma.kYCSubmission.create({
       data: {
         userId,
@@ -505,7 +505,7 @@ export class KycService {
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -515,11 +515,11 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    // Auto-create user if not exists
-    const user = await this.getOrCreateUser(userId, clientId);
+    // Auto-create clientUser if not exists
+    const clientUser = await this.getOrCreateUser(userId, clientId);
 
     // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -532,8 +532,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.PAN_CARD,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -559,7 +559,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId: user.id,
+        userId: clientUser.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: { type: 'PAN', objectPath },
       },
@@ -582,7 +582,7 @@ export class KycService {
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -592,8 +592,8 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId, clientId);
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const clientUser = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -606,8 +606,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -630,7 +630,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId: user.id,
+        userId: clientUser.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: {
           type: 'AADHAAR',
@@ -656,7 +656,7 @@ export class KycService {
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -666,8 +666,8 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId, clientId);
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const clientUser = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -680,8 +680,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD_FRONT,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -705,7 +705,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId: user.id,
+        userId: clientUser.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: { type: 'AADHAAR_FRONT', objectPath },
       },
@@ -728,7 +728,7 @@ export class KycService {
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -738,8 +738,8 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId, clientId);
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const clientUser = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -752,8 +752,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.AADHAAR_CARD_BACK,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -777,7 +777,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId: user.id,
+        userId: clientUser.id,
         action: 'KYC_DOCUMENT_UPLOAD',
         metadata: { type: 'AADHAAR_BACK', objectPath },
       },
@@ -878,13 +878,13 @@ export class KycService {
   /**
    * Upload Live Photo Document
    *
-   * Uploads user's live photograph for face verification.
+   * Uploads clientUser's live photograph for face verification.
    *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -894,11 +894,11 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    // Auto-create user if not exists
-    const user = await this.getOrCreateUser(userId, clientId);
+    // Auto-create clientUser if not exists
+    const clientUser = await this.getOrCreateUser(userId, clientId);
 
     // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -911,8 +911,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.LIVE_PHOTO,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -938,7 +938,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-          userId: user.id,
+          userId: clientUser.id,
         action: 'KYC_LIVE_PHOTO_UPLOAD',
         metadata: { type: 'LIVE_PHOTO', objectPath },
       },
@@ -955,13 +955,13 @@ export class KycService {
   /**
    * Upload Signature Document
    *
-   * Uploads user's signature image for verification.
+   * Uploads clientUser's signature image for verification.
    *
    * **Multi-Tenancy (Dual-Mode Operation)**:
    * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
    * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
    *
-   * @param userId - Internal user UUID
+   * @param userId - Internal clientUser UUID
    * @param file - Multipart file upload
    * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
    * @returns Updated KYCSubmission object
@@ -971,8 +971,8 @@ export class KycService {
       throw new BadRequestException('File is required');
     }
 
-    const user = await this.getOrCreateUser(userId, clientId);
-    const submission = await this.getOrCreateSubmission(user.id, clientId);
+    const clientUser = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
 
     const buffer = await this.prepareFileBuffer(file, IMAGE_ONLY_MIME_TYPES);
     await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
@@ -985,8 +985,8 @@ export class KycService {
 
     const objectPath = await this.storageService.uploadDocument(
       DocumentType.SIGNATURE,
-      user.clientId,
-      user.id,
+      clientUser.clientId,
+      clientUser.id,
       uploadDto,
     );
 
@@ -1012,7 +1012,7 @@ export class KycService {
 
     await this.prisma.auditLog.create({
       data: {
-        userId: user.id,
+        userId: clientUser.id,
         action: 'KYC_SIGNATURE_UPLOAD',
         metadata: { type: 'SIGNATURE', objectPath },
       },
@@ -1175,33 +1175,33 @@ export class KycService {
    * Fetches PAN and/or Aadhaar documents from DigiLocker and stores them in MinIO.
    * Updates the submission with document URLs and sets documentSource to DIGILOCKER.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @param documentTypes - Array of document types to fetch (e.g., ['PAN', 'AADHAAR'])
    * @param submissionId - Optional specific submission ID to update (defaults to most recent)
    * @returns Promise<KYCSubmission> - Updated submission with DigiLocker documents
    *
-   * @throws DigiLockerException if user not authorized or documents not found
+   * @throws DigiLockerException if clientUser not authorized or documents not found
    * @throws NotFoundException if requested documents not available in DigiLocker
    */
   async fetchDocumentsFromDigiLocker(userId: string, documentTypes: string[], submissionId?: string): Promise<any> {
-    // Validate user exists and has DigiLocker authorization
-    const user = await this.prisma.user.findUnique({
+    // Validate clientUser exists and has DigiLocker authorization
+    const clientUser = await this.prisma.clientUser.findUnique({
       where: { id: userId },
       include: { client: true },
     });
 
-    if (!user) {
-      throw new NotFoundException(`User ${userId} not found`);
+    if (!clientUser) {
+      throw new NotFoundException(`ClientUser ${userId} not found`);
     }
 
     try {
-      // Check if user has DigiLocker authorization
+      // Check if clientUser has DigiLocker authorization
       const digiLockerToken = await this.prisma.digiLockerToken.findUnique({
         where: { userId },
       });
 
       if (!digiLockerToken) {
-        throw new BadRequestException('User not authorized with DigiLocker. Please complete OAuth flow first.');
+        throw new BadRequestException('ClientUser not authorized with DigiLocker. Please complete OAuth flow first.');
       }
 
       // Get or create KYC submission
@@ -1214,13 +1214,13 @@ export class KycService {
       }
 
       if (submission.userId !== userId) {
-        throw new ForbiddenException('Submission does not belong to user');
+        throw new ForbiddenException('Submission does not belong to clientUser');
       }
 
       // Trigger webhook for fetch initiated
-      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_INITIATED, {
+      await this.webhookService.sendWebhook(clientUser.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_INITIATED, {
         kycSessionId: submission.id,
-        externalUserId: user.externalUserId,
+        externalUserId: clientUser.externalUserId,
         documentTypes,
       });
 
@@ -1310,7 +1310,7 @@ export class KycService {
             },
           });
         } catch (error) {
-          this.logger.error(`Failed to fetch ${doc.type} document for user ${userId}`, error);
+          this.logger.error(`Failed to fetch ${doc.type} document for clientUser ${userId}`, error);
           // Continue with other documents but log the error
         }
       }
@@ -1336,9 +1336,9 @@ export class KycService {
       this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
 
       // Trigger DigiLocker fetch completed webhook
-      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_COMPLETED, {
+      await this.webhookService.sendWebhook(clientUser.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_COMPLETED, {
         kycSessionId: updated.id,
-        externalUserId: user.externalUserId,
+        externalUserId: clientUser.externalUserId,
         documentsFetched: fetchedDocuments,
         documentUrls: {
           panDocumentUrl: updated.panDocumentUrl,
@@ -1368,9 +1368,9 @@ export class KycService {
       }
 
       // Trigger DigiLocker fetch failed webhook
-      await this.webhookService.sendWebhook(user.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_FAILED, {
+      await this.webhookService.sendWebhook(clientUser.clientId, WebhookEvent.KYC_DIGILOCKER_FETCH_FAILED, {
         kycSessionId: submissionForWebhook?.id,
-        externalUserId: user.externalUserId,
+        externalUserId: clientUser.externalUserId,
         documentTypes,
         error: (error as Error).message,
       });
@@ -1445,9 +1445,9 @@ export class KycService {
   /**
    * Get DigiLocker Fetch Status
    *
-   * Checks DigiLocker authorization and fetch status for a user.
+   * Checks DigiLocker authorization and fetch status for a clientUser.
    *
-   * @param userId - User UUID
+   * @param userId - ClientUser UUID
    * @returns Promise<object> - Status object with authorization and fetch details
    */
   async getDigiLockerFetchStatus(userId: string): Promise<any> {
@@ -1481,7 +1481,7 @@ export class KycService {
             .filter(doc => doc.type === 'PANCR' || doc.type === 'ADHAR')
             .map(doc => doc.type === 'PANCR' ? 'PAN' : 'AADHAAR');
         } catch (error) {
-          this.logger.warn(`Failed to list DigiLocker documents for user ${userId}`, error);
+          this.logger.warn(`Failed to list DigiLocker documents for clientUser ${userId}`, error);
           // Don't fail the status check if document listing fails
         }
       }
@@ -1494,7 +1494,7 @@ export class KycService {
         submission,
       };
     } catch (error) {
-      this.logger.error(`Failed to get DigiLocker status for user ${userId}`, error);
+      this.logger.error(`Failed to get DigiLocker status for clientUser ${userId}`, error);
       return {
         authorized: false,
         documentsFetched: false,
@@ -1754,8 +1754,8 @@ export class KycService {
    * @example
    * ```typescript
    * try {
-   *   const { bucket, objectName } = this.parseObjectPath("kyc-pan/client/user/file.jpg");
-   *   // bucket: "kyc-pan", objectName: "client/user/file.jpg"
+   *   const { bucket, objectName } = this.parseObjectPath("kyc-pan/client/clientUser/file.jpg");
+   *   // bucket: "kyc-pan", objectName: "client/clientUser/file.jpg"
    *   await this.storageService.downloadDocument(bucket, objectName);
    * } catch (error) {
    *   // Handle invalid document path error

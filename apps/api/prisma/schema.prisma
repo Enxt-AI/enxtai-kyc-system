@@ -9,23 +9,23 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// User Model
-// Represents end-users undergoing KYC verification
+// ClientUser Model
+// Represents end-clientUsers undergoing KYC verification
 // Multi-Tenancy Changes:
 // - clientId: Foreign key to Client (tenant isolation)
-// - externalUserId: Client's own user identifier (e.g., "client-user-123")
+// - externalUserId: Client's own clientUser identifier (e.g., "client-clientUser-123")
 // - Composite unique index [clientId, externalUserId] prevents duplicate mappings
 // Rationale:
-// - Clients send their own user IDs via API
+// - Clients send their own clientUser IDs via API
 // - We map external IDs to internal UUIDs for consistency
 // - Same external ID can exist across different clients (isolated by clientId)
-model User {
+model ClientUser {
   id String @id @default(uuid())
 
   // Multi-Tenancy Fields
   clientId       String
   client         Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  externalUserId String // Client's user ID (e.g., "user-456" from their system)
+  externalUserId String // Client's clientUser ID (e.g., "clientUser-456" from their system)
 
   // Existing Fields
   email          String
@@ -46,11 +46,11 @@ model User {
   @@unique([clientId, phone]) // Per-tenant phone uniqueness
   @@index([clientId])
   @@index([clientId, email]) // Efficient tenant-scoped email lookups
-  @@map("users")
+  @@map("clientUsers")
 }
 
 // KYCSubmission Model
-// Stores KYC verification data for end-users
+// Stores KYC verification data for end-clientUsers
 // Multi-Tenancy Changes:
 // - clientId: Foreign key to Client (tenant isolation)
 // - Composite index [clientId, internalStatus] for efficient client-scoped queries
@@ -110,7 +110,7 @@ model KYCSubmission {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId, clientId], references: [id, clientId], onDelete: Cascade)
+  clientUser ClientUser @relation(fields: [userId, clientId], references: [id, clientId], onDelete: Cascade)
 
   // Indexes
   @@index([clientId])
@@ -131,7 +131,7 @@ model AuditLog {
   userAgent String?
   timestamp DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  clientUser ClientUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([timestamp])
@@ -180,7 +180,7 @@ enum ClientStatus {
 }
 
 // ClientUserRole Enum
-// Defines access levels for client portal users
+// Defines access levels for client portal clientUsers
 // - SUPER_ADMIN: Platform administrator with access to all clients and system management
 // - ADMIN: Full access to client portal (manage webhooks, regenerate API keys, view all data)
 // - VIEWER: Read-only access to submissions and analytics
@@ -228,9 +228,9 @@ model Client {
   allowedDomains Json? // Array of strings: ["domain1.com", "*.domain2.com"]
 
   // Relationships
-  users          User[]
+  clientUsers          ClientUser[]
   kycSubmissions KYCSubmission[]
-  clientUsers    ClientUser[]
+  users    User[]
   webhookLogs    WebhookLog[]
 
   // Timestamps
@@ -241,8 +241,8 @@ model Client {
   @@map("clients")
 }
 
-// ClientUser Model
-// Represents users who access the client portal (not end-users doing KYC)
+// User Model
+// Represents clientUsers who access the client portal (not end-clientUsers doing KYC)
 // Purpose:
 // - Authenticate client organization staff to view their KYC submissions
 // - Manage webhook configuration and API keys
@@ -250,9 +250,9 @@ model Client {
 // Security:
 // - Password stored as bcrypt hash (handled in application layer)
 // - Role-based access control (SUPER_ADMIN, ADMIN, VIEWER)
-// - SUPER_ADMIN users have clientId as null (platform administrators)
-// - Each regular user belongs to exactly one client (tenant isolation)
-model ClientUser {
+// - SUPER_ADMIN clientUsers have clientId as null (platform administrators)
+// - Each regular clientUser belongs to exactly one client (tenant isolation)
+model User {
   id       String  @id @default(uuid())
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -276,7 +276,7 @@ model ClientUser {
   @@index([clientId])
   @@index([email])
   @@index([resetToken])
-  @@map("client_users")
+  @@map("users")
 }
 
 // WebhookLog Model
@@ -316,17 +316,17 @@ model WebhookLog {
 // DigiLockerToken Model
 // Stores OAuth 2.0 access and refresh tokens for DigiLocker integration
 // Purpose:
-// - Enable document fetching from user's DigiLocker account
+// - Enable document fetching from clientUser's DigiLocker account
 // - Support automatic token refresh before expiry
-// - Maintain user authorization state
+// - Maintain clientUser authorization state
 // Security:
 // - Tokens should be encrypted at rest (future enhancement)
-// - One token per user (unique constraint on userId)
-// - Cascade delete when user is deleted
+// - One token per clientUser (unique constraint on userId)
+// - Cascade delete when clientUser is deleted
 model DigiLockerToken {
   id           String   @id @default(uuid())
   userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientUser         ClientUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // OAuth 2.0 Tokens
   accessToken  String   // Bearer token for API requests

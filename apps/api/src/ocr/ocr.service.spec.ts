@@ -75,7 +75,7 @@ describe('OcrService', () => {
     it('should extract pan data and return structured result', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-1',
-        panDocumentUrl: 'pan-cards/user/file.jpg',
+        panDocumentUrl: 'pan-cards/clientUser/file.jpg',
       } as any);
       storage.downloadDocument.mockImplementation(async () => ({ stream: Readable.from(['file']) } as any));
       (Tesseract.recognize as jest.Mock).mockResolvedValue({
@@ -94,7 +94,7 @@ describe('OcrService', () => {
     it('should extract pan when label is present', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-1',
-        panDocumentUrl: 'pan-cards/user/file.jpg',
+        panDocumentUrl: 'pan-cards/clientUser/file.jpg',
       } as any);
       storage.downloadDocument.mockImplementation(async () => ({ stream: Readable.from(['file']) } as any));
       (Tesseract.recognize as jest.Mock).mockResolvedValue({
@@ -112,7 +112,7 @@ describe('OcrService', () => {
     it('should throw when confidence is low', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-1',
-        panDocumentUrl: 'pan-cards/user/file.jpg',
+        panDocumentUrl: 'pan-cards/clientUser/file.jpg',
       } as any);
       storage.downloadDocument.mockResolvedValue({ stream: Readable.from(['file']) } as any);
       (Tesseract.recognize as jest.Mock).mockResolvedValue({
@@ -130,7 +130,7 @@ describe('OcrService', () => {
     it('should throw for pdf pan document', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-1',
-        panDocumentUrl: 'pan-cards/user/file.pdf',
+        panDocumentUrl: 'pan-cards/clientUser/file.pdf',
       } as any);
 
       await expect(service.extractPanData('sub-1')).rejects.toBeInstanceOf(OcrException);
@@ -141,7 +141,7 @@ describe('OcrService', () => {
     it('should extract aadhaar data with masking', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-2',
-        aadhaarDocumentUrl: 'aadhaar-cards/user/front.jpg',
+        aadhaarDocumentUrl: 'aadhaar-cards/clientUser/front.jpg',
       } as any);
         (service as any).extractFromAadhaarDocument = jest.fn().mockResolvedValue({
           aadhaarNumber: '********9012',
@@ -160,7 +160,7 @@ describe('OcrService', () => {
     it('should throw when aadhaar not found', async () => {
       prisma.kYCSubmission.findUnique.mockResolvedValue({
         id: 'sub-2',
-        aadhaarDocumentUrl: 'aadhaar-cards/user/file.jpg',
+        aadhaarDocumentUrl: 'aadhaar-cards/clientUser/file.jpg',
       } as any);
         (service as any).extractFromAadhaarDocument = jest.fn().mockResolvedValue({
           rawText: 'no data',

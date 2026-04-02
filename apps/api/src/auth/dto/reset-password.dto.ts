@@ -20,7 +20,7 @@ import { IsString, IsUUID, MinLength, Matches } from 'class-validator';
  * **Security Flow**:
  * 1. Validate token exists and not expired
  * 2. Hash new password with bcrypt (12 salt rounds)
- * 3. Update user password and clear mustChangePassword flag
+ * 3. Update clientUser password and clear mustChangePassword flag
  * 4. Clear reset token (single-use)
  *
  * @example

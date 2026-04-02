@@ -7,7 +7,7 @@ import { IsUUID, IsOptional, IsString } from 'class-validator';
  *
  * @remarks
  * **Required Fields**:
- * - userId: UUID of the user initiating DigiLocker authorization
+ * - userId: UUID of the clientUser initiating DigiLocker authorization
  *
  * **Optional Fields**:
  * - state: Custom state parameter for OAuth flow (defaults to userId if not provided)

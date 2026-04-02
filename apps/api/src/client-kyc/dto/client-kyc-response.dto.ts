@@ -64,24 +64,24 @@ export class InitiateKycResponseDto {
   /**
    * Tokenized URL for the EnxtAI KYC frontend flow.
    *
-   * Client applications should redirect the end-user's browser to this URL
+   * Client applications should redirect the end-clientUser's browser to this URL
    * to start the KYC document upload and verification process. The URL contains
    * a short-lived JWT (25 minute expiry) that bootstraps the session on the
    * EnxtAI frontend without exposing the raw API key.
    *
-   * After the user completes or cancels the flow, they are redirected back
+   * After the clientUser completes or cancels the flow, they are redirected back
    * to the returnUrl provided in the initiation request.
    *
    * @example 'https://enxtai-kyc-system-web.vercel.app/kyc/start?token=eyJhbGciOi...'
    */
   @ApiProperty({
-    description: 'Tokenized URL for the EnxtAI KYC frontend. Redirect the user here to start KYC.',
+    description: 'Tokenized URL for the EnxtAI KYC frontend. Redirect the clientUser here to start KYC.',
     example: 'https://enxtai-kyc-system-web.vercel.app/kyc/start?token=eyJhbGciOi...',
   })
   kycFlowUrl!: string;
 
   /**
-   * Steps the user has already completed.
+   * Steps the clientUser has already completed.
    *
    * Each entry corresponds to a KYC flow page:
    * - "pan":       PAN document uploaded
@@ -99,7 +99,7 @@ export class InitiateKycResponseDto {
   completedSteps?: string[];
 
   /**
-   * The next step the user needs to complete in the KYC flow.
+   * The next step the clientUser needs to complete in the KYC flow.
    * Null when all steps are done (all documents uploaded).
    *
    * Possible values: "pan", "aadhaar", "photo", "signature", or null.
@@ -156,9 +156,9 @@ export class KycStatusResponseDto {
   kycSessionId!: string;
 
   /**
-   * Client's user identifier (matches externalUserId from initiate request)
+   * Client's clientUser identifier (matches externalUserId from initiate request)
    */
-  @ApiProperty({ description: "Client's user identifier", example: 'customer-12345' })
+  @ApiProperty({ description: "Client's clientUser identifier", example: 'customer-12345' })
   externalUserId!: string;
 
   /**
@@ -234,7 +234,7 @@ export class KycStatusResponseDto {
   updatedAt!: string;
 
   /**
-   * Steps the user has already completed in the KYC flow.
+   * Steps the clientUser has already completed in the KYC flow.
    *
    * Each entry corresponds to a KYC flow page:
    * - "pan":       PAN document uploaded
@@ -253,7 +253,7 @@ export class KycStatusResponseDto {
   completedSteps?: string[];
 
   /**
-   * The next step the user needs to complete in the KYC flow.
+   * The next step the clientUser needs to complete in the KYC flow.
    * Null when all steps are done (all documents uploaded).
    *
    * Possible values: "pan", "aadhaar", "photo", "signature", or null.
@@ -284,7 +284,7 @@ export class KycStatusResponseDto {
  * {
  *   "success": true,
  *   "kycSessionId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
- *   "documentUrl": "kyc-abc123-pan/user-uuid/PAN_CARD_1735987654321.jpg"
+ *   "documentUrl": "kyc-abc123-pan/clientUser-uuid/PAN_CARD_1735987654321.jpg"
  * }
  */
 export class UploadResponseDto {
@@ -305,7 +305,7 @@ export class UploadResponseDto {
    */
   @ApiProperty({
     description: 'MinIO object path for uploaded document',
-    example: 'kyc-abc123-pan/user-uuid/PAN_CARD_1735987654321.jpg',
+    example: 'kyc-abc123-pan/clientUser-uuid/PAN_CARD_1735987654321.jpg',
   })
   documentUrl!: string;
 }

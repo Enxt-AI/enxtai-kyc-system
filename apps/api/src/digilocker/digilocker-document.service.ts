@@ -167,10 +167,10 @@ export class DigiLockerDocumentService {
   /**
    * List Available Documents
    *
-   * Retrieves list of available documents from user's DigiLocker account.
+   * Retrieves list of available documents from clientUser's DigiLocker account.
    * Filters to include only PAN and Aadhaar documents.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Promise<DigiLockerDocument[]> - Array of available documents
    *
    * @throws DigiLockerException if API call fails or token is invalid
@@ -292,7 +292,7 @@ export class DigiLockerDocumentService {
         );
       }
 
-      this.logger.log(`Found ${relevantDocuments.length} relevant documents for user ${userId}`);
+      this.logger.log(`Found ${relevantDocuments.length} relevant documents for clientUser ${userId}`);
       return relevantDocuments;
     } catch (error) {
       if (error instanceof DigiLockerException) {
@@ -305,7 +305,7 @@ export class DigiLockerDocumentService {
       const axiosMessage = (error as any)?.message;
       const requestUrl = (error as any)?.config?.url;
 
-      this.logger.error(`Failed to list documents for user ${userId}`, {
+      this.logger.error(`Failed to list documents for clientUser ${userId}`, {
         status,
         data,
         axiosCode,
@@ -316,7 +316,7 @@ export class DigiLockerDocumentService {
       // Handle specific HTTP errors
       if ((error as any).response?.status === 401) {
         throw new DigiLockerException(
-          'DigiLocker token expired or invalid. User must re-authorize.',
+          'DigiLocker token expired or invalid. ClientUser must re-authorize.',
           401,
           { userId, error: DigiLockerErrorCode.TOKEN_INVALID }
         );
@@ -344,7 +344,7 @@ export class DigiLockerDocumentService {
    *
    * Downloads a specific document from DigiLocker and uploads it to MinIO.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @param documentUri - DigiLocker document URI
    * @param documentType - Internal document type (PAN or AADHAAR)
    * @returns Promise<string> - MinIO object path
@@ -513,14 +513,14 @@ export class DigiLockerDocumentService {
       const filename = this.extractFilenameFromHeaders(contentDisposition) ||
                       this.generateFilenameFromUri(documentUri, this.getExtensionFromMimeType(contentType));
 
-      // Get user's client ID for multi-tenant storage
-      const user = await this.prisma.user.findUnique({
+      // Get clientUser's client ID for multi-tenant storage
+      const clientUser = await this.prisma.clientUser.findUnique({
         where: { id: userId },
         select: { clientId: true },
       });
 
-      if (!user) {
-        throw new DigiLockerException('User not found', 404, { userId });
+      if (!clientUser) {
+        throw new DigiLockerException('ClientUser not found', 404, { userId });
       }
 
       // Upload to MinIO using StorageService
@@ -537,12 +537,12 @@ export class DigiLockerDocumentService {
 
       const objectPath = await this.storageService.uploadDocument(
         documentType,
-        user.clientId,
+        clientUser.clientId,
         userId,
         uploadDto
       );
 
-      this.logger.log(`Successfully fetched and stored document for user ${userId}: ${objectPath}`);
+      this.logger.log(`Successfully fetched and stored document for clientUser ${userId}: ${objectPath}`);
       return objectPath;
     } catch (error) {
       if (error instanceof DigiLockerException) {
@@ -569,13 +569,13 @@ export class DigiLockerDocumentService {
       }
 
       this.logger.error(
-        `Failed to fetch document for user ${userId} (status=${status ?? 'n/a'} code=${axiosCode ?? 'n/a'} url=${requestUrl ?? 'n/a'} msg=${axiosMessage ?? 'n/a'} data=${dataSnippet || '(none)'})`
+        `Failed to fetch document for clientUser ${userId} (status=${status ?? 'n/a'} code=${axiosCode ?? 'n/a'} url=${requestUrl ?? 'n/a'} msg=${axiosMessage ?? 'n/a'} data=${dataSnippet || '(none)'})`
       );
 
       // Handle DigiLocker API errors
       if ((error as any).response?.status === 401) {
         throw new DigiLockerException(
-          'DigiLocker token expired or invalid. User must re-authorize.',
+          'DigiLocker token expired or invalid. ClientUser must re-authorize.',
           401,
           { userId, documentUri, error: DigiLockerErrorCode.TOKEN_INVALID }
         );
@@ -620,7 +620,7 @@ export class DigiLockerDocumentService {
    *
    * Retrieves Aadhaar demographic data from DigiLocker XML endpoint.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Promise<DigiLockerAadhaarData> - Parsed Aadhaar demographic data
    *
    * @throws DigiLockerException if XML fetch or parsing fails
@@ -643,15 +643,15 @@ export class DigiLockerDocumentService {
       // Parse XML to extract demographic data
       const parsedData = await this.parseAadhaarXml(xmlData);
 
-      this.logger.log(`Successfully fetched Aadhaar XML for user ${userId}`);
+      this.logger.log(`Successfully fetched Aadhaar XML for clientUser ${userId}`);
       return parsedData;
     } catch (error) {
-      this.logger.error(`Failed to fetch Aadhaar XML for user ${userId}`, error);
+      this.logger.error(`Failed to fetch Aadhaar XML for clientUser ${userId}`, error);
 
       // Handle DigiLocker API errors
       if ((error as any).response?.status === 401) {
         throw new DigiLockerException(
-          'DigiLocker token expired or invalid. User must re-authorize.',
+          'DigiLocker token expired or invalid. ClientUser must re-authorize.',
           401,
           { userId, error: DigiLockerErrorCode.TOKEN_INVALID }
         );

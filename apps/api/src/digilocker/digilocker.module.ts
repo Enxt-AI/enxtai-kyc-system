@@ -12,12 +12,12 @@ import { DigiLockerAuthController } from './digilocker-auth.controller';
  * DigiLocker Integration Module
  *
  * Provides DigiLocker OAuth 2.0 authentication and document fetching capabilities.
- * Enables users to fetch KYC documents directly from their DigiLocker accounts.
+ * Enables clientUsers to fetch KYC documents directly from their DigiLocker accounts.
  *
  * @remarks
  * ## Purpose
  * Integrates with DigiLocker API (via API Setu) to:
- * - Authenticate users via OAuth 2.0 flow
+ * - Authenticate clientUsers via OAuth 2.0 flow
  * - Fetch PAN and Aadhaar documents from DigiLocker
  * - Extract demographic data from Aadhaar XML
  * - Store fetched documents in MinIO for OCR processing

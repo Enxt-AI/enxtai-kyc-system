@@ -6,7 +6,7 @@
  *
  * @remarks
  * Webhook events are sent to the client's configured webhook URL with an HMAC-SHA256
- * signature for verification. All events include the KYC session ID, external user ID,
+ * signature for verification. All events include the KYC session ID, external clientUser ID,
  * and current status in the payload.
  *
  * @see WebhookPayload for the standardized payload structure
@@ -22,7 +22,7 @@ export enum WebhookEvent {
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `status`: Will be `DOCUMENTS_UPLOADED`
    *
    * @example
@@ -52,7 +52,7 @@ export enum WebhookEvent {
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `status`: Either `FACE_VERIFIED` or `PENDING_REVIEW`
    * - `extractedData`: OCR results from PAN and Aadhaar documents
    * - `verificationScores`: Face match and liveness detection scores
@@ -87,14 +87,14 @@ export enum WebhookEvent {
    * Triggered when admin manually approves or rejects a submission
    *
    * @remarks
-   * This event is sent when an admin user takes manual action on a KYC submission,
+   * This event is sent when an admin clientUser takes manual action on a KYC submission,
    * changing the status to `VERIFIED` (approval) or `REJECTED` (rejection). This
    * typically happens for submissions in `PENDING_REVIEW` status or when admin
    * overrides an auto-approved submission.
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `status`: Either `VERIFIED` or `REJECTED`
    * - `rejectionReason`: Included only if status is `REJECTED`
    *
@@ -144,12 +144,12 @@ export enum WebhookEvent {
    * Triggered when DigiLocker document fetch is initiated
    *
    * @remarks
-   * This event is sent when a user initiates document fetch from DigiLocker.
+   * This event is sent when a clientUser initiates document fetch from DigiLocker.
    * Indicates that the fetch process has started but documents are not yet available.
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `documentTypes`: Array of document types being fetched
    *
    * @example
@@ -178,7 +178,7 @@ export enum WebhookEvent {
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `documentsFetched`: Array of document types successfully fetched
    * - `documentUrls`: Object with MinIO URLs for fetched documents
    *
@@ -210,7 +210,7 @@ export enum WebhookEvent {
    *
    * Payload includes:
    * - `kycSessionId`: The KYC submission ID (may be null if error occurred early)
-   * - `externalUserId`: Client's user identifier
+   * - `externalUserId`: Client's clientUser identifier
    * - `documentTypes`: Array of document types that were requested
    * - `error`: Error message describing the failure
    *

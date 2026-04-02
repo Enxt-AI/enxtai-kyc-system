@@ -8,7 +8,7 @@ import { IsString, IsEmail, IsOptional, IsUrl, MinLength, IsArray } from 'class-
  * @remarks
  * **Validation Rules**:
  * - name: Required, min 2 characters (organization name)
- * - email: Required, valid email format (for default admin user)
+ * - email: Required, valid email format (for default admin clientUser)
  * - webhookUrl: Optional, must be HTTPS URL if provided
  * - webhookSecret: Optional, min 16 characters if provided
  *
@@ -17,8 +17,8 @@ import { IsString, IsEmail, IsOptional, IsUrl, MinLength, IsArray } from 'class-
  * 2. Generate API key (SHA-256 hash + plaintext)
  * 3. Create Client record in database
  * 4. Create MinIO buckets via StorageService.createClientBuckets()
- * 5. Generate temporary password for default admin user
- * 6. Create ClientUser record (bcrypt hash password)
+ * 5. Generate temporary password for default admin clientUser
+ * 6. Create User record (bcrypt hash password)
  * 7. Return plaintext API key and password (show once)
  *
  * **Security**:
@@ -32,7 +32,7 @@ export class CreateClientDto {
   name!: string; // Organization name (e.g., "SMC Private Wealth")
 
   @IsEmail()
-  email!: string; // Email for default admin user
+  email!: string; // Email for default admin clientUser
 
   @IsOptional()
   @IsUrl({ protocols: ['https', 'http'], require_protocol: true, require_tld: false })

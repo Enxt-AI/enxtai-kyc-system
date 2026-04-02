@@ -32,7 +32,7 @@ import { PinoLogger } from 'nestjs-pino';
  * **Error Codes**:
  * - VALIDATION_ERROR: 400 - Invalid request data or missing required fields
  * - UNAUTHORIZED: 401 - Invalid or missing API key
- * - FORBIDDEN: 403 - Access denied for current client/user
+ * - FORBIDDEN: 403 - Access denied for current client/clientUser
  * - NOT_FOUND: 404 - Resource not found
  * - DOCUMENT_UPLOAD_FAILED: 400 - File upload failed (size, type, corruption)
  * - OCR_EXTRACTION_FAILED: 422 - Unable to extract data from document
@@ -140,7 +140,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       userId: (request as any).userId,
       method: request.method,
       url: request.url,
-      userAgent: request.headers['user-agent'],
+      userAgent: request.headers['clientUser-agent'],
       ip: request.ip,
       statusCode: status,
       errorCode,

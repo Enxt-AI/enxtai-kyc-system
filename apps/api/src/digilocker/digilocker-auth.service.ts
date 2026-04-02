@@ -17,7 +17,7 @@ import { Prisma } from '@prisma/client';
  * @remarks
  * **OAuth 2.0 Flow**:
  * 1. Generate authorization URL with PKCE challenge
- * 2. User authorizes application in DigiLocker
+ * 2. ClientUser authorizes application in DigiLocker
  * 3. Exchange authorization code for access token
  * 4. Store tokens securely in database
  * 5. Refresh tokens automatically before expiry
@@ -54,9 +54,9 @@ export class DigiLockerAuthService {
    * Creates DigiLocker OAuth 2.0 authorization URL with PKCE parameters.
    * Stores code verifier in memory for later token exchange.
    *
-   * @param userId - UUID of the user initiating authorization
+   * @param userId - UUID of the clientUser initiating authorization
    * @param state - Optional custom state parameter (defaults to userId)
-   * @returns Promise<string> - Complete authorization URL for user redirection
+   * @returns Promise<string> - Complete authorization URL for clientUser redirection
    *
    * @throws DigiLockerException if URL generation fails
    */
@@ -114,10 +114,10 @@ export class DigiLockerAuthService {
       this.logger.log(`Scope parameter: "${config.scope}"`);
       this.logger.log(`=====================================`);
 
-      this.logger.log(`Generated authorization URL for user ${userId}`);
+      this.logger.log(`Generated authorization URL for clientUser ${userId}`);
       return authorizationUrl;
     } catch (error) {
-      this.logger.error(`Failed to generate authorization URL for user ${userId}`, error);
+      this.logger.error(`Failed to generate authorization URL for clientUser ${userId}`, error);
       throw new DigiLockerException('Failed to generate authorization URL', undefined, { userId, error: (error as Error).message });
     }
   }
@@ -129,7 +129,7 @@ export class DigiLockerAuthService {
    * Stores tokens securely in database for future API calls.
    *
    * @param code - Authorization code from DigiLocker callback
-   * @param userId - UUID of the user (extracted from state parameter)
+   * @param userId - UUID of the clientUser (extracted from state parameter)
    * @returns Promise<DigiLockerTokenResponse> - Token response with access details
    *
    * @throws DigiLockerException if token exchange fails
@@ -229,14 +229,14 @@ export class DigiLockerAuthService {
       this.codeVerifiers.delete(state);
       this.stateToUserId.delete(state);
 
-      this.logger.log(`Successfully exchanged code for tokens for user ${userId}`);
+      this.logger.log(`Successfully exchanged code for tokens for clientUser ${userId}`);
       return { tokenResponse: tokenData, userId };
     } catch (error) {
-      this.logger.error(`Failed to exchange code for token for user ${userId}`, error);
+      this.logger.error(`Failed to exchange code for token for clientUser ${userId}`, error);
 
-      // Provide a clearer error when persistence fails due to missing user/tenant row.
+      // Provide a clearer error when persistence fails due to missing clientUser/tenant row.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-        throw new DigiLockerException('Failed to store DigiLocker token (missing user record)', undefined, {
+        throw new DigiLockerException('Failed to store DigiLocker token (missing clientUser record)', undefined, {
           userId,
           state,
           prismaCode: error.code,
@@ -267,7 +267,7 @@ export class DigiLockerAuthService {
    * Refreshes expired access token using refresh token.
    * Updates stored tokens in database.
    *
-   * @param userId - UUID of the user whose token needs refresh
+   * @param userId - UUID of the clientUser whose token needs refresh
    * @returns Promise<DigiLockerTokenResponse> - Updated token response
    *
    * @throws DigiLockerException if refresh fails or no refresh token available
@@ -282,7 +282,7 @@ export class DigiLockerAuthService {
       });
 
       if (!existingToken || !existingToken.refreshToken) {
-        throw new DigiLockerException('No refresh token available for user', undefined, { userId });
+        throw new DigiLockerException('No refresh token available for clientUser', undefined, { userId });
       }
 
       // Build refresh request body
@@ -319,7 +319,7 @@ export class DigiLockerAuthService {
         },
       });
 
-      this.logger.log(`Successfully refreshed access token for user ${userId}`);
+      this.logger.log(`Successfully refreshed access token for clientUser ${userId}`);
       return tokenData;
     } catch (error) {
       const status = (error as any)?.response?.status;
@@ -329,7 +329,7 @@ export class DigiLockerAuthService {
       const requestUrl = (error as any)?.config?.url;
 
       this.logger.error(
-        `Failed to refresh access token for user ${userId}`,
+        `Failed to refresh access token for clientUser ${userId}`,
         {
           status,
           data,
@@ -339,12 +339,12 @@ export class DigiLockerAuthService {
         }
       );
 
-      // If refresh fails, delete the token (user needs to re-authorize)
+      // If refresh fails, delete the token (clientUser needs to re-authorize)
       if ((error as any).response?.data?.error === 'invalid_grant') {
         await this.prisma.digiLockerToken.deleteMany({
           where: { userId },
         });
-        throw new DigiLockerException('Refresh token expired, user must re-authorize', undefined, { userId });
+        throw new DigiLockerException('Refresh token expired, clientUser must re-authorize', undefined, { userId });
       }
 
       // Handle other OAuth errors
@@ -367,7 +367,7 @@ export class DigiLockerAuthService {
    * Returns a valid access token, refreshing if necessary.
    * Ensures token is not expired before returning.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Promise<string> - Valid access token
    *
    * @throws DigiLockerException if no valid token available
@@ -379,7 +379,7 @@ export class DigiLockerAuthService {
     });
 
     if (!token) {
-      throw new DigiLockerException('User not authorized with DigiLocker', undefined, { userId });
+      throw new DigiLockerException('ClientUser not authorized with DigiLocker', undefined, { userId });
     }
 
     // Check if token is expired or will expire in next 5 minutes
@@ -428,9 +428,9 @@ export class DigiLockerAuthService {
    * Revoke Token
    *
    * Revokes DigiLocker authorization and deletes stored tokens.
-   * Used when user wants to disconnect DigiLocker integration.
+   * Used when clientUser wants to disconnect DigiLocker integration.
    *
-   * @param userId - UUID of the user
+   * @param userId - UUID of the clientUser
    * @returns Promise<void>
    */
   async revokeToken(userId: string): Promise<void> {
@@ -439,9 +439,9 @@ export class DigiLockerAuthService {
         where: { userId },
       });
 
-      this.logger.log(`Successfully revoked DigiLocker authorization for user ${userId}`);
+      this.logger.log(`Successfully revoked DigiLocker authorization for clientUser ${userId}`);
     } catch (error) {
-      this.logger.error(`Failed to revoke token for user ${userId}`, error);
+      this.logger.error(`Failed to revoke token for clientUser ${userId}`, error);
       // Don't throw error for revocation failures (idempotent operation)
     }
   }

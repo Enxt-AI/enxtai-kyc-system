@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 /**
  * Authentication Service
  *
- * Handles client user authentication and credential validation.
+ * Handles client clientUser authentication and credential validation.
  *
  * @remarks
  * **Security Features**:
@@ -15,9 +15,9 @@ import { randomUUID } from 'crypto';
  * - Password never returned in response (excluded from SELECT)
  *
  * **Authentication Flow**:
- * 1. Lookup user by email
+ * 1. Lookup clientUser by email
  * 2. Compare provided password with bcrypt hash
- * 3. Return user data without password field
+ * 3. Return clientUser data without password field
  * 4. Throw UnauthorizedException on any failure
  *
  * @see {@link LoginDto} for request validation
@@ -31,9 +31,9 @@ export class AuthService {
   private resetRateLimit = new Map<string, { count: number; resetAt: number }>();
 
   /**
-   * Validate Client User Credentials
+   * Validate Client ClientUser Credentials
    *
-   * Authenticates a client user by email and password using bcrypt comparison.
+   * Authenticates a client clientUser by email and password using bcrypt comparison.
    *
    * @remarks
    * **Security Considerations**:
@@ -43,27 +43,27 @@ export class AuthService {
    * - Salt rounds configured in database (10-12 recommended)
    *
    * **Error Handling**:
-   * - User not found → UnauthorizedException
+   * - ClientUser not found → UnauthorizedException
    * - Invalid password → UnauthorizedException
    * - Both cases return same error message (security best practice)
    *
-   * @param email - User's email address (case-sensitive)
+   * @param email - ClientUser's email address (case-sensitive)
    * @param password - Plain text password to verify
-   * @returns ClientUser object without password field
+   * @returns User object without password field
    * @throws UnauthorizedException if credentials invalid
    *
    * @example
    * ```typescript
-   * const user = await authService.validateClientUser(
-   *   'user@example.com',
+   * const clientUser = await authService.validateClientUser(
+   *   'clientUser@example.com',
    *   'securePassword123'
    * );
    * // Returns: { id: '...', email: '...', clientId: '...', role: 'VIEWER' }
    * ```
    */
   async validateClientUser(email: string, password: string) {
-    // Find user by email
-    const user = await this.prisma.clientUser.findUnique({
+    // Find clientUser by email
+    const clientUser = await this.prisma.user.findUnique({
       where: { email },
       select: {
         id: true,
@@ -77,55 +77,55 @@ export class AuthService {
       },
     });
 
-    // User not found - return generic error (don't reveal email existence)
-    if (!user) {
+    // ClientUser not found - return generic error (don't reveal email existence)
+    if (!clientUser) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Compare password with bcrypt hash (timing-safe comparison)
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, clientUser.password);
 
     // Invalid password - return generic error
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Return user without password field (security best practice)
-    const { password: _, ...userWithoutPassword } = user;
+    // Return clientUser without password field (security best practice)
+    const { password: _, ...userWithoutPassword } = clientUser;
     return userWithoutPassword;
   }
 
   /**
-   * Find Client User by ID
+   * Find Client ClientUser by ID
    *
-   * Retrieves client user for session refresh and validation.
-   * Used by NextAuth to fetch user data when validating JWT tokens.
+   * Retrieves client clientUser for session refresh and validation.
+   * Used by NextAuth to fetch clientUser data when validating JWT tokens.
    *
    * @remarks
    * **Usage**:
-   * - Session refresh (verify user still exists)
-   * - Token validation (ensure user not deleted/disabled)
+   * - Session refresh (verify clientUser still exists)
+   * - Token validation (ensure clientUser not deleted/disabled)
    * - Profile data retrieval
    *
    * **Security**:
    * - Password field excluded from response
-   * - Returns null if user not found (handle gracefully in caller)
+   * - Returns null if clientUser not found (handle gracefully in caller)
    *
-   * @param id - User UUID
-   * @returns ClientUser object without password, or null if not found
+   * @param id - ClientUser UUID
+   * @returns User object without password, or null if not found
    *
    * @example
    * ```typescript
-   * const user = await authService.findClientUserById('user-uuid-123');
-   * if (user) {
-   *   // User exists, session valid
+   * const clientUser = await authService.findClientUserById('clientUser-uuid-123');
+   * if (clientUser) {
+   *   // ClientUser exists, session valid
    * } else {
-   *   // User deleted, invalidate session
+   *   // ClientUser deleted, invalidate session
    * }
    * ```
    */
   async findClientUserById(id: string) {
-    return this.prisma.clientUser.findUnique({
+    return this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
@@ -142,8 +142,8 @@ export class AuthService {
   /**
    * Validate Super Admin Credentials
    *
-   * Authenticates a Super Admin user by email and password using bcrypt comparison.
-   * Only allows users with SUPER_ADMIN role and null clientId.
+   * Authenticates a Super Admin clientUser by email and password using bcrypt comparison.
+   * Only allows clientUsers with SUPER_ADMIN role and null clientId.
    *
    * @remarks
    * **Security Considerations**:
@@ -154,19 +154,19 @@ export class AuthService {
    * - Salt rounds configured in database (10-12 recommended)
    *
    * **Error Handling**:
-   * - User not found → UnauthorizedException
+   * - ClientUser not found → UnauthorizedException
    * - Invalid password → UnauthorizedException
-   * - Non-Super Admin user → UnauthorizedException
+   * - Non-Super Admin clientUser → UnauthorizedException
    * - All cases return same error message (security best practice)
    *
    * @param email - Super Admin's email address (case-sensitive)
    * @param password - Plain text password to verify
-   * @returns ClientUser object without password field (SUPER_ADMIN only)
+   * @returns User object without password field (SUPER_ADMIN only)
    * @throws UnauthorizedException if credentials invalid or not Super Admin
    *
    * @example
    * ```typescript
-   * const user = await authService.validateSuperAdmin(
+   * const clientUser = await authService.validateSuperAdmin(
    *   'admin@example.com',
    *   'securePassword123'
    * );
@@ -174,8 +174,8 @@ export class AuthService {
    * ```
    */
   async validateSuperAdmin(email: string, password: string) {
-    // Find user by email
-    const user = await this.prisma.clientUser.findUnique({
+    // Find clientUser by email
+    const clientUser = await this.prisma.user.findUnique({
       where: { email },
       select: {
         id: true,
@@ -188,21 +188,21 @@ export class AuthService {
       },
     });
 
-    // User not found or not a Super Admin - return generic error
-    if (!user || user.role !== 'SUPER_ADMIN' || user.clientId !== null) {
+    // ClientUser not found or not a Super Admin - return generic error
+    if (!clientUser || clientUser.role !== 'SUPER_ADMIN' || clientUser.clientId !== null) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Compare password with bcrypt hash (timing-safe comparison)
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, clientUser.password);
 
     // Invalid password - return generic error
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Return user without password field (security best practice)
-    const { password: _, ...userWithoutPassword } = user;
+    // Return clientUser without password field (security best practice)
+    const { password: _, ...userWithoutPassword } = clientUser;
     return userWithoutPassword;
   }
 
@@ -246,7 +246,7 @@ export class AuthService {
    * Creates a secure reset token for password reset flow.
    * Uses cryptographically secure UUID with 1-hour expiry.
    *
-   * @param userId - User ID to generate token for
+   * @param userId - ClientUser ID to generate token for
    * @returns Plaintext token for email link (UUID format)
    * @throws InternalServerErrorException if database update fails
    *
@@ -267,7 +267,7 @@ export class AuthService {
       const token = randomUUID();
       const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
-      await this.prisma.clientUser.update({
+      await this.prisma.user.update({
         where: { id: userId },
         data: {
           resetToken: token,
@@ -284,19 +284,19 @@ export class AuthService {
   /**
    * Validate Password Reset Token
    *
-   * Validates a reset token and returns the associated user if valid.
+   * Validates a reset token and returns the associated clientUser if valid.
    * Checks token existence, format, and expiry.
    *
    * @param token - Reset token from magic link
-   * @returns ClientUser object without password if token valid, null otherwise
+   * @returns User object without password if token valid, null otherwise
    * @throws BadRequestException if token format invalid
    *
    * @remarks
    * **Validation Logic**:
    * 1. Check token is valid UUID format
-   * 2. Query database for user with matching resetToken
+   * 2. Query database for clientUser with matching resetToken
    * 3. Verify resetTokenExpiry > current time (not expired)
-   * 4. Return user data without password field
+   * 4. Return clientUser data without password field
    *
    * **Security**:
    * - Timing-safe comparison (database handles this)
@@ -310,7 +310,7 @@ export class AuthService {
         throw new BadRequestException('Invalid reset token format');
       }
 
-      const user = await this.prisma.clientUser.findFirst({
+      const clientUser = await this.prisma.user.findFirst({
         where: {
           resetToken: token,
           resetTokenExpiry: {
@@ -328,7 +328,7 @@ export class AuthService {
         },
       });
 
-      return user;
+      return clientUser;
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
@@ -338,12 +338,12 @@ export class AuthService {
   }
 
   /**
-   * Update User Password
+   * Update ClientUser Password
    *
-   * Updates a user's password with proper hashing and flag management.
+   * Updates a clientUser's password with proper hashing and flag management.
    * Used for both reset flow and authenticated password changes.
    *
-   * @param userId - User ID to update password for
+   * @param userId - ClientUser ID to update password for
    * @param newPassword - Plain text new password
    * @param clearResetToken - Whether to clear reset token fields (default: true)
    * @param currentPassword - Current password for verification (optional)
@@ -376,16 +376,16 @@ export class AuthService {
     try {
       // If current password is provided, verify it first
       if (currentPassword) {
-        const user = await this.prisma.clientUser.findUnique({
+        const clientUser = await this.prisma.user.findUnique({
           where: { id: userId },
           select: { password: true },
         });
 
-        if (!user) {
-          throw new BadRequestException('User not found');
+        if (!clientUser) {
+          throw new BadRequestException('ClientUser not found');
         }
 
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, clientUser.password);
         if (!isCurrentPasswordValid) {
           throw new BadRequestException('Current password is incorrect');
         }
@@ -403,7 +403,7 @@ export class AuthService {
         updateData.resetTokenExpiry = null;
       }
 
-      await this.prisma.clientUser.update({
+      await this.prisma.user.update({
         where: { id: userId },
         data: updateData,
       });
@@ -434,8 +434,8 @@ export class AuthService {
    *
    * **Flow**:
    * 1. Check rate limit (throws if exceeded)
-   * 2. Find user by email (case-insensitive)
-   * 3. If user exists: generate reset token
+   * 2. Find clientUser by email (case-insensitive)
+   * 3. If clientUser exists: generate reset token
    * 4. Return success (token used for email link generation)
    *
    * **Email Integration** (Future Phase):
@@ -448,19 +448,19 @@ export class AuthService {
     this.checkRateLimit(email);
 
     try {
-      // Find user by email (case-insensitive)
-      const user = await this.prisma.clientUser.findUnique({
+      // Find clientUser by email (case-insensitive)
+      const clientUser = await this.prisma.user.findUnique({
         where: { email: email.toLowerCase() },
         select: { id: true, email: true },
       });
 
-      if (!user) {
+      if (!clientUser) {
         // Return generic success to prevent email enumeration
         return { success: true };
       }
 
       // Generate reset token
-      const token = await this.generateResetToken(user.id);
+      const token = await this.generateResetToken(clientUser.id);
 
       // For MVP: log the reset link (future: send email)
       const resetPath = portal === 'admin' ? '/admin/reset-password' : '/client/reset-password';
