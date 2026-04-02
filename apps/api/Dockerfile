@@ -76,6 +76,7 @@ RUN apk add --no-cache \
 	pango \
 	giflib \
 	pixman \
+	librsvg \
 	curl \
 	openssl
 
