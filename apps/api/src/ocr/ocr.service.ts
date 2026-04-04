@@ -221,10 +221,14 @@ export class OcrService {
     const fullName = this.deriveNameFromLines(lines);
     const dateOfBirth = this.extractDobFromLines(lines);
 
+    const genderMatch = ocrText.match(/GENDER\s+([A-Za-z]+)/i);
+    const gender = genderMatch ? genderMatch[1].toUpperCase() : undefined;
+
     return {
       panNumber,
       fullName,
       dateOfBirth,
+      gender,
       rawText: ocrText.trim(),
       confidence,
     };
@@ -380,6 +384,15 @@ export class OcrService {
   }
 
   private deriveNameFromLines(lines: string[]): string | undefined {
+    // 1. Check explicitly for structured labels (e.g. DigiLocker format)
+    for (const line of lines) {
+      const match = line.match(/^NAME\s+(.*)/i);
+      if (match && match[1].trim() !== '') {
+        return match[1].trim();
+      }
+    }
+
+    // 2. Fallback to naive logic
     const blacklist = ['income', 'tax', 'department', 'authority', 'government', 'permanent', 'account', 'number', 'unique', 'identification'];
     return lines.find((line) => {
       const lower = line.toLowerCase();
@@ -392,6 +405,13 @@ export class OcrService {
   }
 
   private extractDobFromLines(lines: string[]): string | undefined {
+    // 1. Check explicitly for structured labels (e.g. DigiLocker format)
+    for (const line of lines) {
+       const explicitMatch = line.match(/DATE OF BIRTH\s+([\d-]+)/i);
+       if (explicitMatch) return explicitMatch[1];
+    }
+    
+    // 2. Fallback to default pattern search across all lines
     for (const line of lines) {
       for (const pattern of DOB_PATTERNS) {
         const match = line.match(pattern);

@@ -2,6 +2,7 @@ export interface PanOcrResult {
   panNumber: string;
   fullName?: string;
   dateOfBirth?: string;
+  gender?: string;
   rawText: string;
   confidence: number;
 }
