@@ -119,7 +119,7 @@ export class InitiateKycResponseDto {
     example: 'photo',
     nullable: true,
   })
-  uiStep?: string | null;
+  uiStep?: number | null;
 
   /**
    * Total number of steps in the KYC flow. Always 4.
@@ -283,7 +283,7 @@ export class KycStatusResponseDto {
     example: 'photo',
     nullable: true,
   })
-  uiStep?: string | null;
+  uiStep?: number | null;
 
   /**
    * Total number of steps in the KYC flow. Always 4.

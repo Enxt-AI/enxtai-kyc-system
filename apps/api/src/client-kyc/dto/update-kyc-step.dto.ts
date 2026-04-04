@@ -1,13 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsNumber, IsNotEmpty } from 'class-validator';
 
 export class UpdateKycStepDto {
   @ApiProperty({
-    description: 'The progressive UI step the user is currently on (e.g. upload, photo, signature, verify)',
-    example: 'photo',
+    description: 'The progressive UI step the user is currently on (1, 2, 3, 4)',
+    example: 1,
   })
-  @IsString()
+  @IsNumber()
   @IsNotEmpty()
-  step!: string;
+  step!: number;
 }
 

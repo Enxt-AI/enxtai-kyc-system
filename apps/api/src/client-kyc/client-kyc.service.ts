@@ -593,7 +593,7 @@ export class ClientKycService {
   async updateUiStep(
     clientId: string,
     kycSessionId: string,
-    step: string,
+    step: number,
   ): Promise<{ success: boolean }> {
     const submission = await this.prisma.kYCSubmission.findUnique({
       where: { id: kycSessionId },
