@@ -386,9 +386,11 @@ export class OcrService {
   private deriveNameFromLines(lines: string[]): string | undefined {
     // 1. Check explicitly for structured labels (e.g. DigiLocker format)
     for (const line of lines) {
-      const match = line.match(/^NAME\s+(.*)/i);
+      // Look for "NAME" explicitly but unbound by line start to bypass OCR invisible control chars
+      const match = line.match(/NAME[\s:]+(.*)/i);
       if (match && match[1].trim() !== '') {
-        return match[1].trim();
+        // Just extract everything after "NAME " 
+        return match[1].replace(/^[^\w\s]+/, '').trim(); // strip leading symbols if any got caught
       }
     }
 
