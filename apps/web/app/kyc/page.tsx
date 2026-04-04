@@ -2,6 +2,9 @@
 
 import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSelector, useDispatch } from "react-redux";
+import { RootState } from "@/lib/store/store";
+import { setCurrentStep, setUserId as setReduxUserId } from "@/lib/store/features/kycSlice";
 import { ChevronLeft } from "lucide-react";
 import { KycStepper } from "@/components/KycStepper";
 import { UploadStep } from "@/components/kyc/UploadStep";
@@ -23,7 +26,10 @@ function KycFlowContent() {
 
   const [isReady, setIsReady] = useState(false);
   const [userId, setUserId] = useState<string>('');
-  const [currentStep, setCurrentStep] = useState<KycStepTab>('upload');
+  
+  const dispatch = useDispatch();
+  const currentStep = useSelector((state: RootState) => state.kyc.currentStep) as KycStepTab;
+  
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
 
   // Validate API Key and fetch Return URL
@@ -50,18 +56,19 @@ function KycFlowContent() {
     }
 
     if (stepParam && ['upload', 'photo', 'signature', 'verify'].includes(stepParam)) {
-      setCurrentStep(stepParam);
+      dispatch(setCurrentStep(stepParam));
     }
 
     if (rawVerificationId) {
       const trimmedId = rawVerificationId.trim();
       setUserId(trimmedId);
+      dispatch(setReduxUserId(trimmedId));
       localStorage.setItem('kyc_user_id', trimmedId);
       setIsReady(true);
     } else {
       router.replace('/?error=missing_verification_id');
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, dispatch]);
 
   const handleCancelToClient = () => {
     if (!returnUrl) return;
@@ -75,7 +82,7 @@ function KycFlowContent() {
   };
 
   const handleStepChange = async (newStep: KycStepTab) => {
-    setCurrentStep(newStep);
+    dispatch(setCurrentStep(newStep));
     // Persist step in URL so reload doesn't reset it
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('step', newStep);
@@ -134,8 +141,8 @@ function KycFlowContent() {
         <div className="pt-8 px-8 pb-6 flex items-center justify-center relative">
           <button
             onClick={() => {
-              if (currentStep === 'signature') setCurrentStep('photo');
-              else if (currentStep === 'photo') setCurrentStep('upload');
+              if (currentStep === 'signature') dispatch(setCurrentStep('photo'));
+              else if (currentStep === 'photo') dispatch(setCurrentStep('upload'));
             }}
             disabled={currentStep === 'upload'}
             className={`absolute left-8 flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
