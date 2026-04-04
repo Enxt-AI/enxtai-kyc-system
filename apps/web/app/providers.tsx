@@ -20,6 +20,12 @@
  *
  * @see {@link https://nextjs.org/docs/app/building-your-application/configuring/typescript#client-component-type-error Next.js Client Components}
  */
+import StoreProvider from '@/lib/store/StoreProvider';
+
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <StoreProvider>
+      {children}
+    </StoreProvider>
+  );
 }
