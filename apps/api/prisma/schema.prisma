@@ -102,7 +102,7 @@ model KYCSubmission {
   cvlKraStatus         String?
 
   /// The active frontend UI progressive step 
-  uiStep String @default("upload")
+  uiStep Int @default(1)
 
   // Status
   internalStatus  InternalStatus @default(PENDING)

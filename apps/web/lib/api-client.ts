@@ -342,7 +342,7 @@ export function clearKycReturnUrl(): void {
     externalUserId: string,
     email?: string,
     phone?: string,
-  ): Promise<{ kycSessionId: string; status: string; externalUserId: string; uiStep?: string; completedSteps?: string[] }> {
+  ): Promise<{ kycSessionId: string; status: string; externalUserId: string; uiStep?: number; completedSteps?: string[] }> {
     const res = await api.post('/api/v1/kyc/initiate', {
       externalUserId,
       email,
@@ -359,7 +359,7 @@ export function clearKycReturnUrl(): void {
    */
   export async function updateKycUiStep(
     kycSessionId: string,
-    step: string,
+    step: number,
   ): Promise<{ success: boolean }> {
     const res = await api.patch(`/api/v1/kyc/submissions/${kycSessionId}/step`, {
       step,

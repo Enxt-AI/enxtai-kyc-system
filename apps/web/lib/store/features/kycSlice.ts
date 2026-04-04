@@ -1,7 +1,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface KycState {
-  currentStep: string;
+  currentStep: number;
   userId: string | null;
   submissionId: string | null;
   isCompleted: boolean;
@@ -11,7 +11,7 @@ export interface KycState {
 }
 
 const initialState: KycState = {
-  currentStep: 'upload',
+  currentStep: 1,
   userId: null,
   submissionId: null,
   isCompleted: false,
@@ -24,7 +24,7 @@ export const kycSlice = createSlice({
   name: 'kyc',
   initialState,
   reducers: {
-    setCurrentStep: (state, action: PayloadAction<string>) => {
+    setCurrentStep: (state, action: PayloadAction<number>) => {
       state.currentStep = action.payload;
     },
     setUserId: (state, action: PayloadAction<string>) => {
