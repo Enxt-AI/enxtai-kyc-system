@@ -224,6 +224,8 @@ export class OcrService {
     const genderMatch = ocrText.match(/GENDER\s+([A-Za-z]+)/i);
     const gender = genderMatch ? genderMatch[1].toUpperCase() : undefined;
 
+    this.logger.log(`PAN OCR RESULT: fullName="${fullName}", dateOfBirth="${dateOfBirth}", gender="${gender}", panNumber="${panNumber}"`);
+
     return {
       panNumber,
       fullName,
