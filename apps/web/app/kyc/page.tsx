@@ -39,7 +39,14 @@ function KycFlowContent() {
   // Ensure we trim whitespace as requested by user.
   useEffect(() => {
     const rawVerificationId = searchParams.get('verification');
-    const stepParam = searchParams.get('step') as KycStepTab | null;
+    let stepParam = searchParams.get('step') as KycStepTab | null;
+
+    if (!stepParam) {
+      const savedStep = localStorage.getItem('kyc_current_step') as KycStepTab;
+      if (savedStep && ['upload', 'photo', 'signature', 'verify'].includes(savedStep)) {
+        stepParam = savedStep;
+      }
+    }
 
     if (stepParam && ['upload', 'photo', 'signature', 'verify'].includes(stepParam)) {
       setCurrentStep(stepParam);
@@ -66,15 +73,23 @@ function KycFlowContent() {
     window.location.href = target.toString();
   };
 
+  const handleStepChange = (newStep: KycStepTab) => {
+    setCurrentStep(newStep);
+    // Persist step in URL so reload doesn't reset it
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('step', newStep);
+    window.history.replaceState({}, '', currentUrl.toString());
+    localStorage.setItem('kyc_current_step', newStep);
+  };
+
   const renderStep = () => {
     switch (currentStep) {
       case 'upload':
-        return <UploadStep userId={userId} onNext={() => setCurrentStep('photo')} />;
+        return <UploadStep userId={userId} onNext={() => handleStepChange('photo')} />;
       case 'photo':
-        return <PhotoStep userId={userId} onNext={() => setCurrentStep('signature')} />;
+        return <PhotoStep userId={userId} onNext={() => handleStepChange('signature')} />;
       case 'signature':
         return <SignatureStep userId={userId} onNext={() => {
-          // Temporarily route to verify page, or we could render it here.
           router.push('/kyc/verify');
         }} />;
       default:

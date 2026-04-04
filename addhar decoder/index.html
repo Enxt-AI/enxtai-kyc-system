@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aadhaar QR Decoder Premium</title>
+    <meta name="description" content="Securely extract and view information from your Aadhaar card QR code using advanced browser-side scanning.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Aadhaar Decoder</h1>
+            <p>Securely extract information from your Aadhaar QR code</p>
+        </header>
+        
+        <div class="upload-section">
+            <label for="uploadImage" class="upload-label" id="drop-zone">
+                <div class="upload-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                </div>
+                <span>Choose or drop an image</span>
+                <input id="uploadImage" type="file" accept="image/bmp,image/jpeg,image/png,image/gif,image/webp">
+            </label>
+        </div>
+
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Decoding QR...</p>
+        </div>
+
+        <div id="results" class="results-grid hidden">
+            <!-- Results will be injected here via JavaScript -->
+        </div>
+        
+        <div id="error-message" class="error-message hidden">
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/dbr.js"></script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
