@@ -218,11 +218,35 @@ export class OcrService {
       this.logger.warn(`PAN OCR: PAN number not found in text or path. First 500 chars: ${ocrText.slice(0, 500)}`);
       throw new OcrException('PAN number not detected', OcrErrorCode.DATA_EXTRACTION_FAILED);
     }
-    const fullName = this.deriveNameFromLines(lines);
-    const dateOfBirth = this.extractDobFromLines(lines);
 
-    const genderMatch = ocrText.match(/GENDER\s+([A-Za-z]+)/i);
-    const gender = genderMatch ? genderMatch[1].toUpperCase() : undefined;
+    let fullName: string | undefined;
+    let dateOfBirth: string | undefined;
+    let gender: string | undefined;
+
+    // DigiLocker documents have structured labels — parse directly from raw text
+    const isDigiLocker = /PAN VERIFICATION RECORD/i.test(ocrText);
+
+    if (isDigiLocker) {
+      this.logger.log('PAN OCR: DigiLocker document detected, using direct raw-text parsing');
+
+      // Extract NAME directly from raw text (not line-by-line)
+      const nameMatch = ocrText.match(/NAME[ \t]+([A-Za-z][A-Za-z ]+)/);
+      fullName = nameMatch ? nameMatch[1].trim() : undefined;
+
+      // Extract DATE OF BIRTH directly from raw text
+      const dobMatch = ocrText.match(/DATE\s+OF\s+BIRTH\s+([\d\-\/]+)/i);
+      dateOfBirth = dobMatch ? dobMatch[1].trim() : undefined;
+
+      // Extract GENDER directly from raw text
+      const genderMatch = ocrText.match(/GENDER\s+(MALE|FEMALE|OTHER)/i);
+      gender = genderMatch ? genderMatch[1].toUpperCase() : undefined;
+    } else {
+      // Fallback for non-DigiLocker (manually uploaded) PAN cards
+      fullName = this.deriveNameFromLines(lines);
+      dateOfBirth = this.extractDobFromLines(lines);
+      const genderMatch = ocrText.match(/GENDER\s+([A-Za-z]+)/i);
+      gender = genderMatch ? genderMatch[1].toUpperCase() : undefined;
+    }
 
     this.logger.log(`PAN OCR RESULT: fullName="${fullName}", dateOfBirth="${dateOfBirth}", gender="${gender}", panNumber="${panNumber}"`);
 
@@ -391,7 +415,7 @@ export class OcrService {
       // Look for "NAME" explicitly but unbound by line start to bypass OCR invisible control chars
       const match = line.match(/NAME[\s:]+(.*)/i);
       if (match && match[1].trim() !== '') {
-        // Just extract everything after "NAME " 
+        // Just extract everything after "NAME "
         return match[1].replace(/^[^\w\s]+/, '').trim(); // strip leading symbols if any got caught
       }
     }
@@ -414,7 +438,7 @@ export class OcrService {
        const explicitMatch = line.match(/DATE OF BIRTH\s+([\d-]+)/i);
        if (explicitMatch) return explicitMatch[1];
     }
-    
+
     // 2. Fallback to default pattern search across all lines
     for (const line of lines) {
       for (const pattern of DOB_PATTERNS) {
