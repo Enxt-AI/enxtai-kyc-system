@@ -1710,6 +1710,16 @@ export class KycService {
     if (!value) {
       return undefined;
     }
+
+    // Handle DD-MM-YYYY or DD/MM/YYYY (common in Indian documents like PAN, Aadhaar)
+    const ddmmyyyy = value.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})$/);
+    if (ddmmyyyy) {
+      const [, day, month, year] = ddmmyyyy;
+      const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    }
+
+    // Fallback to native Date parsing (handles ISO YYYY-MM-DD etc.)
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   }
