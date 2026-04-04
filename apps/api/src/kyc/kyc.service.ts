@@ -565,6 +565,9 @@ export class KycService {
       },
     });
 
+    // Trigger background OCR immediately upon individual component fetch.
+    this.extractPanDataAndUpdate(updated.id).catch((e) => this.logger.error('Background PAN OCR early-trigger failed', e));
+
     // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
     // in the background so the upload response returns immediately.
     // The .catch() prevents unhandled promise rejections from crashing the process.
@@ -711,6 +714,9 @@ export class KycService {
       },
     });
 
+    // Trigger targeted OCR extraction seamlessly immediately!
+    this.extractAadhaarDataAndUpdate(updated.id).catch((e) => this.logger.error('Background Aadhaar OCR early-trigger failed', e));
+
     // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
     // in the background so the upload response returns immediately.
     // The .catch() prevents unhandled promise rejections from crashing the process.
@@ -782,6 +788,9 @@ export class KycService {
         metadata: { type: 'AADHAAR_BACK', objectPath },
       },
     });
+
+    // Trigger targeted OCR extraction seamlessly immediately!
+    this.extractAadhaarDataAndUpdate(updated.id).catch((e) => this.logger.error('Background Aadhaar OCR early-trigger failed', e));
 
     // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
     // in the background so the upload response returns immediately.
@@ -1330,6 +1339,9 @@ export class KycService {
           }) as any),
         },
       });
+
+      // Instantly run OCR extract routines on DigiLocker artifacts synchronously asynchronously!
+      this.processDigiLockerDocuments(updated.id).catch((e) => this.logger.error('Failed processing DigiLocker OCR sequentially', e));
 
       // Fire-and-forget: trigger webhook + auto-processing in the background.
       // The .catch() prevents unhandled promise rejections from crashing the process.
