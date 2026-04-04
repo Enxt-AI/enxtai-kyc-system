@@ -12,6 +12,7 @@ import {
   getKycReturnUrl,
   clearKycApiKey,
   clearKycReturnUrl,
+  updateKycUiStep,
 } from "@/lib/api-client";
 
 type KycStepTab = 'upload' | 'photo' | 'signature' | 'verify';
@@ -73,19 +74,29 @@ function KycFlowContent() {
     window.location.href = target.toString();
   };
 
-  const handleStepChange = (newStep: KycStepTab) => {
+  const handleStepChange = async (newStep: KycStepTab) => {
     setCurrentStep(newStep);
     // Persist step in URL so reload doesn't reset it
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('step', newStep);
     window.history.replaceState({}, '', currentUrl.toString());
     localStorage.setItem('kyc_current_step', newStep);
+
+    // Sync explicitly to postgres DB
+    const sessionId = localStorage.getItem('kyc_submission_id');
+    if (sessionId) {
+      try {
+        await updateKycUiStep(sessionId, newStep);
+      } catch (e) {
+        // Failing to sync UI step isn't fatal, ignore gracefully.
+      }
+    }
   };
 
   const renderStep = () => {
     switch (currentStep) {
       case 'upload':
-        return <UploadStep userId={userId} onNext={() => handleStepChange('photo')} />;
+        return <UploadStep userId={userId} onNext={() => handleStepChange('photo')} onStateRestored={handleStepChange} />;
       case 'photo':
         return <PhotoStep userId={userId} onNext={() => handleStepChange('signature')} />;
       case 'signature':

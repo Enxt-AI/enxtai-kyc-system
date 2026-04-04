@@ -112,6 +112,16 @@ export class InitiateKycResponseDto {
   currentStep?: string | null;
 
   /**
+   * The explicitly saved frontend UI step layout
+   */
+  @ApiPropertyOptional({
+    description: 'The formally saved frontend UI string mapping',
+    example: 'photo',
+    nullable: true,
+  })
+  uiStep?: string | null;
+
+  /**
    * Total number of steps in the KYC flow. Always 4.
    */
   @ApiPropertyOptional({
@@ -264,6 +274,16 @@ export class KycStatusResponseDto {
     nullable: true,
   })
   currentStep?: string | null;
+
+  /**
+   * The explicitly saved frontend UI step layout
+   */
+  @ApiPropertyOptional({
+    description: 'The formally saved frontend UI string mapping',
+    example: 'photo',
+    nullable: true,
+  })
+  uiStep?: string | null;
 
   /**
    * Total number of steps in the KYC flow. Always 4.

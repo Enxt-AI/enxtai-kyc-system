@@ -277,6 +277,7 @@ export class ClientKycService {
       completedSteps: stepProgress.completedSteps,
       currentStep: stepProgress.currentStep,
       totalSteps: stepProgress.totalSteps,
+      uiStep: submission.uiStep,
     };
   }
 
@@ -530,6 +531,7 @@ export class ClientKycService {
       completedSteps: stepProgress.completedSteps,
       currentStep: stepProgress.currentStep,
       totalSteps: stepProgress.totalSteps,
+      uiStep: submission.uiStep,
     };
   }
 
@@ -579,6 +581,38 @@ export class ClientKycService {
       faceMatchScore: updated.faceMatchScore,
       livenessScore: updated.livenessScore,
     };
+  }
+
+  /**
+   * Update internal UI Step
+   *
+   * @param clientId
+   * @param kycSessionId
+   * @param step
+   */
+  async updateUiStep(
+    clientId: string,
+    kycSessionId: string,
+    step: string,
+  ): Promise<{ success: boolean }> {
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: kycSessionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('KYC session not found');
+    }
+
+    if (submission.clientId !== clientId) {
+      throw new ForbiddenException('Access denied to this KYC session');
+    }
+
+    await this.prisma.kYCSubmission.update({
+      where: { id: kycSessionId },
+      data: { uiStep: step },
+    });
+
+    return { success: true };
   }
 
   /**

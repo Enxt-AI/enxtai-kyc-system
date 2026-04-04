@@ -16,9 +16,10 @@ import DigiLockerStatus from "@/components/DigiLockerStatus";
 interface UploadStepProps {
   userId: string;
   onNext: () => void;
+  onStateRestored?: (step: 'upload' | 'photo' | 'signature' | 'verify') => void;
 }
 
-export function UploadStep({ userId, onNext }: UploadStepProps) {
+export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps) {
   const [kycInitiated, setKycInitiated] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   
@@ -56,6 +57,13 @@ export function UploadStep({ userId, onNext }: UploadStepProps) {
         setSubmissionId(result.kycSessionId);
         localStorage.setItem("kyc_submission_id", result.kycSessionId);
         setKycInitiated(true);
+        
+        // If the backend has a formally saved uiStep, fast-forward the frontend to it.
+        if (result.uiStep && ['upload', 'photo', 'signature', 'verify'].includes(result.uiStep)) {
+          if (onStateRestored) {
+            onStateRestored(result.uiStep as any);
+          }
+        }
       } catch (error: any) {
         console.error("Failed to initiate KYC session:", error);
         if (error?.response?.status === 409) {
@@ -64,7 +72,7 @@ export function UploadStep({ userId, onNext }: UploadStepProps) {
       }
     };
     initSession();
-  }, [userId, kycInitiated]);
+  }, [userId, kycInitiated, onStateRestored]);
 
   useEffect(() => {
     if (submissionId) {

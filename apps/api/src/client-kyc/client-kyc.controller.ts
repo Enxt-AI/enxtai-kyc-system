@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Patch,
   Get,
   Head,
   Body,
@@ -23,6 +24,7 @@ import { FastifyRequest } from 'fastify';
 import { ClientKycService } from './client-kyc.service';
 import { Client } from '../common/decorators/tenant.decorator';
 import { InitiateKycDto } from './dto/initiate-kyc.dto';
+import { UpdateKycStepDto } from './dto/update-kyc-step.dto';
 import {
   InitiateKycResponseDto,
   KycStatusResponseDto,
@@ -573,6 +575,24 @@ export class ClientKycController {
     @Param('kycSessionId') kycSessionId: string,
   ): Promise<KycStatusResponseDto> {
     return await this.clientKycService.getKycStatus(client.id, kycSessionId);
+  }
+
+  /**
+   * PATCH /v1/kyc/submissions/:id/step
+   *
+   * Updates the UI step tracking in the database.
+   */
+  @Patch('submissions/:id/step')
+  @ApiOperation({
+    summary: 'Update KYC UI Step',
+    description: 'Silently updates the active UI step inside the database.',
+  })
+  async updateUiStep(
+    @Client() client: any,
+    @Param('id') kycSessionId: string,
+    @Body() dto: UpdateKycStepDto,
+  ) {
+    return this.clientKycService.updateUiStep(client.id, kycSessionId, dto.step);
   }
 
   /**

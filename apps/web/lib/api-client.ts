@@ -342,11 +342,27 @@ export function clearKycReturnUrl(): void {
     externalUserId: string,
     email?: string,
     phone?: string,
-  ): Promise<{ kycSessionId: string; status: string; externalUserId: string }> {
+  ): Promise<{ kycSessionId: string; status: string; externalUserId: string; uiStep?: string }> {
     const res = await api.post('/api/v1/kyc/initiate', {
       externalUserId,
       email,
       phone,
+    });
+    return res.data;
+  }
+
+  /**
+   * Update KYC UI Step
+   *
+   * @param kycSessionId
+   * @param step
+   */
+  export async function updateKycUiStep(
+    kycSessionId: string,
+    step: string,
+  ): Promise<{ success: boolean }> {
+    const res = await api.patch(`/api/v1/kyc/submissions/${kycSessionId}/step`, {
+      step,
     });
     return res.data;
   }
