@@ -26,10 +26,10 @@ function KycFlowContent() {
 
   const [isReady, setIsReady] = useState(false);
   const [userId, setUserId] = useState<string>('');
-  
+
   const dispatch = useDispatch();
   const currentStep = useSelector((state: RootState) => state.kyc.currentStep);
-  
+
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
 
   // Validate API Key and fetch Return URL
@@ -120,7 +120,7 @@ function KycFlowContent() {
   };
 
   const getStepNumber = () => {
-    return currentStep;
+    return currentStep as 1 | 2 | 3 | 4;
   };
 
   if (!isReady) {
@@ -166,6 +166,7 @@ function KycFlowContent() {
 
       </div>
     </main>
+    
   );
 }
 
