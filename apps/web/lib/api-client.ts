@@ -153,10 +153,20 @@ api.interceptors.response.use(
           }
         }
       } else if (error.response?.status === 403) {
-        // Domain not whitelisted
-        clearKycApiKey();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/?error=domain_not_whitelisted';
+        const data: any = error.response?.data;
+        const message = (data?.message as string | undefined) || '';
+
+        // Only treat as domain error if backend explicitly says so.
+        // A 403 on /submissions/:id/step just means stale session ID — not a domain issue.
+        const isDomainError =
+          typeof message === 'string' &&
+          (message.toLowerCase().includes('domain') || message.toLowerCase().includes('whitelist'));
+
+        if (isDomainError) {
+          clearKycApiKey();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/?error=domain_not_whitelisted';
+          }
         }
       }
     }
