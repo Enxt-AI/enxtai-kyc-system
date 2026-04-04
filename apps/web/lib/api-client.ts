@@ -342,7 +342,7 @@ export function clearKycReturnUrl(): void {
     externalUserId: string,
     email?: string,
     phone?: string,
-  ): Promise<{ kycSessionId: string; status: string; externalUserId: string; uiStep?: string }> {
+  ): Promise<{ kycSessionId: string; status: string; externalUserId: string; uiStep?: string; completedSteps?: string[] }> {
     const res = await api.post('/api/v1/kyc/initiate', {
       externalUserId,
       email,

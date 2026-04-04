@@ -51,17 +51,19 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
 
     const initSession = async () => {
       try {
-        const existingSessionId = localStorage.getItem("kyc_submission_id");
-        if (existingSessionId) {
-          setSubmissionId(existingSessionId);
-          setKycInitiated(true);
-          return;
-        }
-
         const result = await initiateKyc(userId);
         setSubmissionId(result.kycSessionId);
         localStorage.setItem("kyc_submission_id", result.kycSessionId);
         setKycInitiated(true);
+        
+        // Always sync backend completion metrics immediately into Redux!
+        if (result.completedSteps) {
+          if (result.completedSteps.includes('pan')) dispatch(setPanUploaded(true));
+          if (result.completedSteps.includes('aadhaar')) {
+            dispatch(setAadhaarFrontUploaded(true));
+            dispatch(setAadhaarBackUploaded(true));
+          }
+        }
         
         // If the backend has a formally saved uiStep, fast-forward the frontend to it.
         if (result.uiStep && ['upload', 'photo', 'signature', 'verify'].includes(result.uiStep)) {
