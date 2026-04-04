@@ -28,7 +28,7 @@ function KycFlowContent() {
   const [userId, setUserId] = useState<string>('');
   
   const dispatch = useDispatch();
-  const currentStep = useSelector((state: RootState) => state.kyc.currentStep) as KycStepTab;
+  const currentStep = useSelector((state: RootState) => state.kyc.currentStep);
   
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
 
@@ -46,17 +46,19 @@ function KycFlowContent() {
   // Ensure we trim whitespace as requested by user.
   useEffect(() => {
     const rawVerificationId = searchParams.get('verification');
-    let stepParam = searchParams.get('step') as KycStepTab | null;
+    let stepParam = parseInt(searchParams.get('step') ?? '0', 10);
 
     if (!stepParam) {
-      const savedStep = localStorage.getItem('kyc_current_step') as KycStepTab;
-      if (savedStep && ['upload', 'photo', 'signature', 'verify'].includes(savedStep)) {
+      const savedStep = parseInt(localStorage.getItem('kyc_current_step') ?? '0', 10);
+      if (savedStep >= 1 && savedStep <= 4) {
         stepParam = savedStep;
       }
     }
 
-    if (stepParam && ['upload', 'photo', 'signature', 'verify'].includes(stepParam)) {
+    if (stepParam >= 1 && stepParam <= 4) {
       dispatch(setCurrentStep(stepParam));
+    } else {
+      dispatch(setCurrentStep(1));
     }
 
     if (rawVerificationId) {
@@ -76,18 +78,19 @@ function KycFlowContent() {
     target.searchParams.set("status", "cancelled");
     localStorage.removeItem("kyc_submission_id");
     localStorage.removeItem("kyc_user_id");
+    localStorage.removeItem("kyc_current_step");
     clearKycApiKey();
     clearKycReturnUrl();
     window.location.href = target.toString();
   };
 
-  const handleStepChange = async (newStep: KycStepTab) => {
+  const handleStepChange = async (newStep: number) => {
     dispatch(setCurrentStep(newStep));
     // Persist step in URL so reload doesn't reset it
     const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set('step', newStep);
+    currentUrl.searchParams.set('step', newStep.toString());
     window.history.replaceState({}, '', currentUrl.toString());
-    localStorage.setItem('kyc_current_step', newStep);
+    localStorage.setItem('kyc_current_step', newStep.toString());
 
     // Sync explicitly to postgres DB
     const sessionId = localStorage.getItem('kyc_submission_id');
@@ -102,11 +105,12 @@ function KycFlowContent() {
 
   const renderStep = () => {
     switch (currentStep) {
-      case 'upload':
-        return <UploadStep userId={userId} onNext={() => handleStepChange('photo')} onStateRestored={handleStepChange} />;
-      case 'photo':
-        return <PhotoStep userId={userId} onNext={() => handleStepChange('signature')} />;
-      case 'signature':
+      case 1:
+        return <UploadStep userId={userId} onNext={() => handleStepChange(3)} onStateRestored={handleStepChange} />;
+      case 2:
+      case 3:
+        return <PhotoStep userId={userId} onNext={() => handleStepChange(4)} />;
+      case 4:
         return <SignatureStep userId={userId} onNext={() => {
           router.push('/kyc/verify');
         }} />;
@@ -116,14 +120,7 @@ function KycFlowContent() {
   };
 
   const getStepNumber = () => {
-    switch (currentStep) {
-      case 'upload': return 1;
-      // Step 2 was Aadhaar but it's now folded into upload visually as step 1 -> step 2.
-      // We will map 'photo' to 3 and 'signature' to 4 to match the KycStepper visual mock.
-      case 'photo': return 3;
-      case 'signature': return 4;
-      default: return 1;
-    }
+    return currentStep;
   };
 
   if (!isReady) {
@@ -141,12 +138,13 @@ function KycFlowContent() {
         <div className="pt-8 px-8 pb-6 flex items-center justify-center relative">
           <button
             onClick={() => {
-              if (currentStep === 'signature') dispatch(setCurrentStep('photo'));
-              else if (currentStep === 'photo') dispatch(setCurrentStep('upload'));
+              if (currentStep === 4) dispatch(setCurrentStep(3));
+              else if (currentStep === 3) dispatch(setCurrentStep(1));
+              else if (currentStep === 2) dispatch(setCurrentStep(1));
             }}
-            disabled={currentStep === 'upload'}
+            disabled={currentStep === 1}
             className={`absolute left-8 flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-              currentStep === 'upload' ? 'text-gray-300' : 'text-black hover:bg-gray-100'
+              currentStep === 1 ? 'text-gray-300' : 'text-black hover:bg-gray-100'
             }`}
           >
             <ChevronLeft className="h-7 w-7" strokeWidth={3} />

@@ -19,7 +19,7 @@ import { setPanUploaded, setAadhaarFrontUploaded, setAadhaarBackUploaded } from 
 interface UploadStepProps {
   userId: string;
   onNext: () => void;
-  onStateRestored?: (step: 'upload' | 'photo' | 'signature' | 'verify') => void;
+  onStateRestored?: (step: number) => void;
 }
 
 export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps) {
@@ -66,9 +66,9 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
         }
         
         // If the backend has a formally saved uiStep, fast-forward the frontend to it.
-        if (result.uiStep && ['upload', 'photo', 'signature', 'verify'].includes(result.uiStep)) {
+        if (result.uiStep && result.uiStep >= 1 && result.uiStep <= 4) {
           if (onStateRestored) {
-            onStateRestored(result.uiStep as any);
+            onStateRestored(result.uiStep);
           }
         }
       } catch (error: any) {
