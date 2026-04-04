@@ -73,7 +73,6 @@ model KYCSubmission {
   documentSource DocumentSource @default(MANUAL_UPLOAD)
 
   // Document URLs (MinIO paths - encrypted)
-  panDocumentUrl     String?
   aadhaarDocumentUrl String? // Keep for backward compatibility
   aadhaarFrontUrl    String? // NEW: Front side with photo
   aadhaarBackUrl     String? // NEW: Back side with address
@@ -102,7 +101,7 @@ model KYCSubmission {
   cvlKraResponse       Json?
   cvlKraStatus         String?
 
-  /// The active frontend UI progressive step 
+  /// The active frontend UI progressive step
   uiStep Int @default(1)
 
   // Status
