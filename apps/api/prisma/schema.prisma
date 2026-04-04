@@ -85,6 +85,7 @@ model KYCSubmission {
   aadhaarNumber String? // Masked (last 4 digits only)
   fullName      String?
   dateOfBirth   DateTime?
+  gender        String?
   address       Json?
 
   // Extraction results (DigiLocker parsed data / OCR)

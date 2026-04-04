@@ -1127,6 +1127,7 @@ export class KycService {
         panNumber: ocrResult.panNumber,
         fullName: ocrResult.fullName ?? submission.fullName ?? undefined,
         dateOfBirth: this.parseDate(ocrResult.dateOfBirth) ?? submission.dateOfBirth ?? undefined,
+        gender: ocrResult.gender ?? (submission as any).gender ?? undefined,
         extractionResults: mergedOcrResults,
         internalStatus: shouldComplete ? InternalStatus.OCR_COMPLETED : submission.internalStatus,
       },
