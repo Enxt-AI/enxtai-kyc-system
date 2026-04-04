@@ -12,6 +12,9 @@ import {
   checkDigiLockerStatus,
 } from "@/lib/api-client";
 import DigiLockerStatus from "@/components/DigiLockerStatus";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "@/lib/store/store";
+import { setPanUploaded, setAadhaarFrontUploaded, setAadhaarBackUploaded } from "@/lib/store/features/kycSlice";
 
 interface UploadStepProps {
   userId: string;
@@ -23,9 +26,11 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
   const [kycInitiated, setKycInitiated] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   
-  const [panUploaded, setPanUploaded] = useState(false);
-  const [aadhaarFrontUploaded, setAadhaarFrontUploaded] = useState(false);
-  const [aadhaarBackUploaded, setAadhaarBackUploaded] = useState(false);
+  const dispatch = useDispatch();
+  const panUploaded = useSelector((state: RootState) => state.kyc.panUploaded);
+  const aadhaarFrontUploaded = useSelector((state: RootState) => state.kyc.aadhaarFrontUploaded);
+  const aadhaarBackUploaded = useSelector((state: RootState) => state.kyc.aadhaarBackUploaded);
+  
   const [panSelected, setPanSelected] = useState(false);
   const [aadhaarFrontSelected, setAadhaarFrontSelected] = useState(false);
   const [aadhaarBackSelected, setAadhaarBackSelected] = useState(false);
@@ -152,7 +157,7 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
       }
 
       const result = await fetchDigiLockerDocuments(submissionId, ["PAN"]);
-      if (result.documentsFetched.includes("PAN")) setPanUploaded(true);
+      if (result.documentsFetched.includes("PAN")) dispatch(setPanUploaded(true));
 
       if (result.documentsFetched.length > 0) {
         setDigiLockerError(null);
@@ -241,9 +246,9 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
                     userId={userId}
                     submissionId={submissionId}
                     onSubmissionCreated={setSubmissionId}
-                    onUploadSuccess={() => { setAadhaarFrontUploaded(true); setError(null); }}
+                    onUploadSuccess={() => { dispatch(setAadhaarFrontUploaded(true)); setError(null); }}
                     onUploadError={(msg) => setError(msg)}
-                    onFileSelected={(selected) => { setAadhaarFrontSelected(selected); setAadhaarFrontUploaded(false); }}
+                    onFileSelected={(selected) => { setAadhaarFrontSelected(selected); dispatch(setAadhaarFrontUploaded(false)); }}
                     ref={aadhaarFrontRef}
                   />
               </div>
@@ -261,9 +266,9 @@ export function UploadStep({ userId, onNext, onStateRestored }: UploadStepProps)
                     userId={userId}
                     submissionId={submissionId}
                     onSubmissionCreated={setSubmissionId}
-                    onUploadSuccess={() => { setAadhaarBackUploaded(true); setError(null); }}
+                    onUploadSuccess={() => { dispatch(setAadhaarBackUploaded(true)); setError(null); }}
                     onUploadError={(msg) => setError(msg)}
-                    onFileSelected={(selected) => { setAadhaarBackSelected(selected); setAadhaarBackUploaded(false); }}
+                    onFileSelected={(selected) => { setAadhaarBackSelected(selected); dispatch(setAadhaarBackUploaded(false)); }}
                     ref={aadhaarBackRef}
                   />
               </div>
