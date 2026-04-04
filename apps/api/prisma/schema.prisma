@@ -87,8 +87,8 @@ model KYCSubmission {
   dateOfBirth   DateTime?
   address       Json?
 
-  // OCR results
-  ocrResults Json?
+  // Extraction results (DigiLocker parsed data / OCR)
+  extractionResults Json? @map("extractionResults")
 
   // Face verification results
   faceMatchScore        Float?

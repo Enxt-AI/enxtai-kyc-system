@@ -1117,7 +1117,7 @@ export class KycService {
     }
 
     const ocrResult = await this.ocrService.extractPanData(submissionId);
-    const existingOcr = this.ensureRecord(submission.ocrResults);
+    const existingOcr = this.ensureRecord(submission.extractionResults);
     const mergedOcrResults: Prisma.JsonObject = { ...existingOcr, pan: ocrResult as unknown as Prisma.JsonValue };
     const shouldComplete = Boolean(submission.aadhaarNumber);
 
@@ -1127,7 +1127,7 @@ export class KycService {
         panNumber: ocrResult.panNumber,
         fullName: ocrResult.fullName ?? submission.fullName ?? undefined,
         dateOfBirth: this.parseDate(ocrResult.dateOfBirth) ?? submission.dateOfBirth ?? undefined,
-        ocrResults: mergedOcrResults,
+        extractionResults: mergedOcrResults,
         internalStatus: shouldComplete ? InternalStatus.OCR_COMPLETED : submission.internalStatus,
       },
     });
@@ -1150,7 +1150,7 @@ export class KycService {
     }
 
     const ocrResult = await this.ocrService.extractAadhaarData(submissionId);
-    const existingOcr = this.ensureRecord(submission.ocrResults);
+    const existingOcr = this.ensureRecord(submission.extractionResults);
     const mergedOcrResults: Prisma.JsonObject = { ...existingOcr, aadhaar: ocrResult as unknown as Prisma.JsonValue };
     const shouldComplete = Boolean(submission.panNumber);
 
@@ -1162,7 +1162,7 @@ export class KycService {
         address: ocrResult.address
           ? { formatted: ocrResult.address }
           : submission.address ?? undefined,
-        ocrResults: mergedOcrResults,
+        extractionResults: mergedOcrResults,
         internalStatus: shouldComplete ? InternalStatus.OCR_COMPLETED : submission.internalStatus,
       },
     });
