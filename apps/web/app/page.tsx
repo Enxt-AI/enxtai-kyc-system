@@ -174,8 +174,8 @@ export default function HomePage() {
         // Store API key using helper function (sets key + 30min expiry)
         setKycApiKey(trimmedKey);
         
-        // Generate a fresh session verification ID for manual entry
-        const verificationId = uuidv4();
+        // Use a static verification ID to allow session pausing/resuming during demos
+        const verificationId = "demo-web-user";
         // Redirect to KYC upload flow
         router.push(`/kyc?verification=${verificationId}`);
       } else {
