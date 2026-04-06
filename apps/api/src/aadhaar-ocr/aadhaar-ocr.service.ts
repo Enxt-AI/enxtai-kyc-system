@@ -83,18 +83,29 @@ export class AadhaarOcrService {
       let name = this.extractName(text);
       let dob = this.extractDOB(text);
 
+      // Build update payload: save whatever we extracted, even if some fields are null
+      const updateData: any = {};
       if (extractedAadhaar) {
+        updateData.aadhaarNumber = extractedAadhaar;
+      }
+      if (name) {
+        updateData.fullName = name;
+      }
+      if (dob) {
+        updateData.dateOfBirth = dob;
+      }
+
+      if (Object.keys(updateData).length > 0) {
         await this.prisma.kYCSubmission.update({
           where: { id: submissionId },
-          data: {
-            aadhaarNumber: extractedAadhaar, // Safely matches schema (stores as masked later or plain if needed depending on privacy policies)
-            ...(name && { fullName: name }),
-            ...(dob && { dateOfBirth: dob }),
-          }
+          data: updateData,
         });
-        this.logger.log(`Aadhaar OCR Extraction SUCCESS for submission ${submissionId}`);
+        this.logger.log(
+          `Aadhaar OCR Extraction SUCCESS for submission ${submissionId}` +
+          ` (aadhaarNumber=${extractedAadhaar ? 'found' : 'not found'}, name=${name ? 'found' : 'not found'}, dob=${dob ? 'found' : 'not found'})`,
+        );
       } else {
-        this.logger.warn(`Could not confidentially identify Aadhaar sequence in OCR text for submission ${submissionId}`);
+        this.logger.warn(`Could not extract any data from Aadhaar OCR text for submission ${submissionId}`);
       }
 
     } catch (error) {
@@ -103,17 +114,32 @@ export class AadhaarOcrService {
   }
 
   private extractAadhaarNumber(text: string): string | null {
-    // Looks for 12 digits, possibly space separated
+    // Looks for 12 digits, possibly space separated (4-4-4 pattern)
     const regex = /(?:[2-9]{1}[0-9]{3})\s?[0-9]{4}\s?[0-9]{4}/g;
     const matches = text.match(regex);
     if (!matches) return null;
 
+    // First pass: prefer Verhoeff-validated Aadhaar numbers
     for (const match of matches) {
       const cleanNumber = match.replace(/\s/g, '');
       if (validateAadhaar(cleanNumber)) {
+        this.logger.log(`Aadhaar number validated via Verhoeff checksum: ${cleanNumber.substring(0, 4)}****${cleanNumber.substring(8)}`);
         return cleanNumber;
       }
     }
+
+    // Fallback: OCR often introduces single-digit errors that break Verhoeff.
+    // Use the first 12-digit candidate that matches the basic Aadhaar pattern.
+    for (const match of matches) {
+      const cleanNumber = match.replace(/\s/g, '');
+      if (cleanNumber.length === 12 && /^[2-9]\d{11}$/.test(cleanNumber)) {
+        this.logger.warn(
+          `Aadhaar number failed Verhoeff checksum (likely OCR error), storing best candidate: ${cleanNumber.substring(0, 4)}****${cleanNumber.substring(8)}`,
+        );
+        return cleanNumber;
+      }
+    }
+
     return null;
   }
 

@@ -382,7 +382,7 @@ export class KycService {
           this.logger.log(
             `Starting Aadhaar OCR extraction for submission ${submission.id}`,
           );
-          
+          await this.aadhaarOcrService.triggerAadhaarExtraction(submission.id);
           this.logger.log(
             `Aadhaar OCR extraction completed for submission ${submission.id}`,
           );

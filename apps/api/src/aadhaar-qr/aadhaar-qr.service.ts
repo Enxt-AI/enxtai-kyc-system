@@ -75,8 +75,20 @@ export class AadhaarQrService {
       }
 
       // Extract Data
+      // In Secure QR, parts[2] is the Reference ID (last 4 digits of Aadhaar)
       const uidRaw = parts[2] || '';
-      const uidMasked = uidRaw.length > 10 ? `XXXX XXXX ${uidRaw.substring(0, 4)}` : uidRaw;
+      // Always mask: for Secure QR the full number is never present,
+      // only the reference ID (last 4 digits). For longer values, show last 4.
+      let uidMasked: string;
+      if (uidRaw.length <= 4 && uidRaw.length > 0) {
+        // Reference ID (last 4 digits only) — typical Secure QR
+        uidMasked = `XXXX XXXX ${uidRaw}`;
+      } else if (uidRaw.length > 4) {
+        // Full or partial UID — mask all but last 4
+        uidMasked = `XXXX XXXX ${uidRaw.slice(-4)}`;
+      } else {
+        uidMasked = uidRaw;
+      }
       
       const fullName = parts[3] || '';
       const dobString = parts[4] || '';
