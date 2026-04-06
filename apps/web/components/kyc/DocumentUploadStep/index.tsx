@@ -62,7 +62,7 @@ export function DocumentUploadStep({
 
     const init = async () => {
       try {
-        const res = await initiateKyc(userId);
+        const res = await initiateKyc(userId, "demo-user@enxtai.com", "+919876543210");
 
         dispatch(setSubmissionId(res.kycSessionId));
         setKycInitiated(true);
