@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getKycStatus, checkDigiLockerStatus } from '@/lib/api-client';
+import { getKycStatus, checkDigiLockerStatus, getKYCSubmission } from '@/lib/api-client';
 import KycStatusIndicator from '@/components/KycStatusIndicator';
 
 function StatusPageContent() {
@@ -22,7 +22,13 @@ function StatusPageContent() {
       setLoading(true);
       setError(null);
       try {
-        const submissionId = submissionIdParam || localStorage.getItem('kyc_submission_id');
+        let submissionId = submissionIdParam;
+        
+        if (!submissionId) {
+          const data = await getKYCSubmission(userId);
+          if (data?.id) submissionId = data.id;
+        }
+
         const [statusRes, digiLockerStatus] = await Promise.all([
           getKycStatus(userId),
           submissionId ? checkDigiLockerStatus(submissionId).catch(() => null) : Promise.resolve(null),

@@ -4,7 +4,7 @@ import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "@/lib/store/store";
-import { setCurrentStep, setUserId as setReduxUserId } from "@/lib/store/features/kycSlice";
+import { setCurrentStep, setUserId as setReduxUserId, setSubmissionId } from "@/lib/store/features/kycSlice";
 import { ChevronLeft } from "lucide-react";
 import { KycStepper } from "@/components/KycStepper";
 import { DocumentUploadStep } from "@/components/kyc/DocumentUploadStep";
@@ -16,6 +16,7 @@ import {
   clearKycApiKey,
   clearKycReturnUrl,
   updateKycUiStep,
+  getKYCSubmission,
 } from "@/lib/api-client";
 
 type KycStepTab = 'upload' | 'photo' | 'signature' | 'verify';
@@ -32,6 +33,8 @@ function KycFlowContent() {
 
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
 
+  const sessionId = useSelector((state: RootState) => state.kyc.submissionId);
+
   // Validate API Key and fetch Return URL
   useEffect(() => {
     try {
@@ -42,43 +45,50 @@ function KycFlowContent() {
     }
   }, [router]);
 
-  // Extract User ID from search params (e.g. ?verification=USER_ID)
-  // Ensure we trim whitespace as requested by user.
+  // Extract User ID and sync state from DB securely
   useEffect(() => {
     const rawVerificationId = searchParams.get('verification');
-    let stepParam = parseInt(searchParams.get('step') ?? '0', 10);
-
-    if (!stepParam) {
-      const savedStep = parseInt(localStorage.getItem('kyc_current_step') ?? '0', 10);
-      if (savedStep >= 1 && savedStep <= 4) {
-        stepParam = savedStep;
-      }
-    }
-
-    if (stepParam >= 1 && stepParam <= 4) {
-      dispatch(setCurrentStep(stepParam));
-    } else {
-      dispatch(setCurrentStep(1));
-    }
-
-    if (rawVerificationId) {
-      const trimmedId = rawVerificationId.trim();
-      setUserId(trimmedId);
-      dispatch(setReduxUserId(trimmedId));
-      localStorage.setItem('kyc_user_id', trimmedId);
-      setIsReady(true);
-    } else {
+    if (!rawVerificationId) {
       router.replace('/?error=missing_verification_id');
+      return;
     }
+
+    const trimmedId = rawVerificationId.trim();
+    setUserId(trimmedId);
+    dispatch(setReduxUserId(trimmedId));
+
+    // Try to load state safely from database
+    const fetchStateFromDb = async () => {
+      try {
+        const submission = await getKYCSubmission(trimmedId);
+        
+        if (submission?.id) {
+          dispatch(setSubmissionId(submission.id));
+          
+          let stepParam = parseInt(searchParams.get('step') ?? '0', 10);
+          if (!stepParam && submission.uiStep) {
+            stepParam = submission.uiStep;
+          }
+          
+          dispatch(setCurrentStep(stepParam >= 1 && stepParam <= 4 ? stepParam : 1));
+        } else {
+          dispatch(setCurrentStep(1));
+        }
+      } catch (e) {
+        // Fallback default
+        dispatch(setCurrentStep(1));
+      } finally {
+        setIsReady(true);
+      }
+    };
+
+    fetchStateFromDb();
   }, [searchParams, router, dispatch]);
 
   const handleCancelToClient = () => {
     if (!returnUrl) return;
     const target = new URL(returnUrl);
     target.searchParams.set("status", "cancelled");
-    localStorage.removeItem("kyc_submission_id");
-    localStorage.removeItem("kyc_user_id");
-    localStorage.removeItem("kyc_current_step");
     clearKycApiKey();
     clearKycReturnUrl();
     window.location.href = target.toString();
@@ -86,14 +96,12 @@ function KycFlowContent() {
 
   const handleStepChange = async (newStep: number) => {
     dispatch(setCurrentStep(newStep));
-    // Persist step in URL so reload doesn't reset it
+    // Persist step in URL so reload doesn't reset it during the same session without DB fetch
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('step', newStep.toString());
     window.history.replaceState({}, '', currentUrl.toString());
-    localStorage.setItem('kyc_current_step', newStep.toString());
 
-    // Sync explicitly to postgres DB
-    const sessionId = localStorage.getItem('kyc_submission_id');
+    // Sync explicitly to postgres DB using Redux state
     if (sessionId) {
       try {
         await updateKycUiStep(sessionId, newStep);
@@ -112,7 +120,7 @@ function KycFlowContent() {
         return <PhotoStep userId={userId} onNext={() => handleStepChange(4)} />;
       case 4:
         return <SignatureStep userId={userId} onNext={() => {
-          router.push('/kyc/verify');
+          router.push(`/kyc/verify?verification=${userId}`);
         }} />;
       default:
         return null;

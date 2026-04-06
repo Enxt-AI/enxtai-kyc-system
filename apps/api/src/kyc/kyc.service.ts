@@ -477,8 +477,20 @@ export class KycService {
   }
 
   async getSubmissionByUserId(userId: string) {
+    // Attempt dual lookup resolving from internal UUID or external reference securely
+    const clientUser = await this.prisma.clientUser.findFirst({
+      where: {
+        OR: [
+          { id: userId },
+          { externalUserId: userId }
+        ]
+      }
+    });
+
+    if (!clientUser) return null;
+
     return this.prisma.kYCSubmission.findFirst({
-      where: { userId },
+      where: { userId: clientUser.id },
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -17,7 +17,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
-import { clearKycApiKey, getKycReturnUrl, clearKycReturnUrl } from '@/lib/api-client';
+import { clearKycApiKey, getKycReturnUrl, clearKycReturnUrl, getKYCSubmission } from '@/lib/api-client';
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -30,10 +30,26 @@ export default function VerifyPage() {
   // Whether the auto-redirect has already been triggered (prevents double-redirect).
   const [redirecting, setRedirecting] = useState(false);
 
+  const [userId, setUserId] = useState<string | null>(null);
+
   useEffect(() => {
-    // Retrieve submissionId and returnUrl from browser storage
-    const storedId = localStorage.getItem('kyc_submission_id');
-    setSubmissionId(storedId);
+    // Read verification identifier natively from URL
+    const params = new URLSearchParams(window.location.search);
+    const vId = params.get('verification');
+    if (vId) setUserId(vId);
+
+    // Retrieve submissionId natively via API lookup instead of LocalStorage
+    const fetchSubmission = async () => {
+      if (!vId) return;
+      try {
+        const data = await getKYCSubmission(vId);
+        if (data?.id) setSubmissionId(data.id);
+      } catch (err) {
+        console.error("Could not fetch KYC DB Submission", err);
+      }
+    };
+    
+    fetchSubmission();
 
     const storedReturnUrl = getKycReturnUrl();
     setReturnUrl(storedReturnUrl);
@@ -62,8 +78,6 @@ export default function VerifyPage() {
     }
 
     // Clean up all KYC session data before leaving
-    localStorage.removeItem('kyc_submission_id');
-    localStorage.removeItem('kyc_user_id');
     clearKycApiKey(); // Also clears returnUrl from sessionStorage
     clearKycReturnUrl();
 
@@ -110,10 +124,6 @@ export default function VerifyPage() {
    * - Ensures clean state for next user
    */
   const handleStartNewKYC = () => {
-    // Clear localStorage
-    localStorage.removeItem('kyc_submission_id');
-    localStorage.removeItem('kyc_user_id');
-
     // Clear API key from sessionStorage using helper
     clearKycApiKey();
 

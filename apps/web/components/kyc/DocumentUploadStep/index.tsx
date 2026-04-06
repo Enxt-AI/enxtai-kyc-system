@@ -14,6 +14,7 @@ import {
   setPanUploaded,
   setAadhaarFrontUploaded,
   setAadhaarBackUploaded,
+  setSubmissionId,
 } from "@/lib/store/features/kycSlice";
 
 import { PanVerification } from "./PanVerification";
@@ -31,7 +32,7 @@ export function DocumentUploadStep({
   onStateRestored,
 }: DocumentUploadStepProps) {
   const [kycInitiated, setKycInitiated] = useState(false);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const submissionId = useSelector((state: RootState) => state.kyc.submissionId);
 
   const dispatch = useDispatch();
   const panUploaded = useSelector((s: RootState) => s.kyc.panUploaded);
@@ -63,8 +64,7 @@ export function DocumentUploadStep({
       try {
         const res = await initiateKyc(userId);
 
-        setSubmissionId(res.kycSessionId);
-        localStorage.setItem("kyc_submission_id", res.kycSessionId);
+        dispatch(setSubmissionId(res.kycSessionId));
         setKycInitiated(true);
 
         if (res.completedSteps) {
@@ -90,12 +90,7 @@ export function DocumentUploadStep({
     init();
   }, [userId]);
 
-  // 🔹 SAVE submissionId
-  useEffect(() => {
-    if (submissionId) {
-      localStorage.setItem("kyc_submission_id", submissionId);
-    }
-  }, [submissionId]);
+
 
   const selectedCount = [
     aadhaarFrontSelected,
