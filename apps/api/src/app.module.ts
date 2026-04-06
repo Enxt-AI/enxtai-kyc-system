@@ -171,6 +171,7 @@ export class AppModule implements NestModule {
         { path: 'v1/kyc/delete/:type/:subtype', method: RequestMethod.ALL },
         { path: 'v1/kyc/status/:id', method: RequestMethod.ALL },
         { path: 'v1/kyc/verify', method: RequestMethod.ALL },
+        { path: 'v1/kyc/submissions/:id/step', method: RequestMethod.ALL },
         { path: 'v1/kyc/:submissionId/digilocker/initiate', method: RequestMethod.ALL },
         { path: 'v1/kyc/:submissionId/digilocker/fetch', method: RequestMethod.ALL },
         { path: 'v1/kyc/:submissionId/digilocker/status', method: RequestMethod.ALL },
