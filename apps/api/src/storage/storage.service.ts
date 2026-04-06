@@ -34,11 +34,11 @@ export class StorageService implements OnModuleInit {
 
   constructor(private readonly configService: ConfigService) {
     const cfg: StorageConfig = {
-      endpoint: this.configService.get<string>('MINIO_ENDPOINT', 'localhost'),
-      port: Number(this.configService.get<string>('MINIO_PORT', '9000')),
-      useSSL: this.configService.get<string>('MINIO_USE_SSL', 'false') === 'true',
-      accessKey: this.configService.get<string>('MINIO_ACCESS_KEY', ''),
-      secretKey: this.configService.get<string>('MINIO_SECRET_KEY', ''),
+      endpoint: this.configService.get<string>('S3_ENDPOINT', 'localhost'),
+      port: this.configService.get<string>('S3_PORT') ? Number(this.configService.get<string>('S3_PORT')) : undefined,
+      useSSL: this.configService.get<string>('S3_USE_SSL', 'false') === 'true',
+      accessKey: this.configService.get<string>('S3_ACCESS_KEY', ''),
+      secretKey: this.configService.get<string>('S3_SECRET_KEY', ''),
     };
 
     this.panBucket = this.configService.get<string>('S3_PAN_BUCKET', PAN_CARDS_BUCKET);
@@ -57,7 +57,7 @@ export class StorageService implements OnModuleInit {
     this.buckets = [this.panBucket, this.aadhaarBucket, this.livePhotosBucket, this.signaturesBucket];
 
     this.enableBucketEncryption =
-      this.configService.get<string>('MINIO_ENABLE_SSE', 'false') === 'true';
+      this.configService.get<string>('S3_ENABLE_SSE', 'false') === 'true';
 
     this.bucketEncryptionConfig = {
       Rule: [
@@ -75,7 +75,7 @@ export class StorageService implements OnModuleInit {
       useSSL: cfg.useSSL,
       accessKey: cfg.accessKey,
       secretKey: cfg.secretKey,
-      region: this.configService.get<string>('MINIO_REGION'),
+      region: this.configService.get<string>('S3_REGION'),
     });
   }
 
@@ -330,7 +330,7 @@ export class StorageService implements OnModuleInit {
       
       const parsedUrl = new URL(url);
       
-      const externalEndpoint = this.configService.get<string>('MINIO_EXTERNAL_ENDPOINT');
+      const externalEndpoint = this.configService.get<string>('S3_EXTERNAL_ENDPOINT');
       if (externalEndpoint) {
         parsedUrl.hostname = externalEndpoint;
       } else if (parsedUrl.hostname === 'minio') {
@@ -339,12 +339,12 @@ export class StorageService implements OnModuleInit {
         parsedUrl.protocol = 'http:'; // Fallback to avoid SSL errors on raw IP
       }
 
-      const externalPort = this.configService.get<string>('MINIO_EXTERNAL_PORT');
+      const externalPort = this.configService.get<string>('S3_EXTERNAL_PORT');
       if (externalPort) {
         parsedUrl.port = externalPort;
       }
 
-      const externalProtocol = this.configService.get<string>('MINIO_EXTERNAL_PROTOCOL');
+      const externalProtocol = this.configService.get<string>('S3_EXTERNAL_PROTOCOL');
       if (externalProtocol) {
         parsedUrl.protocol = externalProtocol.endsWith(':') ? externalProtocol : `${externalProtocol}:`;
       }

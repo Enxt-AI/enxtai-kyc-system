@@ -21,7 +21,7 @@ export interface DownloadDocumentResult {
 
 export interface StorageConfig {
   endpoint: string;
-  port: number;
+  port?: number;
   useSSL: boolean;
   accessKey: string;
   secretKey: string;
