@@ -461,7 +461,7 @@ export class ClientKycService {
 
     // Tenant isolation check
     if (submission.clientId !== clientId) {
-      throw new ForbiddenException('Access denied to this KYC session');
+      throw new ForbiddenException(`ClientId mismatch in getStatus! submission: ${submission.clientId}, client: ${clientId}`);
     }
 
     // Calculate overall progress percentage (0-100 numeric value).
@@ -526,7 +526,7 @@ export class ClientKycService {
     }
 
     if (submission.clientId !== clientId) {
-      throw new ForbiddenException('Access denied to this KYC session');
+      throw new ForbiddenException(`ClientId mismatch in triggerVerification! submission: ${submission.clientId}, client: ${clientId}`);
     }
 
     // Delegate to KycService for verification logic
@@ -562,7 +562,7 @@ export class ClientKycService {
     }
 
     if (submission.clientId !== clientId) {
-      throw new ForbiddenException('Access denied to this KYC session');
+      throw new ForbiddenException(`ClientId mismatch! submission: ${submission.clientId}, client: ${clientId}`);
     }
 
     await this.prisma.kYCSubmission.update({
