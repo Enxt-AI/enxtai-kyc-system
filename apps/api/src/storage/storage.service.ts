@@ -41,17 +41,17 @@ export class StorageService implements OnModuleInit {
       secretKey: this.configService.get<string>('MINIO_SECRET_KEY', ''),
     };
 
-    this.panBucket = this.configService.get<string>('MINIO_PAN_BUCKET', PAN_CARDS_BUCKET);
+    this.panBucket = this.configService.get<string>('S3_PAN_BUCKET', PAN_CARDS_BUCKET);
     this.aadhaarBucket = this.configService.get<string>(
-      'MINIO_AADHAAR_BUCKET',
+      'S3_AADHAAR_BUCKET',
       AADHAAR_CARDS_BUCKET,
     );
     this.livePhotosBucket = this.configService.get<string>(
-      'MINIO_LIVE_PHOTO_BUCKET',
+      'S3_LIVE_PHOTO_BUCKET',
       LIVE_PHOTOS_BUCKET,
     );
     this.signaturesBucket = this.configService.get<string>(
-      'MINIO_SIGNATURES_BUCKET',
+      'S3_SIGNATURES_BUCKET',
       SIGNATURES_BUCKET,
     );
     this.buckets = [this.panBucket, this.aadhaarBucket, this.livePhotosBucket, this.signaturesBucket];
