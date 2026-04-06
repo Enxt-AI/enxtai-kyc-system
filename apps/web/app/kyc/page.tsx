@@ -94,7 +94,7 @@ function KycFlowContent() {
     window.location.href = target.toString();
   };
 
-  const handleStepChange = async (newStep: number) => {
+  const handleStepChange = async (newStep: number, skipNetwork = false) => {
     dispatch(setCurrentStep(newStep));
     // Persist step in URL so reload doesn't reset it during the same session without DB fetch
     const currentUrl = new URL(window.location.href);
@@ -102,7 +102,7 @@ function KycFlowContent() {
     window.history.replaceState({}, '', currentUrl.toString());
 
     // Sync explicitly to postgres DB using Redux state
-    if (sessionId) {
+    if (sessionId && !skipNetwork) {
       try {
         await updateKycUiStep(sessionId, newStep);
       } catch (e) {
@@ -114,7 +114,7 @@ function KycFlowContent() {
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return <DocumentUploadStep userId={userId} onNext={() => handleStepChange(3)} onStateRestored={handleStepChange} />;
+        return <DocumentUploadStep userId={userId} onNext={() => handleStepChange(3)} onStateRestored={(step) => handleStepChange(step, true)} />;
       case 2:
       case 3:
         return <PhotoStep userId={userId} onNext={() => handleStepChange(4)} />;
