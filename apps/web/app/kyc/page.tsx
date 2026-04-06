@@ -7,7 +7,7 @@ import { RootState } from "@/lib/store/store";
 import { setCurrentStep, setUserId as setReduxUserId } from "@/lib/store/features/kycSlice";
 import { ChevronLeft } from "lucide-react";
 import { KycStepper } from "@/components/KycStepper";
-import { UploadStep } from "@/components/kyc/UploadStep";
+import { DocumentUploadStep } from "@/components/kyc/DocumentUploadStep";
 import { PhotoStep } from "@/components/kyc/PhotoStep";
 import { SignatureStep } from "@/components/kyc/SignatureStep";
 import {
@@ -106,7 +106,7 @@ function KycFlowContent() {
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return <UploadStep userId={userId} onNext={() => handleStepChange(3)} onStateRestored={handleStepChange} />;
+        return <DocumentUploadStep userId={userId} onNext={() => handleStepChange(3)} onStateRestored={handleStepChange} />;
       case 2:
       case 3:
         return <PhotoStep userId={userId} onNext={() => handleStepChange(4)} />;

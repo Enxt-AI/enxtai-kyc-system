@@ -8,12 +8,12 @@ import {
   Param,
   Post,
   Req,
+  Logger,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { KycService } from './kyc.service';
 import { CreateKYCSubmissionDto } from './dto/create-kyc-submission.dto';
-import { ExtractAadhaarDto, ExtractPanDto } from '../ocr/dto/extract-document.dto';
 import { VerifyFaceDto } from './dto/verify-face.dto';
 import { DeleteDocumentDto } from './dto/delete-document.dto';
 import { FetchDigiLockerDocumentsDto } from './dto/fetch-digilocker-documents.dto';
@@ -100,78 +100,6 @@ export class KycController {
   }
 
   /**
-   * Upload PAN Card Document
-   *
-   * Accepts a single image file (JPEG/PNG) and stores it in MinIO. Creates a new KYC submission
-   * if one doesn't exist for the clientUser. Updates submission status to DOCUMENTS_UPLOADED.
-   *
-   * **Important**: Buffers the file stream immediately during multipart parsing to prevent
-   * Fastify stream closure issues. Fastify closes streams after `req.parts()` iteration completes.
-   *
-   * @param req - Fastify request with multipart form data containing:
-   *   - 'userId' field: UUID v4 string
-   *   - 'file' attachment: JPEG/PNG image (max 5MB, 300x300 to 8192x8192 pixels)
-   * @returns Object with success flag, submissionId (UUID), and MinIO document URL
-   * @throws BadRequestException if userId or file is missing, or file validation fails
-   * @throws HttpException if upload fails or storage service errors
-   *
-   * @example
-   * POST /api/kyc/upload/pan
-   * Content-Type: multipart/form-data
-   * Body: { userId: "550e8400-...", file: <binary> }
-   * Response: { success: true, submissionId: "abc123", documentUrl: "kyc-pan/clientUser-id/PAN_CARD_1234567890.jpg" }
-   */
-  @Post('upload/pan')
-  async uploadPan(@Req() req: FastifyRequest) {
-    try {
-      const parts = req.parts();
-      let userId: string | undefined;
-      let fileData: { buffer: Buffer; filename: string; mimetype: string } | undefined;
-
-      // Parse multipart form data - must buffer file immediately while stream is open
-      for await (const part of parts) {
-        if (part.type === 'field') {
-          if (part.fieldname === 'userId') {
-            userId = part.value as string;
-          }
-        } else if (part.type === 'file' && part.fieldname === 'file') {
-          // Buffer immediately while stream is open to prevent closure issues
-          const buffer = await part.toBuffer();
-          fileData = {
-            buffer,
-            filename: part.filename,
-            mimetype: part.mimetype,
-          };
-        }
-      }
-
-      if (!userId) {
-        throw new BadRequestException('userId is required');
-      }
-
-      if (!fileData) {
-        throw new BadRequestException('File is required');
-      }
-
-      // Create MultipartFile-like object with buffered data for service layer
-      const file: MultipartFile = {
-        ...fileData,
-        toBuffer: async () => fileData.buffer,
-      } as any;
-
-      const submission = await this.kycService.uploadPanDocument(userId, file);
-      return {
-        success: true,
-        submissionId: submission.id,
-        documentUrl: submission.panDocumentUrl,
-      };
-    } catch (err: any) {
-      if (err instanceof HttpException) throw err;
-      throw new HttpException(err?.message ?? 'Upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  /**
    * Upload Aadhaar Card Document (Front and/or Back)
    *
    * Accepts one or both sides of Aadhaar card (front contains photo, back contains address).
@@ -200,6 +128,36 @@ export class KycController {
    *   back: { submissionId: "abc123", documentUrl: "kyc-aadhaar/clientUser-id/AADHAAR_CARD_BACK_456.jpg" }
    * }
    */
+  /**
+   * Upload and Decode Aadhaar QR Code
+   *
+   * Accepts the raw QR string scanned from an Aadhaar card.
+   * Decodes Secure QR and legacy XML formats securely on the backend.
+   * Extracts demographics and JPEG2000 photograph.
+   *
+   * @param body - { userId: string, rawQrText: string }
+   */
+  @Post('upload/aadhaar-qr')
+  async uploadAadhaarQr(@Body() body: { userId: string; rawQrText: string }) {
+    if (!body.userId || !body.rawQrText) {
+      throw new BadRequestException('userId and rawQrText are required');
+    }
+
+    try {
+      const result = await this.kycService.uploadAadhaarQr(body.userId, body.rawQrText);
+      return {
+        success: true,
+        submissionId: result.id,
+        aadhaarNumber: result.aadhaarNumber,
+        photoIncluded: !!result.aadhaarFrontUrl,
+        message: 'Aadhaar QR successfully decoded and saved.',
+      };
+    } catch (e: any) {
+      Logger.error(`Aadhaar QR upload failed: ${e.message}`, e.stack, 'KycController');
+      throw new HttpException(e.message || 'Failed to process QR', HttpStatus.BAD_REQUEST);
+    }
+  }
+
   @Post('upload/aadhaar')
   async uploadAadhaar(@Req() req: FastifyRequest) {
     try {
@@ -274,12 +232,6 @@ export class KycController {
       if (err instanceof HttpException) throw err;
       throw new HttpException(err?.message ?? 'Upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-  }
-
-  @Post('delete/pan')
-  async deletePan(@Body() dto: DeleteDocumentDto) {
-    const submission = await this.kycService.deletePanDocument(dto.userId, dto.submissionId);
-    return { success: true, submissionId: submission.id };
   }
 
   @Post('delete/aadhaar/front')
@@ -470,98 +422,7 @@ export class KycController {
     }
   }
 
-  /**
-   * Extract PAN Card Data (OCR)
-   *
-   * Uses Tesseract.js to perform OCR on uploaded PAN card image. Extracts PAN number
-   * (regex: [A-Z]{5}[0-9]{4}[A-Z]), name, and date of birth. Preprocesses image
-   * (grayscale, normalize, sharpen) for better accuracy.
-   *
-   * **Extraction Logic**:
-   * - PAN Number: 10-character alphanumeric (e.g., ABCDE1234F)
-   * - Name: Heuristic-based extraction with blacklist filtering
-   * - DOB: Date pattern matching (DD/MM/YYYY, DD-MM-YYYY, etc.)
-   * - Confidence Threshold: 60% minimum for OCR results
-   *
-   * @param dto - Contains submissionId (UUID)
-   * @returns Object with success flag, submissionId, and extracted data (panNumber, fullName, dateOfBirth)
-   * @throws NotFoundException if submission not found or PAN document not uploaded
-   * @throws HttpException if OCR fails
-   *
-   * @example
-   * POST /api/kyc/extract/pan
-   * Body: { submissionId: "abc123" }
-   * Response: {
-   *   success: true,
-   *   submissionId: "abc123",
-   *   extractedData: { panNumber: "ABCDE1234F", fullName: "John Doe", dateOfBirth: "1990-01-15" }
-   * }
-   */
-  @Post('extract/pan')
-  async extractPan(@Body() dto: ExtractPanDto) {
-    try {
-      const submission = await this.kycService.extractPanDataAndUpdate(dto.submissionId);
-      return {
-        success: true,
-        submissionId: submission.id,
-        extractedData: {
-          panNumber: submission.panNumber,
-          fullName: submission.fullName,
-          dateOfBirth: submission.dateOfBirth,
-        },
-      };
-    } catch (err: any) {
-      if (err instanceof HttpException) throw err;
-      throw new HttpException(err?.message ?? 'PAN extraction failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
 
-  /**
-   * Extract Aadhaar Card Data (OCR)
-   *
-   * Uses Tesseract.js to perform OCR on uploaded Aadhaar card images (front/back or legacy single image).
-   * Extracts Aadhaar number (12 digits), name, and address. **Important**: Aadhaar number is masked
-   * to show only last 4 digits per UIDAI compliance (e.g., "XXXX XXXX 1234").
-   *
-   * **Extraction Logic**:
-   * - Aadhaar Number: 12 digits with optional spaces (regex: /\\b\\d{4}\\s?\\d{4}\\s?\\d{4}\\b/)
-   * - Masking: Only last 4 digits stored (UIDAI guideline to protect privacy)
-   * - Name: Extracted from front side
-   * - Address: Extracted from back side (if available)
-   * - Confidence Threshold: 60% minimum for OCR results
-   *
-   * @param dto - Contains submissionId (UUID)
-   * @returns Object with success flag, submissionId, and extracted data (aadhaarNumber masked, fullName, address)
-   * @throws NotFoundException if submission not found or Aadhaar document not uploaded
-   * @throws HttpException if OCR fails
-   *
-   * @example
-   * POST /api/kyc/extract/aadhaar
-   * Body: { submissionId: "abc123" }
-   * Response: {
-   *   success: true,
-   *   submissionId: "abc123",
-   *   extractedData: { aadhaarNumber: "XXXX XXXX 1234", fullName: "John Doe", address: "123 Main St..." }
-   * }
-   */
-  @Post('extract/aadhaar')
-  async extractAadhaar(@Body() dto: ExtractAadhaarDto) {
-    try {
-      const submission = await this.kycService.extractAadhaarDataAndUpdate(dto.submissionId);
-      return {
-        success: true,
-        submissionId: submission.id,
-        extractedData: {
-          aadhaarNumber: submission.aadhaarNumber,
-          fullName: submission.fullName,
-          address: submission.address,
-        },
-      };
-    } catch (err: any) {
-      if (err instanceof HttpException) throw err;
-      throw new HttpException(err?.message ?? 'Aadhaar extraction failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
 
   /**
    * Fetch Documents from DigiLocker
@@ -675,7 +536,7 @@ export class KycController {
       return {
         success: true,
         submissionId: submission.id,
-        ocrCompleted: Boolean(submission.panNumber || submission.aadhaarNumber),
+        ocrCompleted: false,
         faceVerified: Boolean(submission.faceMatchScore),
         extractedData: {
           panNumber: submission.panNumber,

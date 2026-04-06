@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StorageModule } from '../storage/storage.module';
-import { OcrModule } from '../ocr/ocr.module';
 import { FaceRecognitionModule } from '../face-recognition/face-recognition.module';
 import { ClientModule } from '../client/client.module';
 import { WebhookModule } from '../webhooks/webhook.module';
 import { DigiLockerModule } from '../digilocker/digilocker.module';
+import { AadhaarOcrModule } from '../aadhaar-ocr/aadhaar-ocr.module';
+import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
 import { KycController } from './kyc.controller';
 import { KycService } from './kyc.service';
 
@@ -29,11 +30,12 @@ import { KycService } from './kyc.service';
   imports: [
     PrismaModule,
     StorageModule,
-    OcrModule,
-    FaceRecognitionModule,
+        FaceRecognitionModule,
     ClientModule, // Future multi-tenancy support
     WebhookModule, // Webhook delivery for status change notifications
     DigiLockerModule, // DigiLocker document fetching integration
+    AadhaarOcrModule, // Aadhaar OCR extraction capability
+    AadhaarQrModule, // Aadhaar QR extraction capability
   ],
   controllers: [KycController],
   providers: [KycService],

@@ -41,7 +41,7 @@ interface StepProgress {
  * document URL fields.
  *
  * Step completion rules:
- *   - "pan":       panDocumentUrl is non-null
+ *   - "pan":       panNumber is non-null
  *   - "aadhaar":   (aadhaarFrontUrl AND aadhaarBackUrl) OR aadhaarDocumentUrl is non-null
  *   - "photo":     livePhotoUrl is non-null
  *   - "signature": signatureUrl is non-null
@@ -53,7 +53,7 @@ interface StepProgress {
  * @returns StepProgress with completedSteps, currentStep, and totalSteps
  */
 export function computeStepProgress(submission: {
-  panDocumentUrl: string | null;
+  panNumber: string | null;
   aadhaarDocumentUrl: string | null;
   aadhaarFrontUrl: string | null;
   aadhaarBackUrl: string | null;
@@ -62,7 +62,7 @@ export function computeStepProgress(submission: {
 }): StepProgress {
   // Evaluate each step independently based on document presence.
   const stepStatus: Record<KycStep, boolean> = {
-    pan: Boolean(submission.panDocumentUrl),
+    pan: Boolean(submission.panNumber),
     aadhaar: Boolean(
       submission.aadhaarDocumentUrl ||
       (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
@@ -629,7 +629,7 @@ export class ClientService {
     };
 
     await Promise.all([
-      generateUrl(submission.panDocumentUrl, 'panDocument'),
+      generateUrl(submission.panNumber, 'panDocument'),
       generateUrl(submission.aadhaarFrontUrl, 'aadhaarFront'),
       generateUrl(submission.aadhaarBackUrl, 'aadhaarBack'),
       generateUrl(submission.livePhotoUrl, 'livePhoto'),

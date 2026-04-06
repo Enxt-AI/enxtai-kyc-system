@@ -594,7 +594,6 @@ export async function fetchDigiLockerDocuments(submissionId: string, documentTyp
     kycSessionId: string;
     documentsFetched: string[];
     documentUrls: {
-      panDocumentUrl?: string;
       aadhaarFrontUrl?: string;
     };
     processingStatus: string;

@@ -25,7 +25,6 @@ export class DigiLockerFetchResponseDto {
 
   @ApiProperty({ description: 'MinIO URLs for fetched documents' })
   documentUrls!: {
-    panDocumentUrl?: string;
     aadhaarFrontUrl?: string;
   };
 

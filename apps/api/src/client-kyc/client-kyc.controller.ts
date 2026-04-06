@@ -184,75 +184,6 @@ export class ClientKycController {
   }
 
   /**
-   * POST /v1/kyc/upload/pan
-   *
-   * Uploads PAN card document. Multipart form must include `externalUserId` field
-   * and `file` attachment.
-   *
-   * **Request Headers:**
-   * - `X-API-Key`: Client's API key (required)
-   * - `Content-Type`: multipart/form-data
-   *
-   * **Multipart Form Fields:**
-   * - `externalUserId` (text): Client's clientUser identifier (e.g., "customer-12345")
-   * - `file` (file): PAN card image (JPEG/PNG, max 5MB)
-   *
-   * **File Validation:**
-   * - MIME types: image/jpeg, image/png
-   * - Max size: 5MB
-   * - Min dimensions: 300x300px
-   * - Max dimensions: 8192x8192px
-   *
-   * **Response (200 OK):**
-   * ```json
-   * {
-   *   "success": true,
-   *   "kycSessionId": "a1b2c3d4-...",
-   *   "documentUrl": "kyc-abc123-pan/clientUser-uuid/PAN_CARD_1735987654321.jpg"
-   * }
-   * ```
-   *
-   * **cURL Example:**
-   * ```bash
-   * curl -X POST https://api.example.com/api/v1/kyc/upload/pan \
-   *   -H "X-API-Key: your-api-key-here" \
-   *   -F "externalUserId=customer-12345" \
-   *   -F "file=@/path/to/pan-card.jpg"
-   * ```
-   *
-   * @param client - Authenticated client object
-   * @param req - Fastify request (for multipart parsing)
-   * @returns Upload success response with session ID and document URL
-   */
-  @Post('upload/pan')
-  @ApiOperation({
-    summary: 'Upload PAN Card',
-    description: 'Uploads PAN card document image. Accepts JPEG/PNG, max 5MB.',
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['externalUserId', 'file'],
-      properties: {
-        externalUserId: { type: 'string', example: 'customer-12345' },
-        file: { type: 'string', format: 'binary' },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'PAN card uploaded successfully', type: UploadResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid file type or missing fields' })
-  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
-  @ApiResponse({ status: 413, description: 'File size exceeds 5MB limit' })
-  async uploadPan(@Client() client: any, @Req() req: FastifyRequest): Promise<UploadResponseDto> {
-    if (!client) {
-      throw new BadRequestException('Client not authenticated - middleware may not be applied to this route');
-    }
-    const { externalUserId, file } = await this.parseMultipartUpload(req);
-    return await this.clientKycService.uploadPan(client.id, externalUserId, file);
-  }
-
-  /**
    * POST /v1/kyc/upload/aadhaar/front
    *
    * Uploads Aadhaar card front side. Front side must contain clientUser's photograph
@@ -679,39 +610,6 @@ export class ClientKycController {
     @Body() body: { kycSessionId: string },
   ): Promise<any> {
     return await this.clientKycService.triggerVerification(client.id, body.kycSessionId);
-  }
-
-  /**
-   * POST /v1/kyc/delete/pan
-   *
-   * Deletes PAN card document from storage and clears URL in database.
-   *
-   * @param client - Authenticated client object
-   * @param body - Request body with externalUserId
-   * @returns Success response
-   */
-  @Post('delete/pan')
-  @ApiOperation({
-    summary: 'Delete PAN Document',
-    description: 'Deletes PAN card document from storage and database.',
-  })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['externalUserId'],
-      properties: {
-        externalUserId: { type: 'string', example: 'customer-12345' },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'PAN document deleted successfully' })
-  @ApiResponse({ status: 401, description: 'Invalid or missing X-API-Key header' })
-  @ApiResponse({ status: 404, description: 'ClientUser not found' })
-  async deletePan(
-    @Client() client: any,
-    @Body() body: { externalUserId: string },
-  ): Promise<{ success: boolean; message: string }> {
-    return await this.clientKycService.deletePan(client.id, body.externalUserId);
   }
 
   /**

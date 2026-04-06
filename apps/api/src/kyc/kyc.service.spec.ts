@@ -5,8 +5,12 @@ import { StorageService } from '../storage/storage.service';
 import { KycService } from './kyc.service';
 import { DocumentType } from '../storage/storage.types';
 import { InternalStatus } from '@enxtai/shared-types';
-import { OcrService } from '../ocr/ocr.service';
 import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
+import { WebhookService } from '../webhooks/webhook.service';
+import { DigiLockerDocumentService } from '../digilocker/digilocker-document.service';
+
+import { AadhaarOcrService } from '../aadhaar-ocr/aadhaar-ocr.service';
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
 
 jest.mock('../face-recognition/face-recognition.service', () => {
   const verifyFaceWorkflow = jest.fn();
@@ -24,8 +28,10 @@ describe('KycService', () => {
   let service: KycService;
   let prisma: jest.Mocked<PrismaService>;
   let storage: jest.Mocked<StorageService>;
-  let ocr: jest.Mocked<OcrService>;
+  
   let faceRecognition: jest.Mocked<FaceRecognitionService>;
+  let aadhaarOcr: jest.Mocked<AadhaarOcrService>;
+  let aadhaarQr: jest.Mocked<AadhaarQrService>;
 
   const mockFile = (mimetype = 'image/jpeg', size = 1024 * 1024) => ({
     filename: 'test.jpg',
@@ -43,7 +49,7 @@ describe('KycService', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'sub-1', userId: 'clientUser-1', internalStatus: InternalStatus.PENDING }),
         update: jest
           .fn()
-          .mockResolvedValue({ id: 'sub-1', panDocumentUrl: 'path', aadhaarDocumentUrl: 'path', livePhotoUrl: 'path' }),
+          .mockResolvedValue({ id: 'sub-1', panNumber: 'dummy', aadhaarFrontUrl: 'path', livePhotoUrl: 'path' }),
       },
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
@@ -54,22 +60,45 @@ describe('KycService', () => {
       uploadDocument: jest.fn().mockResolvedValue('bucket/path'),
     } as any;
 
-    ocr = {
-      extractPanData: jest.fn(),
-      extractAadhaarData: jest.fn(),
-    } as any;
+    
 
     faceRecognition = {
       verifyFaceWorkflow: jest.fn(),
     } as any;
+
+    aadhaarOcr = {
+      triggerAadhaarExtraction: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
+    aadhaarQr = {
+      decodeQrString: jest.fn().mockResolvedValue({
+        uid: 'XXXX XXXX 1234',
+        fullName: 'Test User',
+        gender: 'Male',
+      }),
+    } as any;
+
+    let webhookService: any;
+    let digilockerService: any;
+
+    webhookService = {
+      triggerWebhook: jest.fn(),
+    };
+
+    digilockerService = {
+      fetchDocuments: jest.fn(),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
         KycService,
         { provide: PrismaService, useValue: prisma },
         { provide: StorageService, useValue: storage },
-        { provide: OcrService, useValue: ocr },
         { provide: FaceRecognitionService, useValue: faceRecognition },
+        { provide: WebhookService, useValue: webhookService },
+        { provide: DigiLockerDocumentService, useValue: digilockerService },
+        { provide: AadhaarOcrService, useValue: aadhaarOcr },
+        { provide: AadhaarQrService, useValue: aadhaarQr },
       ],
     }).compile();
 
@@ -77,42 +106,14 @@ describe('KycService', () => {
     metadataMock.mockResolvedValue({ width: 1200, height: 800 });
   });
 
-  it('uploads PAN document with validations', async () => {
-    const file = mockFile('image/jpeg', 1024 * 1024);
-    const res = await service.uploadPanDocument('clientUser-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.PAN_CARD, '00000000-0000-0000-0000-000000000000', 'clientUser-1', expect.any(Object));
-    expect(prisma.kYCSubmission.update).toHaveBeenCalledWith({
-      where: { id: 'sub-1' },
-      data: {
-        panDocumentUrl: 'bucket/path',
-        internalStatus: InternalStatus.DOCUMENTS_UPLOADED,
-      },
-    });
-    expect(res.panDocumentUrl).toBeDefined();
-  });
 
-  it('rejects invalid file type', async () => {
-    const file = mockFile('text/plain', 1024);
-    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('rejects oversized file', async () => {
-    const file = mockFile('image/jpeg', 6 * 1024 * 1024);
-    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(PayloadTooLargeException);
-  });
-
-  it('rejects invalid dimensions', async () => {
-    metadataMock.mockResolvedValueOnce({ width: 100, height: 100 });
-    const file = mockFile('image/jpeg', 1024);
-    await expect(service.uploadPanDocument('clientUser-1', file)).rejects.toBeInstanceOf(BadRequestException);
-  });
 
   it('uploads Aadhaar document and updates submission', async () => {
     const file = mockFile('image/png', 500000);
-    const res = await service.uploadAadhaarDocument('clientUser-1', file);
-    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD, '00000000-0000-0000-0000-000000000000', 'clientUser-1', expect.any(Object));
+    const res = await service.uploadAadhaarFront('clientUser-1', file);
+    expect(storage.uploadDocument).toHaveBeenCalledWith(DocumentType.AADHAAR_CARD_FRONT, '00000000-0000-0000-0000-000000000000', 'clientUser-1', expect.any(Object));
     expect(prisma.kYCSubmission.update).toHaveBeenCalled();
-    expect(res.aadhaarDocumentUrl).toBeDefined();
+    expect(res.aadhaarFrontUrl).toBeDefined();
   });
 
   it('uploads live photo with image-only validation and updates status when docs exist', async () => {
@@ -121,8 +122,10 @@ describe('KycService', () => {
       .mockResolvedValue({
         id: 'sub-1',
         userId: 'clientUser-1',
-        panDocumentUrl: 'pan-path',
-        aadhaarDocumentUrl: 'aadhaar-front',
+        panNumber: 'dummy',
+        aadhaarFrontUrl: 'aadhaar-front',
+        aadhaarBackUrl: 'aadhaar-back',
+        signatureUrl: 'signature-path',
         internalStatus: InternalStatus.PENDING,
       } as any);
 

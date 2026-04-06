@@ -5,7 +5,6 @@ export interface KYCSubmission {
   userId: string;
   submissionDate: Date;
   documentSource: DocumentSource;
-  panDocumentUrl?: string | null;
   aadhaarDocumentUrl?: string | null;
   livePhotoUrl?: string | null;
   panNumber?: string | null;
@@ -34,7 +33,6 @@ export interface CreateKYCSubmissionDto {
 }
 
 export interface UpdateKYCSubmissionDto {
-  panDocumentUrl?: string;
   aadhaarDocumentUrl?: string;
   livePhotoUrl?: string;
   panNumber?: string;

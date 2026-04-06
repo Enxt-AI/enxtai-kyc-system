@@ -10,7 +10,6 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
-import { OcrModule } from './ocr/ocr.module';
 import { KycModule } from './kyc/kyc.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
@@ -21,6 +20,7 @@ import { DigiLockerModule } from './digilocker/digilocker.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 import { ClientThrottlerGuard } from './common/guards/client-throttler.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AadhaarOcrModule } from './aadhaar-ocr/aadhaar-ocr.module';
 
 /**
  * App Module
@@ -111,8 +111,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     HealthModule,
     PrismaModule,
     StorageModule,
-    OcrModule,
-    KycModule,
+        KycModule,
     AdminModule,
     AuthModule, // Client clientUser authentication
     ClientKycModule, // Client-facing KYC APIs at /v1/kyc/* (protected by TenantMiddleware)

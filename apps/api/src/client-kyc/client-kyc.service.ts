@@ -282,47 +282,6 @@ export class ClientKycService {
   }
 
   /**
-   * Upload PAN Document
-   *
-   * Uploads PAN card image for a client's end-clientUser. Delegates to KycService for actual
-   * upload and validation logic.
-   *
-   * **Tenant Isolation:**
-   * - Validates clientUser belongs to clientId (composite key lookup)
-   * - Documents stored in client-specific bucket: `kyc-{clientId}-pan`
-   *
-   * **File Validation:**
-   * - MIME types: image/jpeg, image/png
-   * - Max size: 5MB
-   * - Min dimensions: 300x300px
-   * - Max dimensions: 8192x8192px
-   *
-   * @param clientId - UUID of client organization
-   * @param externalUserId - Client's clientUser identifier
-   * @param file - Multipart file upload
-   * @returns Upload success response with session ID and document URL
-   * @throws NotFoundException if clientUser not found
-   *
-   * @example
-   * const response = await uploadPan('client-abc', 'customer-123', panFile);
-   * // Returns: { success: true, kycSessionId: '...', documentUrl: 'kyc-abc-pan/...' }
-   */
-  async uploadPan(
-    clientId: string,
-    externalUserId: string,
-    file: MultipartFile,
-  ): Promise<UploadResponseDto> {
-    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
-    const submission = await this.kycService.uploadPanDocument(userId, file, clientId);
-
-    return {
-      success: true,
-      kycSessionId: submission.id,
-      documentUrl: submission.panDocumentUrl || '',
-    };
-  }
-
-  /**
    * Upload Aadhaar Front Document
    *
    * Uploads Aadhaar card front side (contains photo for face matching).
@@ -739,26 +698,6 @@ export class ClientKycService {
   }
 
   /**
-   * Delete PAN Document
-   *
-   * Deletes PAN card document from storage and clears URL in database.
-   * Tenant-isolated: only deletes if clientUser belongs to specified client.
-   *
-   * @param clientId - Authenticated client ID
-   * @param externalUserId - Client's clientUser identifier
-   * @returns Success response
-   * @throws NotFoundException if clientUser not found
-   */
-  async deletePan(
-    clientId: string,
-    externalUserId: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const userId = await this.lookupUserByExternalId(clientId, externalUserId);
-    await this.kycService.deletePanDocument(userId);
-    return { success: true, message: 'PAN document deleted successfully' };
-  }
-
-  /**
    * Delete Aadhaar Front Document
    *
    * Deletes Aadhaar front document from storage and clears URL in database.
@@ -906,7 +845,6 @@ export class ClientKycService {
       kycSessionId: submissionId,
       documentsFetched: result.fetchedDocuments,
       documentUrls: {
-        panDocumentUrl: updatedSubmission?.panDocumentUrl || undefined,
         aadhaarFrontUrl: updatedSubmission?.aadhaarFrontUrl || undefined,
       },
       processingStatus: 'OCR and face verification processing initiated',

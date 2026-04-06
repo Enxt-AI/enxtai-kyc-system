@@ -12,13 +12,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { MAX_FILE_SIZE } from '../storage/storage.constants';
 import { DocumentType, UploadDocumentDto } from '../storage/storage.types';
-import { OcrService } from '../ocr/ocr.service';
 import { FaceRecognitionService } from '../face-recognition/face-recognition.service';
 import { WebhookService } from '../webhooks/webhook.service';
 import { WebhookEvent } from '../webhooks/webhook-events.enum';
 import { DigiLockerDocumentService } from '../digilocker/digilocker-document.service';
+import { AadhaarOcrService } from '../aadhaar-ocr/aadhaar-ocr.service';
 import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
+
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
 
 /** Allowed MIME types for document uploads (JPEG/PNG only) */
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
@@ -73,10 +75,11 @@ export class KycService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
-    private readonly ocrService: OcrService,
     private readonly faceRecognitionService: FaceRecognitionService,
     private readonly webhookService: WebhookService,
     private readonly digiLockerDocumentService: DigiLockerDocumentService,
+    private readonly aadhaarOcrService: AadhaarOcrService,
+    private readonly aadhaarQrService: AadhaarQrService,
   ) {}
 
   /** Generate a temporary phone that won't collide with UNIQUE(phone) */
@@ -299,7 +302,7 @@ export class KycService {
    * regardless of document upload order.
    *
    * **Required Documents**:
-   * - PAN document (panDocumentUrl)
+   * - PAN document (panNumber)
    * - Aadhaar (either legacy aadhaarDocumentUrl OR both aadhaarFrontUrl + aadhaarBackUrl)
    * - Live photo (livePhotoUrl)
    *
@@ -327,7 +330,7 @@ export class KycService {
   ): Promise<void> {
     try {
       // Check if all required documents are present (PAN + Aadhaar + live photo + signature)
-      const hasPan = Boolean(submission.panDocumentUrl);
+      const hasPan = Boolean(submission.panNumber);
       const hasAadhaar = Boolean(
         submission.aadhaarDocumentUrl ||
         (submission.aadhaarFrontUrl && submission.aadhaarBackUrl)
@@ -352,12 +355,12 @@ export class KycService {
       // --- Step 2: Auto-run OCR on PAN document ---
       // Extracts panNumber, fullName, dateOfBirth from the uploaded PAN image
       // and persists them to the KYCSubmission record.
-      if (submission.panDocumentUrl) {
+      if (submission.panNumber) {
         try {
           this.logger.log(
             `Starting PAN OCR extraction for submission ${submission.id}`,
           );
-          await this.extractPanDataAndUpdate(submission.id);
+          
           this.logger.log(
             `PAN OCR extraction completed for submission ${submission.id}`,
           );
@@ -379,7 +382,7 @@ export class KycService {
           this.logger.log(
             `Starting Aadhaar OCR extraction for submission ${submission.id}`,
           );
-          await this.extractAadhaarDataAndUpdate(submission.id);
+          
           this.logger.log(
             `Aadhaar OCR extraction completed for submission ${submission.id}`,
           );
@@ -497,86 +500,6 @@ export class KycService {
   }
 
   /**
-   * Upload PAN Document
-   *
-   * Uploads PAN card image to MinIO storage with validation.
-   *
-   * **Multi-Tenancy (Dual-Mode Operation)**:
-   * - Legacy mode: clientId defaults to '00000000-0000-0000-0000-000000000000' for internal APIs
-   * - Tenant mode: clientId provided by client-facing APIs for multi-tenant bucket isolation
-   *
-   * @param userId - Internal clientUser UUID
-   * @param file - Multipart file upload
-   * @param clientId - Optional client UUID (defaults to legacy client for backward compatibility)
-   * @returns Updated KYCSubmission object
-   */
-  async uploadPanDocument(userId: string, file: MultipartFile, clientId: string = '00000000-0000-0000-0000-000000000000') {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-
-    // Auto-create clientUser if not exists
-    const clientUser = await this.getOrCreateUser(userId, clientId);
-
-    // Auto-create submission if not exists
-    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
-
-    const buffer = await this.prepareFileBuffer(file, ALLOWED_MIME_TYPES);
-    await this.validateImageDimensionsIfNeeded(file.mimetype, buffer);
-
-    const uploadDto: UploadDocumentDto = {
-      buffer,
-      filename: file.filename,
-      mimetype: file.mimetype,
-    };
-
-    const objectPath = await this.storageService.uploadDocument(
-      DocumentType.PAN_CARD,
-      clientUser.clientId,
-      clientUser.id,
-      uploadDto,
-    );
-
-    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
-    // PAN (being uploaded now) + Aadhaar (front+back or legacy) + live photo + signature.
-    const hasAadhaar = Boolean(
-      submission.aadhaarDocumentUrl ||
-      (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
-    );
-    const hasLivePhoto = Boolean(submission.livePhotoUrl);
-    const hasSignature = Boolean(submission.signatureUrl);
-    const allDocsPresent = hasAadhaar && hasLivePhoto && hasSignature;
-
-    const updated = await this.prisma.kYCSubmission.update({
-      where: { id: submission.id },
-      data: {
-        panDocumentUrl: objectPath,
-        internalStatus: allDocsPresent
-          ? InternalStatus.DOCUMENTS_UPLOADED
-          : submission.internalStatus,
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        userId: clientUser.id,
-        action: 'KYC_DOCUMENT_UPLOAD',
-        metadata: { type: 'PAN', objectPath },
-      },
-    });
-
-    // Trigger background OCR immediately upon individual component fetch.
-    this.extractPanDataAndUpdate(updated.id).catch((e) => this.logger.error('Background PAN OCR early-trigger failed', e));
-
-    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
-    // in the background so the upload response returns immediately.
-    // The .catch() prevents unhandled promise rejections from crashing the process.
-    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
-
-    return updated;
-  }
-
-  /**
    * Upload Aadhaar Document (Legacy)
    *
    * Uploads single-side Aadhaar card image. Prefer uploadAadhaarFront/uploadAadhaarBack.
@@ -616,7 +539,7 @@ export class KycService {
 
     // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Aadhaar legacy (being uploaded now) + PAN + live photo + signature.
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasLivePhoto = Boolean(submission.livePhotoUrl);
     const hasSignature = Boolean(submission.signatureUrl);
     const allDocsPresent = hasPan && hasLivePhoto && hasSignature;
@@ -690,7 +613,7 @@ export class KycService {
 
     // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Aadhaar front (being uploaded now) + Aadhaar back + PAN + live photo + signature.
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasAadhaarBack = Boolean(submission.aadhaarBackUrl);
     const hasLivePhoto = Boolean(submission.livePhotoUrl);
     const hasSignature = Boolean(submission.signatureUrl);
@@ -714,13 +637,87 @@ export class KycService {
       },
     });
 
-    // Trigger targeted OCR extraction seamlessly immediately!
-    this.extractAadhaarDataAndUpdate(updated.id).catch((e) => this.logger.error('Background Aadhaar OCR early-trigger failed', e));
 
-    // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
-    // in the background so the upload response returns immediately.
-    // The .catch() prevents unhandled promise rejections from crashing the process.
-    this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
+
+    // processed silently and decoupled from the upload latency.
+    this.aadhaarOcrService.triggerAadhaarExtraction(updated.id).catch(err => {
+        this.logger.error(`Background Aadhaar OCR failed for ${updated.id}`, err);
+    });
+
+    return updated;
+  }
+
+  /**
+   * Upload and Decode Aadhaar QR Code
+   *
+   * Accepts the raw QR string scanned from an Aadhaar card.
+   * Decodes Secure QR and legacy XML formats on the backend securely.
+   * Extracts demographics and JPEG2000 photograph.
+   *
+   * @param userId - Internal clientUser UUID
+   * @param dto - { rawQrText: string }
+   * @param clientId - Optional client UUID
+   */
+  async uploadAadhaarQr(userId: string, rawQrText: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
+    if (!rawQrText) {
+      throw new BadRequestException('QR text is required');
+    }
+
+    const clientUser = await this.getOrCreateUser(userId, clientId);
+    const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
+
+    // Decode QR securely using the injected service
+    const extractedData = await this.aadhaarQrService.decodeQrString(rawQrText);
+
+    let objectPath: string | undefined;
+
+    // If JP2 photo bytes were extracted, store them in MinIO as the Aadhaar Front
+    if (extractedData.photoBytes && extractedData.photoBytes.length > 0) {
+      const uploadDto: UploadDocumentDto = {
+        buffer: extractedData.photoBytes,
+        filename: 'aadhaar_extracted_photo.jp2',
+        mimetype: 'image/jp2',
+      };
+      // We store it as AADHAAR_CARD_FRONT so FaceRecognitionService uses it as the source of truth
+      objectPath = await this.storageService.uploadDocument(
+        DocumentType.AADHAAR_CARD_FRONT,
+        clientId,
+        clientUser.id,
+        uploadDto,
+      );
+    }
+
+    // Determine Status
+    const hasPan = !!submission.panNumber;
+    const hasAadhaarBack = !!submission.aadhaarBackUrl;
+    const hasLivePhoto = !!submission.livePhotoUrl;
+    const hasSignature = !!submission.signatureUrl;
+
+    const allDocsPresent = hasPan && hasAadhaarBack && hasLivePhoto && hasSignature && (!!objectPath || !!submission.aadhaarFrontUrl);
+
+    // Update the Submission with Demographics
+    const updated = await this.prisma.kYCSubmission.update({
+      where: { id: submission.id },
+      data: {
+        ...(objectPath && { aadhaarFrontUrl: objectPath }),
+        aadhaarNumber: extractedData.uid,
+        fullName: extractedData.fullName,
+        gender: extractedData.gender,
+        dateOfBirth: extractedData.dateOfBirth,
+        address: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull,
+        internalStatus: allDocsPresent
+          ? InternalStatus.DOCUMENTS_UPLOADED
+          : submission.internalStatus,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: clientUser.id,
+        action: 'KYC_AADHAAR_QR_DECODE',
+        metadata: { objectPath, uid: extractedData.uid },
+      },
+    });
 
     return updated;
   }
@@ -765,7 +762,7 @@ export class KycService {
 
     // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Aadhaar back (being uploaded now) + Aadhaar front + PAN + live photo + signature.
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasAadhaarFront = Boolean(submission.aadhaarFrontUrl);
     const hasLivePhoto = Boolean(submission.livePhotoUrl);
     const hasSignature = Boolean(submission.signatureUrl);
@@ -789,41 +786,12 @@ export class KycService {
       },
     });
 
-    // Trigger targeted OCR extraction seamlessly immediately!
-    this.extractAadhaarDataAndUpdate(updated.id).catch((e) => this.logger.error('Background Aadhaar OCR early-trigger failed', e));
+
 
     // Fire-and-forget: trigger webhook + auto-processing (OCR, face verification)
     // in the background so the upload response returns immediately.
     // The .catch() prevents unhandled promise rejections from crashing the process.
     this.checkAndTriggerDocumentsUploadedWebhook(updated).catch(() => {});
-
-    return updated;
-  }
-
-  async deletePanDocument(userId: string, submissionId?: string) {
-    const submission = await this.getSubmissionForUser(userId, submissionId);
-    if (!submission.panDocumentUrl) {
-      return submission;
-    }
-
-    const { bucket, objectName } = this.parseObjectPath(submission.panDocumentUrl);
-    await this.storageService.deleteDocument(bucket, objectName);
-
-    const updated = await this.prisma.kYCSubmission.update({
-      where: { id: submission.id },
-      data: {
-        panDocumentUrl: null,
-        internalStatus: this.recomputeInternalStatus({ ...submission, panDocumentUrl: null }),
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        userId,
-        action: 'KYC_DOCUMENT_DELETE',
-        metadata: { type: 'PAN', objectPath: submission.panDocumentUrl },
-      },
-    });
 
     return updated;
   }
@@ -927,7 +895,7 @@ export class KycService {
 
     // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Live photo (being uploaded now) + PAN + Aadhaar (front+back or legacy) + signature.
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasAadhaar = Boolean(
       submission.aadhaarDocumentUrl ||
       (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
@@ -1001,7 +969,7 @@ export class KycService {
 
     // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Signature (being uploaded now) + PAN + Aadhaar (front+back or legacy) + live photo.
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasAadhaar = Boolean(
       submission.aadhaarDocumentUrl ||
       (submission.aadhaarFrontUrl && submission.aadhaarBackUrl),
@@ -1039,11 +1007,11 @@ export class KycService {
       throw new NotFoundException('Submission not found');
     }
     const aadhaarUrl = submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl;
-    if (!submission.panDocumentUrl || !aadhaarUrl || !submission.livePhotoUrl) {
+    if (!submission.panNumber || !aadhaarUrl || !submission.livePhotoUrl) {
       throw new BadRequestException('Required documents not uploaded');
     }
 
-    const { bucket: panBucket, objectName: panObject } = this.parseObjectPath(submission.panDocumentUrl);
+    const { bucket: panBucket, objectName: panObject } = this.parseObjectPath(submission.panNumber);
     const aadhaarPathForFace = submission.aadhaarFrontUrl || submission.aadhaarDocumentUrl || submission.aadhaarBackUrl;
     const { bucket: aadhaarBucket, objectName: aadhaarObject } = this.parseObjectPath(aadhaarPathForFace as string);
     const { bucket: liveBucket, objectName: liveObject } = this.parseObjectPath(submission.livePhotoUrl);
@@ -1106,75 +1074,6 @@ export class KycService {
 
     // Trigger webhook after face verification completes (includes verification scores)
     await this.triggerWebhook(updated, WebhookEvent.KYC_VERIFICATION_COMPLETED);
-
-    return updated;
-  }
-
-  async extractPanDataAndUpdate(submissionId: string) {
-    const submission = await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } });
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
-
-    const ocrResult = await this.ocrService.extractPanData(submissionId);
-    const existingOcr = this.ensureRecord(submission.extractionResults);
-    const mergedOcrResults: Prisma.JsonObject = { ...existingOcr, pan: ocrResult as unknown as Prisma.JsonValue };
-    const shouldComplete = Boolean(submission.aadhaarNumber);
-
-    const updated = await this.prisma.kYCSubmission.update({
-      where: { id: submissionId },
-      data: {
-        panNumber: ocrResult.panNumber,
-        fullName: ocrResult.fullName ?? submission.fullName ?? undefined,
-        dateOfBirth: this.parseDate(ocrResult.dateOfBirth) ?? submission.dateOfBirth ?? undefined,
-        gender: ocrResult.gender ?? (submission as any).gender ?? undefined,
-        extractionResults: mergedOcrResults,
-        internalStatus: shouldComplete ? InternalStatus.OCR_COMPLETED : submission.internalStatus,
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        userId: submission.userId,
-        action: 'OCR_PAN_EXTRACT',
-        metadata: { submissionId, confidence: ocrResult.confidence },
-      },
-    });
-
-    return updated;
-  }
-
-  async extractAadhaarDataAndUpdate(submissionId: string) {
-    const submission = await this.prisma.kYCSubmission.findUnique({ where: { id: submissionId } });
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
-
-    const ocrResult = await this.ocrService.extractAadhaarData(submissionId);
-    const existingOcr = this.ensureRecord(submission.extractionResults);
-    const mergedOcrResults: Prisma.JsonObject = { ...existingOcr, aadhaar: ocrResult as unknown as Prisma.JsonValue };
-    const shouldComplete = Boolean(submission.panNumber);
-
-    const updated = await this.prisma.kYCSubmission.update({
-      where: { id: submissionId },
-      data: {
-        aadhaarNumber: ocrResult.aadhaarNumber,
-        fullName: ocrResult.fullName ?? submission.fullName ?? undefined,
-        address: ocrResult.address
-          ? { formatted: ocrResult.address }
-          : submission.address ?? undefined,
-        extractionResults: mergedOcrResults,
-        internalStatus: shouldComplete ? InternalStatus.OCR_COMPLETED : submission.internalStatus,
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        userId: submission.userId,
-        action: 'OCR_AADHAAR_EXTRACT',
-        metadata: { submissionId, confidence: ocrResult.confidence },
-      },
-    });
 
     return updated;
   }
@@ -1300,7 +1199,7 @@ export class KycService {
           if (doc.type === 'PAN') {
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
-              data: { panDocumentUrl: objectPath },
+              data: { panNumber: objectPath },
             });
           } else if (doc.type === 'AADHAAR') {
             await this.prisma.kYCSubmission.update({
@@ -1354,7 +1253,7 @@ export class KycService {
         externalUserId: clientUser.externalUserId,
         documentsFetched: fetchedDocuments,
         documentUrls: {
-          panDocumentUrl: updated.panDocumentUrl,
+          panNumber: updated.panNumber,
           aadhaarFrontUrl: updated.aadhaarFrontUrl,
         },
       });
@@ -1418,14 +1317,14 @@ export class KycService {
     }
 
     // Validate submission has documents
-    if (!submission.panDocumentUrl && !submission.aadhaarFrontUrl) {
+    if (!submission.panNumber && !submission.aadhaarFrontUrl) {
       throw new BadRequestException('Submission has no documents to process');
     }
 
     try {
       // Extract PAN data if PAN document exists
-      if (submission.panDocumentUrl) {
-        await this.extractPanDataAndUpdate(submissionId);
+      if (submission.panNumber) {
+        
       }
     } catch (error) {
       this.logger.error(`PAN OCR failed for submission ${submissionId}`, error);
@@ -1434,7 +1333,7 @@ export class KycService {
     try {
       // Extract Aadhaar data if Aadhaar document exists
       if (submission.aadhaarFrontUrl) {
-        await this.extractAadhaarDataAndUpdate(submissionId);
+        
       }
     } catch (error) {
       this.logger.error(`Aadhaar OCR failed for submission ${submissionId}`, error);
@@ -1767,7 +1666,7 @@ export class KycService {
    * - Prevents MinIO operations with invalid paths
    * - Critical for document deletion and download operations
    *
-   * @param path - Storage path string from database (panDocumentUrl, aadhaarFrontUrl, etc.)
+   * @param path - Storage path string from database (panNumber, aadhaarFrontUrl, etc.)
    * @returns Object with bucket and objectName for MinIO operations
    *
    * @throws {BadRequestException} When path format is invalid or components missing
@@ -1843,14 +1742,14 @@ export class KycService {
   }
 
   private recomputeInternalStatus(submission: {
-    panDocumentUrl: string | null;
+    panNumber: string | null;
     aadhaarDocumentUrl: string | null;
     aadhaarFrontUrl: string | null;
     aadhaarBackUrl: string | null;
     livePhotoUrl?: string | null;
     internalStatus: PrismaInternalStatus | InternalStatus;
   }): InternalStatus {
-    const hasPan = Boolean(submission.panDocumentUrl);
+    const hasPan = Boolean(submission.panNumber);
     const hasAadhaar = Boolean(
       submission.aadhaarDocumentUrl || submission.aadhaarFrontUrl || submission.aadhaarBackUrl,
     );

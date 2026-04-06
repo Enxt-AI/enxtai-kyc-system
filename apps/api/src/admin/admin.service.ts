@@ -124,10 +124,7 @@ export class AdminService {
     }
 
     const presignedUrls: Record<string, string> = {};
-    if (submission.panDocumentUrl) {
-      const { bucket, objectName } = this.parseObjectPath(submission.panDocumentUrl);
-      presignedUrls.panDocument = await this.storageService.generatePresignedUrl(bucket, objectName);
-    }
+
     if (submission.aadhaarDocumentUrl) {
       const { bucket, objectName } = this.parseObjectPath(submission.aadhaarDocumentUrl);
       presignedUrls.aadhaarDocument = await this.storageService.generatePresignedUrl(bucket, objectName);
