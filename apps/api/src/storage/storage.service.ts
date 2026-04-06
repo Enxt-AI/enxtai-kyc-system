@@ -325,7 +325,30 @@ export class StorageService implements OnModuleInit {
     expirySeconds: number = PRESIGNED_URL_EXPIRY,
   ): Promise<string> {
     try {
-      return await this.minio.presignedGetObject(bucket, objectName, expirySeconds);
+      const url = await this.minio.presignedGetObject(bucket, objectName, expirySeconds);
+      
+      const parsedUrl = new URL(url);
+      
+      const externalEndpoint = this.configService.get<string>('MINIO_EXTERNAL_ENDPOINT');
+      if (externalEndpoint) {
+        parsedUrl.hostname = externalEndpoint;
+      } else if (parsedUrl.hostname === 'minio') {
+        // Safe fallback for docker-compose environments without external configuration
+        parsedUrl.hostname = '35.154.17.116'; 
+        parsedUrl.protocol = 'http:'; // Fallback to avoid SSL errors on raw IP
+      }
+
+      const externalPort = this.configService.get<string>('MINIO_EXTERNAL_PORT');
+      if (externalPort) {
+        parsedUrl.port = externalPort;
+      }
+
+      const externalProtocol = this.configService.get<string>('MINIO_EXTERNAL_PROTOCOL');
+      if (externalProtocol) {
+        parsedUrl.protocol = externalProtocol.endsWith(':') ? externalProtocol : `${externalProtocol}:`;
+      }
+
+      return parsedUrl.toString();
     } catch (err: any) {
       throw new StoragePresignedUrlException(err?.message ?? 'Presigned URL failed', bucket, objectName);
     }
