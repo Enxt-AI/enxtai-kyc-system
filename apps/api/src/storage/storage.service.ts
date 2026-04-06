@@ -75,6 +75,7 @@ export class StorageService implements OnModuleInit {
       useSSL: cfg.useSSL,
       accessKey: cfg.accessKey,
       secretKey: cfg.secretKey,
+      region: this.configService.get<string>('MINIO_REGION'),
     });
   }
 
