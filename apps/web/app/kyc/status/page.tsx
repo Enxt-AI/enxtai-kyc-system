@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getKycStatus, checkDigiLockerStatus, getKYCSubmission } from '@/lib/api-client';
+import { getKycStatus, checkDigiLockerStatus, initiateKyc } from '@/lib/api-client';
 import KycStatusIndicator from '@/components/KycStatusIndicator';
 
 function StatusPageContent() {
@@ -25,12 +25,18 @@ function StatusPageContent() {
         let submissionId = submissionIdParam;
         
         if (!submissionId) {
-          const data = await getKYCSubmission(userId);
-          if (data?.id) submissionId = data.id;
+          const sessionData = await initiateKyc(userId);
+          if (sessionData?.kycSessionId) {
+            submissionId = sessionData.kycSessionId;
+          }
+        }
+
+        if (!submissionId) {
+           throw new Error("Could not find a valid KYC session");
         }
 
         const [statusRes, digiLockerStatus] = await Promise.all([
-          getKycStatus(userId),
+          getKycStatus(submissionId),
           submissionId ? checkDigiLockerStatus(submissionId).catch(() => null) : Promise.resolve(null),
         ]);
         setData(statusRes);

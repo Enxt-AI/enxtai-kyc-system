@@ -533,8 +533,8 @@ export function clearKycReturnUrl(): void {
     };
   }
 
-  export async function getKycStatus(userId: string) {
-    const res = await api.get(`/api/v1/kyc/status/${userId}`);
+  export async function getKycStatus(kycSessionId: string) {
+    const res = await api.get(`/api/v1/kyc/status/${kycSessionId}`);
     return res.data;
   }
 

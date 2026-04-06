@@ -17,7 +17,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
-import { clearKycApiKey, getKycReturnUrl, clearKycReturnUrl, getKYCSubmission } from '@/lib/api-client';
+import { clearKycApiKey, getKycReturnUrl, clearKycReturnUrl, initiateKyc } from '@/lib/api-client';
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -42,8 +42,10 @@ export default function VerifyPage() {
     const fetchSubmission = async () => {
       if (!vId) return;
       try {
-        const data = await getKYCSubmission(vId);
-        if (data?.id) setSubmissionId(data.id);
+        const sessionData = await initiateKyc(vId);
+        if (sessionData?.kycSessionId) {
+          setSubmissionId(sessionData.kycSessionId);
+        }
       } catch (err) {
         console.error("Could not fetch KYC DB Submission", err);
       }

@@ -16,7 +16,7 @@ import {
   clearKycApiKey,
   clearKycReturnUrl,
   updateKycUiStep,
-  getKYCSubmission,
+  initiateKyc,
 } from "@/lib/api-client";
 
 type KycStepTab = 'upload' | 'photo' | 'signature' | 'verify';
@@ -60,14 +60,14 @@ function KycFlowContent() {
     // Try to load state safely from database
     const fetchStateFromDb = async () => {
       try {
-        const submission = await getKYCSubmission(trimmedId);
+        const sessionData = await initiateKyc(trimmedId);
         
-        if (submission?.id) {
-          dispatch(setSubmissionId(submission.id));
+        if (sessionData?.kycSessionId) {
+          dispatch(setSubmissionId(sessionData.kycSessionId));
           
           let stepParam = parseInt(searchParams.get('step') ?? '0', 10);
-          if (!stepParam && submission.uiStep) {
-            stepParam = submission.uiStep;
+          if (!stepParam && sessionData.uiStep) {
+            stepParam = sessionData.uiStep;
           }
           
           dispatch(setCurrentStep(stepParam >= 1 && stepParam <= 4 ? stepParam : 1));
