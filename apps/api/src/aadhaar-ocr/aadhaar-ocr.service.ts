@@ -114,27 +114,37 @@ export class AadhaarOcrService {
   }
 
   private extractAadhaarNumber(text: string): string | null {
-    // Looks for 12 digits, possibly space separated (4-4-4 pattern)
-    const regex = /(?:[2-9]{1}[0-9]{3})\s?[0-9]{4}\s?[0-9]{4}/g;
-    const matches = text.match(regex);
+    // Basic sanitization: OCR might confuse numbers with similar looking letters
+    const sanitizedText = text
+      .replace(/O/g, '0') // uppercase o to zero
+      .replace(/l/g, '1') // lowercase L to one
+      .replace(/I/g, '1') // uppercase i to one
+      .replace(/S/g, '5') // uppercase s to five
+      .replace(/B/g, '8') // uppercase b to eight
+      .replace(/Z/g, '2'); // uppercase z to two
+
+    // Looks for 12 digits, possibly space or hyphen separated (4-4-4 pattern)
+    // Relaxed leading digit (from [2-9] to [0-9]) to support demo/test fake Aadhaars
+    const regex = /(?:[0-9]{4})[\s-]?[0-9]{4}[\s-]?[0-9]{4}/g;
+    const matches = sanitizedText.match(regex);
     if (!matches) return null;
 
     // First pass: prefer Verhoeff-validated Aadhaar numbers
     for (const match of matches) {
-      const cleanNumber = match.replace(/\s/g, '');
+      const cleanNumber = match.replace(/[\s-]/g, '');
       if (validateAadhaar(cleanNumber)) {
         this.logger.log(`Aadhaar number validated via Verhoeff checksum: ${cleanNumber.substring(0, 4)}****${cleanNumber.substring(8)}`);
         return cleanNumber;
       }
     }
 
-    // Fallback: OCR often introduces single-digit errors that break Verhoeff.
-    // Use the first 12-digit candidate that matches the basic Aadhaar pattern.
+    // Fallback: OCR often introduces single-digit errors that break Verhoeff, or it's a test Aadhaar.
+    // Use the first 12-digit candidate.
     for (const match of matches) {
-      const cleanNumber = match.replace(/\s/g, '');
-      if (cleanNumber.length === 12 && /^[2-9]\d{11}$/.test(cleanNumber)) {
+      const cleanNumber = match.replace(/[\s-]/g, '');
+      if (cleanNumber.length === 12 && /^\d{12}$/.test(cleanNumber)) {
         this.logger.warn(
-          `Aadhaar number failed Verhoeff checksum (likely OCR error), storing best candidate: ${cleanNumber.substring(0, 4)}****${cleanNumber.substring(8)}`,
+          `Aadhaar number failed Verhoeff checksum (likely OCR error or test image), storing best candidate: ${cleanNumber.substring(0, 4)}****${cleanNumber.substring(8)}`,
         );
         return cleanNumber;
       }
