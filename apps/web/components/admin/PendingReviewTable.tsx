@@ -34,8 +34,8 @@ export default function PendingReviewTable({ items, onSelect }: Props) {
             {rows.map((item) => (
               <tr key={item.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
-                  <div className="font-semibold text-slate-900">{item.user.email}</div>
-                  <div className="text-xs text-slate-600">{item.user.phone}</div>
+                  <div className="font-semibold text-slate-900">{item.clientUser?.email ?? 'Unknown'}</div>
+                  <div className="text-xs text-slate-600">{item.clientUser?.phone ?? 'Unknown'}</div>
                 </td>
                 <td className="px-4 py-3 text-slate-700">{new Date(item.submissionDate).toLocaleString()}</td>
                 <td className="px-4 py-3 text-slate-700">{item.panNumber ?? '—'}</td>

@@ -1,7 +1,7 @@
 export interface PendingReviewSubmission {
   id: string;
   userId: string;
-  user: {
+  clientUser: {
     email: string;
     phone: string;
   };
