@@ -3,7 +3,6 @@
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { v4 as uuidv4 } from "uuid";
 import { validateApiKey, setKycApiKey } from "@/lib/api-client";
 
 /**
@@ -173,7 +172,7 @@ export default function HomePage() {
       if (result.valid) {
         // Store API key using helper function (sets key + 30min expiry)
         setKycApiKey(trimmedKey);
-        
+
         // Use a static verification ID to allow session pausing/resuming during demos
         const verificationId = "demo-web-user";
         // Redirect to KYC upload flow
