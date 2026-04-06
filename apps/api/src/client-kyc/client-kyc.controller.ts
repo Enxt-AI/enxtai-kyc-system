@@ -805,7 +805,6 @@ export class ClientKycController {
         documentUrls: {
           type: 'object',
           properties: {
-            panDocumentUrl: { type: 'string', example: 'kyc-client-pan/clientUser-uuid/pan.jpg' },
             aadhaarFrontUrl: { type: 'string', example: 'kyc-client-aadhaar/clientUser-uuid/aadhaar.jpg' },
           },
         },
@@ -826,7 +825,6 @@ export class ClientKycController {
     kycSessionId: string;
     documentsFetched: string[];
     documentUrls: {
-      panDocumentUrl?: string;
       aadhaarFrontUrl?: string;
     };
     processingStatus: string;

@@ -12,7 +12,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  *   "kycSessionId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
  *   "status": "PENDING",
  *   "uploadUrls": {
- *     "pan": "/v1/kyc/upload/pan",
  *     "aadhaarFront": "/v1/kyc/upload/aadhaar/front",
  *     "aadhaarBack": "/v1/kyc/upload/aadhaar/back",
  *     "livePhoto": "/v1/kyc/upload/live-photo"
@@ -48,14 +47,12 @@ export class InitiateKycResponseDto {
   @ApiProperty({
     description: 'Document upload endpoints (require X-API-Key header)',
     example: {
-      pan: '/v1/kyc/upload/pan',
       aadhaarFront: '/v1/kyc/upload/aadhaar/front',
       aadhaarBack: '/v1/kyc/upload/aadhaar/back',
       livePhoto: '/v1/kyc/upload/live-photo',
     },
   })
   uploadUrls!: {
-    pan: string;
     aadhaarFront: string;
     aadhaarBack: string;
     livePhoto: string;
@@ -84,7 +81,6 @@ export class InitiateKycResponseDto {
    * Steps the clientUser has already completed.
    *
    * Each entry corresponds to a KYC flow page:
-   * - "pan":       PAN document uploaded
    * - "aadhaar":   Aadhaar front and back (or legacy single) uploaded
    * - "photo":     Live photo captured and uploaded
    * - "signature": Signature drawn/uploaded
@@ -92,8 +88,8 @@ export class InitiateKycResponseDto {
    * Empty array for a fresh submission, all four for a fully-uploaded one.
    */
   @ApiPropertyOptional({
-    description: 'Completed KYC flow steps (e.g., ["pan", "aadhaar"]). Empty for new sessions.',
-    example: ['pan', 'aadhaar'],
+    description: 'Completed KYC flow steps (e.g., ["aadhaar"]). Empty for new sessions.',
+    example: ['aadhaar'],
     type: [String],
   })
   completedSteps?: string[];
@@ -102,7 +98,7 @@ export class InitiateKycResponseDto {
    * The next step the clientUser needs to complete in the KYC flow.
    * Null when all steps are done (all documents uploaded).
    *
-   * Possible values: "pan", "aadhaar", "photo", "signature", or null.
+   * Possible values: "aadhaar", "photo", "signature", or null.
    */
   @ApiPropertyOptional({
     description: 'Next step to complete. Null if all documents are uploaded.',
@@ -256,8 +252,8 @@ export class KycStatusResponseDto {
    * This field is derived from document URL presence on the submission record.
    */
   @ApiPropertyOptional({
-    description: 'Completed KYC flow steps (e.g., ["pan", "aadhaar"]). Empty for new sessions.',
-    example: ['pan', 'aadhaar'],
+    description: 'Completed KYC flow steps (e.g., ["aadhaar"]). Empty for new sessions.',
+    example: ['aadhaar'],
     type: [String],
   })
   completedSteps?: string[];
@@ -266,7 +262,7 @@ export class KycStatusResponseDto {
    * The next step the clientUser needs to complete in the KYC flow.
    * Null when all steps are done (all documents uploaded).
    *
-   * Possible values: "pan", "aadhaar", "photo", "signature", or null.
+   * Possible values: "aadhaar", "photo", "signature", or null.
    */
   @ApiPropertyOptional({
     description: 'Next step to complete. Null if all documents are uploaded.',

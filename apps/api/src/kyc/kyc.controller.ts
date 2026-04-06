@@ -88,7 +88,7 @@ export class KycController {
    *
    * @example
    * GET /api/kyc/submission/550e8400-e29b-41d4-a716-446655440000
-   * Response: { id: "...", panDocumentUrl: "...", aadhaarFrontUrl: "...", ... }
+   * Response: { id: "...", aadhaarFrontUrl: "...", ... }
    */
   @Get('submission/:userId')
   async getSubmission(@Param('userId') userId: string) {
@@ -445,7 +445,6 @@ export class KycController {
    *   submissionId: "sub_123abc-456def-789ghi",
    *   documentsFetched: ["PAN", "AADHAAR"],
    *   documentUrls: {
-   *     panDocumentUrl: "minio://kyc/pan-123.jpg",
    *     aadhaarFrontUrl: "minio://kyc/aadhaar-456.jpg"
    *   }
    * }
@@ -459,7 +458,6 @@ export class KycController {
         submissionId: result.submission.id,
         documentsFetched: result.fetchedDocuments,
         documentUrls: {
-          panDocumentUrl: result.submission.panDocumentUrl,
           aadhaarFrontUrl: result.submission.aadhaarFrontUrl,
         },
       };

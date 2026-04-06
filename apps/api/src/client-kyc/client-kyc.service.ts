@@ -267,7 +267,6 @@ export class ClientKycService {
       kycSessionId: submission.id,
       status: submission.internalStatus as InternalStatus,
       uploadUrls: {
-        pan: '/v1/kyc/upload/pan',
         aadhaarFront: '/v1/kyc/upload/aadhaar/front',
         aadhaarBack: '/v1/kyc/upload/aadhaar/back',
         livePhoto: '/v1/kyc/upload/live-photo',
@@ -625,10 +624,9 @@ export class ClientKycService {
    */
   private calculateProgress(submission: any): number {
     let progress = 0;
-    if (submission.panDocumentUrl) progress += 25;
-    if (submission.aadhaarFrontUrl || submission.aadhaarDocumentUrl) progress += 25;
-    if (submission.aadhaarBackUrl || submission.aadhaarDocumentUrl) progress += 25;
-    if (submission.livePhotoUrl) progress += 25;
+    if (submission.aadhaarFrontUrl || submission.aadhaarDocumentUrl) progress += 33;
+    if (submission.aadhaarBackUrl || submission.aadhaarDocumentUrl) progress += 33;
+    if (submission.livePhotoUrl) progress += 34;
     return progress;
   }
 
@@ -808,7 +806,6 @@ export class ClientKycService {
     kycSessionId: string;
     documentsFetched: string[];
     documentUrls: {
-      panDocumentUrl?: string;
       aadhaarFrontUrl?: string;
     };
     processingStatus: string;

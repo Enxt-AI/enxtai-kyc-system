@@ -193,7 +193,6 @@ export enum WebhookEvent {
    *     "externalUserId": "customer-456",
    *     "documentsFetched": ["PAN", "AADHAAR"],
    *     "documentUrls": {
-   *       "panDocumentUrl": "minio://kyc/pan-123.jpg",
    *       "aadhaarFrontUrl": "minio://kyc/aadhaar-456.jpg"
    *     }
    *   }   * }   * }
