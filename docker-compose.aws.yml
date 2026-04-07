@@ -7,8 +7,6 @@ services:
     container_name: kyc-api-staging
     env_file:
       - .env.aws
-    environment:
-      # AWS S3 is used for object storage
     ports:
       - "3001:3001"
 
