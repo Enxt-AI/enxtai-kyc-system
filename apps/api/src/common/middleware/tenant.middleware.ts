@@ -134,7 +134,8 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Missing API key from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new UnauthorizedException('API key required');
+      res.status(401).send({ statusCode: 401, message: 'API key required', error: 'Unauthorized' });
+      return;
     }
 
     // Validate API key and get client
@@ -144,7 +145,8 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Invalid or inactive API key from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new UnauthorizedException('Invalid or inactive API key');
+      res.status(401).send({ statusCode: 401, message: 'Invalid or inactive API key', error: 'Unauthorized' });
+      return;
     }
 
     // **NEW: Validate request domain against client whitelist**
@@ -152,7 +154,8 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Domain not whitelisted for client ${client.name} (${client.id}) from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new ForbiddenException('Domain not whitelisted');
+      res.status(403).send({ statusCode: 403, message: 'Domain not whitelisted', error: 'Forbidden' });
+      return;
     }
 
     // Inject tenant context into request
