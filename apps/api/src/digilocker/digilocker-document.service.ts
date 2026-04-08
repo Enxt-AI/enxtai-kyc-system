@@ -765,57 +765,47 @@ export class DigiLockerDocumentService {
       parseString(xmlData, { explicitArray: false }, (err: any, result: any) => {
         if (err) return resolve(null);
         try {
-          // Helper: extract a scalar value from an xml2js node
-          // xml2js can produce { "$": { "num": "VALUE" } } or plain strings
-          const extractValue = (node: any, ...attrNames: string[]): string | null => {
+          // Helper: get attribute value from xml2js node
+          const getAttr = (node: any, attr: string): string | null => {
             if (!node) return null;
             if (typeof node === 'string') return node;
-            // xml2js attribute object: { "$": { "key": "value" } }
-            if (node?.$ && typeof node.$ === 'object') {
-              for (const attr of attrNames) {
-                if (node.$[attr]) return String(node.$[attr]);
-              }
-              // Fallback: return first attribute value
-              const vals = Object.values(node.$);
-              if (vals.length > 0 && typeof vals[0] === 'string') return vals[0] as string;
-            }
-            // xml2js text content
+            if (node?.$?.[attr]) return String(node.$[attr]);
             if (node?._ && typeof node._ === 'string') return node._;
             return null;
           };
 
-          // Deep search: walk all keys looking for PAN, Name, DOB, Gender
-          const flatSearch = (obj: any): any => {
-            const found: any = { name: null, panNumber: null, dob: null, gender: null };
-            if (!obj || typeof obj !== 'object') return found;
+          // DigiLocker PAN XML structure:
+          // <Certificate name="PAN Verification Record" number="NUUPS2934E">
+          //   <IssuedTo>
+          //     <Person name="PERSON NAME" dob="DD-MM-YYYY" gender="M/F"/>
+          //   </IssuedTo>
+          // </Certificate>
+          const cert = result?.Certificate || result?.certificate || result;
+          const certAttrs = cert?.$ || {};
+          
+          // Person node has the REAL demographic data
+          const person = cert?.IssuedTo?.Person || cert?.issuedTo?.person || cert?.IssuedTo?.person || null;
+          const personAttrs = person?.$ || {};
 
-            for (const [key, val] of Object.entries(obj)) {
-              const k = key.toLowerCase();
-              if (k === 'pan' || k === 'pannumber' || k === 'pan_number') {
-                found.panNumber = extractValue(val, 'num', 'value', 'pan') || found.panNumber;
-              } else if (k === 'name' || k === 'fullname' || k === 'full_name') {
-                found.name = extractValue(val, 'value', 'name') || found.name;
-              } else if (k === 'dob' || k === 'dateofbirth' || k === 'date_of_birth') {
-                found.dob = extractValue(val, 'value', 'dob', 'date') || found.dob;
-              } else if (k === 'gender' || k === 'sex') {
-                found.gender = extractValue(val, 'value', 'gender') || found.gender;
-              } else if (val && typeof val === 'object' && !Array.isArray(val) && key !== '$') {
-                // Recurse deeper
-                const deeper = flatSearch(val);
-                found.panNumber = found.panNumber || deeper.panNumber;
-                found.name = found.name || deeper.name;
-                found.dob = found.dob || deeper.dob;
-                found.gender = found.gender || deeper.gender;
-              }
-            }
-            return found;
-          };
+          // Extract PAN number: from Certificate.number or Person attributes
+          const panNumber = certAttrs.number || personAttrs.pan || personAttrs.panNumber || null;
 
-          const extracted = flatSearch(result);
-          if (!extracted.panNumber && !extracted.name && !extracted.dob && !extracted.gender) {
+          // Extract person's name from Person node (NOT Certificate.name which is the doc title)
+          const name = personAttrs.name || personAttrs.fullName || personAttrs.Name || null;
+
+          // Extract DOB from Person node
+          const dob = personAttrs.dob || personAttrs.DOB || personAttrs.dateOfBirth || null;
+
+          // Extract gender from Person node
+          const gender = personAttrs.gender || personAttrs.Gender || personAttrs.sex || null;
+
+          this.logger.log(`parseXmlDemographics: certAttrs=${JSON.stringify(certAttrs)}, personAttrs=${JSON.stringify(personAttrs)}`);
+
+          if (!panNumber && !name && !dob && !gender) {
             return resolve(null);
           }
-          resolve(extracted);
+          
+          resolve({ name, panNumber, dob, gender });
         } catch {
           resolve(null);
         }
