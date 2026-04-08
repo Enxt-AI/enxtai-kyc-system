@@ -1176,17 +1176,16 @@ export class KycService {
             extractedPan = panMatch[0];
           }
 
-          // Extract cardholder name from document metadata 'name' or 'description'
-          const extractedName: string | null = (panDoc as any).name || (panDoc as any).description || null;
+          // Note: panDoc.name is the document TITLE (e.g. "PAN Verification Record"), NOT the person's name
+          // Person's name can only come from XML demographic data or Aadhaar
 
-          this.logger.log(`PAN metadata extraction: pan=${extractedPan}, name=${extractedName}, uri=${uri}, searchStr=${searchStr}`);
+          this.logger.log(`PAN metadata extraction: pan=${extractedPan}, uri=${uri}, searchStr=${searchStr}`);
 
           documentsToFetch.push({
             type: 'PAN',
             uri,
             documentType: DocumentType.PAN_CARD,
             extractedPan,
-            extractedName,
             rawDoc: panDoc, // carry full metadata for fallback
           } as any);
         }
@@ -1236,7 +1235,7 @@ export class KycService {
 
             // Determine best values: XML > metadata fallback
             const panNumber = xmlData?.panNumber || (doc as any).extractedPan || null;
-            const fullName = xmlData?.name || (doc as any).extractedName || null;
+            const fullName = xmlData?.name || null;
             const gender = xmlData?.gender || null;
 
             this.logger.log(`PAN DB update: panNumber=${panNumber}, fullName=${fullName}, gender=${gender}, dob=${dobValue || 'null'}, xmlData=${JSON.stringify(xmlData)}`);

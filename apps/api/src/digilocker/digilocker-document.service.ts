@@ -728,12 +728,14 @@ export class DigiLockerDocumentService {
           const xmlData = response.data;
           if (!xmlData) continue;
 
-          const parsedData = await this.parseXmlDemographics(
-            typeof xmlData === 'string' ? xmlData : JSON.stringify(xmlData)
-          );
+          const rawStr = typeof xmlData === 'string' ? xmlData : JSON.stringify(xmlData);
+          // Log a snippet of the raw XML so we can see the actual structure
+          this.logger.log(`XML raw response (${strategy.name}, first 500 chars): ${rawStr.substring(0, 500)}`);
+
+          const parsedData = await this.parseXmlDemographics(rawStr);
 
           if (parsedData) {
-            this.logger.log(`XML strategy ${strategy.name} succeeded for ${documentUri}`);
+            this.logger.log(`XML strategy ${strategy.name} succeeded for ${documentUri}, parsed: ${JSON.stringify(parsedData)}`);
             return parsedData;
           }
         } catch (err) {
