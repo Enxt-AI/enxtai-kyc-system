@@ -1167,11 +1167,21 @@ export class KycService {
           if (!uri) {
             throw new BadRequestException('PAN document found in DigiLocker but missing URI');
           }
+
+          // Temporary fix: Extract native PAN code from metadata until robust OCR is completed
+          let extractedPan: string | null = null;
+          const searchStr = `${(panDoc as any).description || ''} ${(panDoc as any).name || ''}`;
+          const panMatch = searchStr.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}/);
+          if (panMatch) {
+            extractedPan = panMatch[0];
+          }
+
           documentsToFetch.push({
             type: 'PAN',
             uri,
             documentType: DocumentType.PAN_CARD,
-          });
+            extractedPan, // Augment payload
+          } as any);
         }
       }
 
@@ -1211,7 +1221,11 @@ export class KycService {
           if (doc.type === 'PAN') {
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
-              data: { panNumber: objectPath },
+              data: { 
+                panDocumentUrl: objectPath, // Save S3 URL correctly
+                // Store true PAN digits immediately if we found them in description regex
+                ...((doc as any).extractedPan ? { panNumber: (doc as any).extractedPan } : {})
+              } as any,
             });
           } else if (doc.type === 'AADHAAR') {
             await this.prisma.kYCSubmission.update({
@@ -1265,7 +1279,7 @@ export class KycService {
         externalUserId: clientUser.externalUserId,
         documentsFetched: fetchedDocuments,
         documentUrls: {
-          panNumber: updated.panNumber,
+          panDocumentUrl: (updated as any).panDocumentUrl,
           aadhaarFrontUrl: updated.aadhaarFrontUrl,
         },
       });
