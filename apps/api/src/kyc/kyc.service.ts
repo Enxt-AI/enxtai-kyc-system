@@ -1219,18 +1219,42 @@ export class KycService {
 
           // Update submission with document URL
           if (doc.type === 'PAN') {
+            // Attempt to grab XML metadata
+            const xmlData = await this.digiLockerDocumentService.fetchXmlDocument(userId, doc.uri).catch(() => null);
+            
+            let dobValue: Date | undefined;
+            try {
+              if (xmlData?.dob) dobValue = new Date(xmlData.dob.split(/[/-]/).reverse().join('-'));
+            } catch { /* ignore valid date error */ }
+
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
               data: { 
                 panDocumentUrl: objectPath, // Save S3 URL correctly
-                // Store true PAN digits immediately if we found them in description regex
-                ...((doc as any).extractedPan ? { panNumber: (doc as any).extractedPan } : {})
+                ...(xmlData?.panNumber ? { panNumber: xmlData.panNumber } : ((doc as any).extractedPan ? { panNumber: (doc as any).extractedPan } : {})),
+                ...(xmlData?.name ? { fullName: xmlData.name } : {}),
+                ...(dobValue && !isNaN(dobValue.getTime()) ? { dateOfBirth: dobValue } : {}),
+                ...(xmlData?.gender ? { gender: xmlData.gender } : {})
               } as any,
             });
           } else if (doc.type === 'AADHAAR') {
+            // Attempt to grab Aadhaar XML metadata
+            const aadhaarXml = await this.digiLockerDocumentService.fetchAadhaarXml(userId).catch(() => null);
+
+            let dobValue: Date | undefined;
+            try {
+              if (aadhaarXml?.dob) dobValue = new Date(aadhaarXml.dob.split(/[/-]/).reverse().join('-'));
+            } catch { /* ignore valid date error */ }
+
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
-              data: { aadhaarFrontUrl: objectPath },
+              data: { 
+                aadhaarFrontUrl: objectPath,
+                ...(aadhaarXml?.uid ? { aadhaarNumber: aadhaarXml.uid } : {}),
+                ...(aadhaarXml?.name ? { fullName: aadhaarXml.name } : {}),
+                ...(dobValue && !isNaN(dobValue.getTime()) ? { dateOfBirth: dobValue } : {}),
+                ...(aadhaarXml?.gender ? { gender: aadhaarXml.gender } : {})
+              } as any,
             });
           }
 

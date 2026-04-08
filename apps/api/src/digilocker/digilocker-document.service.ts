@@ -692,6 +692,75 @@ export class DigiLockerDocumentService {
   }
 
   /**
+   * Fetch Document XML
+   *
+   * Retrieves raw XML demographic data for a generic document from DigiLocker API.
+   *
+   * @param userId - UUID of the clientUser
+   * @param documentUri - URI of the document
+   * @returns Promise<any> - Parsed demographic XML data
+   */
+  async fetchXmlDocument(userId: string, documentUri: string): Promise<any> {
+    try {
+      const config = this.configService.getConfig();
+      const accessToken = await this.digiLockerAuthService.getValidToken(userId);
+
+      const normalizedUri = String(documentUri || '').trim();
+      const base = config.documentsUrl.replace(/\/$/, '');
+      
+      // Usually DigiLocker provides `/xml` endpoint similarly to `/file`
+      const response = await firstValueFrom(
+        this.httpService.get(`${base}/xml`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: { uri: normalizedUri }
+        })
+      );
+
+      const xmlData = response.data;
+      const parsedData = await this.parseXmlDemographics(xmlData);
+
+      this.logger.log(`Successfully fetched XML for document ${documentUri} (user ${userId})`);
+      return parsedData;
+    } catch (error) {
+      this.logger.error(`Failed to fetch XML for document ${documentUri} (user ${userId})`, error);
+      // Fails gracefully without throwing, returning null so flow implies OCR fallback
+      return null;
+    }
+  }
+
+  /**
+   * Parse XML Demographics
+   *
+   * @private
+   * @param xmlData - Raw XML string
+   * @returns Promise<any> - Extracted keys like panNumber, name, dob
+   */
+  private async parseXmlDemographics(xmlData: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      parseString(xmlData, { explicitArray: false }, (err: any, result: any) => {
+        if (err) return resolve(null);
+        try {
+          // Normalize structure
+          const root = result?.Certificate?.CertificateData || result;
+          const record = root?.PanRecord || root?.Record || root;
+          
+          if (!record) return resolve(null);
+
+          resolve({
+            name: record?.Name || record?.name || null,
+            panNumber: record?.PAN || record?.pan || null,
+            dob: record?.DOB || record?.dob || null,
+            gender: record?.Gender || record?.gender || null,
+          });
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+  }
+
+
+  /**
    * Parse Document URI
    *
    * Extracts components from DigiLocker document URI.
