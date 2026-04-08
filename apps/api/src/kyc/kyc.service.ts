@@ -1168,19 +1168,26 @@ export class KycService {
             throw new BadRequestException('PAN document found in DigiLocker but missing URI');
           }
 
-          // Temporary fix: Extract native PAN code from metadata until robust OCR is completed
+          // Extract PAN number from metadata: search description, name, AND uri
           let extractedPan: string | null = null;
-          const searchStr = `${(panDoc as any).description || ''} ${(panDoc as any).name || ''}`;
+          const searchStr = `${(panDoc as any).description || ''} ${(panDoc as any).name || ''} ${uri}`;
           const panMatch = searchStr.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}/);
           if (panMatch) {
             extractedPan = panMatch[0];
           }
 
+          // Extract cardholder name from document metadata 'name' or 'description'
+          const extractedName: string | null = (panDoc as any).name || (panDoc as any).description || null;
+
+          this.logger.log(`PAN metadata extraction: pan=${extractedPan}, name=${extractedName}, uri=${uri}, searchStr=${searchStr}`);
+
           documentsToFetch.push({
             type: 'PAN',
             uri,
             documentType: DocumentType.PAN_CARD,
-            extractedPan, // Augment payload
+            extractedPan,
+            extractedName,
+            rawDoc: panDoc, // carry full metadata for fallback
           } as any);
         }
       }
@@ -1225,16 +1232,23 @@ export class KycService {
             let dobValue: Date | undefined;
             try {
               if (xmlData?.dob) dobValue = new Date(xmlData.dob.split(/[/-]/).reverse().join('-'));
-            } catch { /* ignore valid date error */ }
+            } catch { /* ignore date parse error */ }
+
+            // Determine best values: XML > metadata fallback
+            const panNumber = xmlData?.panNumber || (doc as any).extractedPan || null;
+            const fullName = xmlData?.name || (doc as any).extractedName || null;
+            const gender = xmlData?.gender || null;
+
+            this.logger.log(`PAN DB update: panNumber=${panNumber}, fullName=${fullName}, gender=${gender}, dob=${dobValue || 'null'}, xmlData=${JSON.stringify(xmlData)}`);
 
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
               data: { 
-                panDocumentUrl: objectPath, // Save S3 URL correctly
-                ...(xmlData?.panNumber ? { panNumber: xmlData.panNumber } : ((doc as any).extractedPan ? { panNumber: (doc as any).extractedPan } : {})),
-                ...(xmlData?.name ? { fullName: xmlData.name } : {}),
+                panDocumentUrl: objectPath,
+                ...(panNumber ? { panNumber } : {}),
+                ...(fullName ? { fullName } : {}),
                 ...(dobValue && !isNaN(dobValue.getTime()) ? { dateOfBirth: dobValue } : {}),
-                ...(xmlData?.gender ? { gender: xmlData.gender } : {})
+                ...(gender ? { gender } : {})
               } as any,
             });
           } else if (doc.type === 'AADHAAR') {

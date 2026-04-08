@@ -708,22 +708,45 @@ export class DigiLockerDocumentService {
       const normalizedUri = String(documentUri || '').trim();
       const base = config.documentsUrl.replace(/\/$/, '');
       
-      // Usually DigiLocker provides `/xml` endpoint similarly to `/file`
-      const response = await firstValueFrom(
-        this.httpService.get(`${base}/xml`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          params: { uri: normalizedUri }
-        })
-      );
+      // Try multiple strategies for XML endpoint (mirrors /file download strategies)
+      const strategies = [
+        { name: 'GET /xml?uri=', url: `${base}/xml?uri=${encodeURIComponent(normalizedUri)}` },
+        { name: 'GET /xml/{uri}', url: `${base}/xml/${encodeURIComponent(normalizedUri)}` },
+        { name: 'GET /file?uri=&format=xml', url: `${base}/file?uri=${encodeURIComponent(normalizedUri)}&format=xml` },
+      ];
 
-      const xmlData = response.data;
-      const parsedData = await this.parseXmlDemographics(xmlData);
+      let lastError: any = null;
+      for (const strategy of strategies) {
+        try {
+          this.logger.debug(`Trying XML strategy: ${strategy.name} for uri=${normalizedUri}`);
+          const response = await firstValueFrom(
+            this.httpService.get(strategy.url, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+          );
 
-      this.logger.log(`Successfully fetched XML for document ${documentUri} (user ${userId})`);
-      return parsedData;
+          const xmlData = response.data;
+          if (!xmlData) continue;
+
+          const parsedData = await this.parseXmlDemographics(
+            typeof xmlData === 'string' ? xmlData : JSON.stringify(xmlData)
+          );
+
+          if (parsedData) {
+            this.logger.log(`XML strategy ${strategy.name} succeeded for ${documentUri}`);
+            return parsedData;
+          }
+        } catch (err) {
+          lastError = err;
+          const status = (err as any)?.response?.status;
+          this.logger.debug(`XML strategy ${strategy.name} failed (status=${status || 'n/a'})`);
+        }
+      }
+
+      this.logger.warn(`All XML strategies failed for ${documentUri}; returning null`);
+      return null;
     } catch (error) {
       this.logger.error(`Failed to fetch XML for document ${documentUri} (user ${userId})`, error);
-      // Fails gracefully without throwing, returning null so flow implies OCR fallback
       return null;
     }
   }
