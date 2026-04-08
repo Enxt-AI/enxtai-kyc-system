@@ -139,7 +139,7 @@ export class StorageService implements OnModuleInit {
       throw new StorageUploadException('File size exceeds limit', bucket);
     }
     const metadata = file.metadata ?? {};
-    const objectName = this.buildObjectName(userId, documentType, file.filename, suffix);
+    const objectName = this.buildObjectName(userId, documentType, file.filename, clientId, suffix);
     try {
       await this.minio.putObject(
         bucket,
@@ -501,27 +501,28 @@ export class StorageService implements OnModuleInit {
   private getBucketForDocumentType(documentType: DocumentType, clientId: string): string {
     switch (documentType) {
       case DocumentType.PAN_CARD:
-        return `kyc-${clientId}-pan`;
+        return this.panBucket;
       case DocumentType.AADHAAR_CARD:
-        return `kyc-${clientId}-aadhaar-cards`;
       case DocumentType.AADHAAR_CARD_FRONT:
-        return `kyc-${clientId}-aadhaar-cards`;
       case DocumentType.AADHAAR_CARD_BACK:
-        return `kyc-${clientId}-aadhaar-cards`;
+        return this.aadhaarBucket;
       case DocumentType.LIVE_PHOTO:
-        return `kyc-${clientId}-live-photos`;
+        return this.livePhotosBucket;
       case DocumentType.SIGNATURE:
-        return `kyc-${clientId}-signatures`;
+        return this.signaturesBucket;
       default:
-        return `kyc-${clientId}-pan`;
+        return this.panBucket;
     }
   }
 
-  private buildObjectName(userId: string, documentType: DocumentType, filename: string, suffix?: string): string {
+  private buildObjectName(userId: string, documentType: DocumentType, filename: string, clientId?: string, suffix?: string): string {
     const sanitized = this.sanitizeFilename(filename);
     const ext = this.getExtension(sanitized);
     const baseName = suffix ? `${documentType}_${suffix}` : documentType;
-    return `${userId}/${baseName}_${Date.now()}${ext}`;
+    const prefix = clientId && clientId !== '00000000-0000-0000-0000-000000000000' 
+      ? `client-${clientId}/${userId}` 
+      : userId;
+    return `${prefix}/${baseName}_${Date.now()}${ext}`;
   }
 
   private getExtension(filename: string): string {
