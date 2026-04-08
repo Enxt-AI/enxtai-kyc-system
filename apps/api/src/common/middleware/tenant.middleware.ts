@@ -119,7 +119,7 @@ export class TenantMiddleware implements NestMiddleware {
   async use(
     req: FastifyRequest,
     res: FastifyReply,
-    next: () => void,
+    next: (err?: any) => void,
   ): Promise<void> {
     // Skip CORS preflight requests - they don't carry X-API-Key header
     // CORS middleware handles OPTIONS requests before this middleware
@@ -134,7 +134,7 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Missing API key from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new UnauthorizedException('API key required');
+      return next(new UnauthorizedException('API key required'));
     }
 
     // Validate API key and get client
@@ -144,7 +144,7 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Invalid or inactive API key from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new UnauthorizedException('Invalid or inactive API key');
+      return next(new UnauthorizedException('Invalid or inactive API key'));
     }
 
     // **NEW: Validate request domain against client whitelist**
@@ -152,7 +152,7 @@ export class TenantMiddleware implements NestMiddleware {
       this.logger.warn(
         `Domain not whitelisted for client ${client.name} (${client.id}) from ${req.ip} for ${req.method} ${req.url}`,
       );
-      throw new ForbiddenException('Domain not whitelisted');
+      return next(new ForbiddenException('Domain not whitelisted'));
     }
 
     // Inject tenant context into request
