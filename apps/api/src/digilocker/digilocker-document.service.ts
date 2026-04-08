@@ -763,18 +763,57 @@ export class DigiLockerDocumentService {
       parseString(xmlData, { explicitArray: false }, (err: any, result: any) => {
         if (err) return resolve(null);
         try {
-          // Normalize structure
-          const root = result?.Certificate?.CertificateData || result;
-          const record = root?.PanRecord || root?.Record || root;
-          
-          if (!record) return resolve(null);
+          // Helper: extract a scalar value from an xml2js node
+          // xml2js can produce { "$": { "num": "VALUE" } } or plain strings
+          const extractValue = (node: any, ...attrNames: string[]): string | null => {
+            if (!node) return null;
+            if (typeof node === 'string') return node;
+            // xml2js attribute object: { "$": { "key": "value" } }
+            if (node?.$ && typeof node.$ === 'object') {
+              for (const attr of attrNames) {
+                if (node.$[attr]) return String(node.$[attr]);
+              }
+              // Fallback: return first attribute value
+              const vals = Object.values(node.$);
+              if (vals.length > 0 && typeof vals[0] === 'string') return vals[0] as string;
+            }
+            // xml2js text content
+            if (node?._ && typeof node._ === 'string') return node._;
+            return null;
+          };
 
-          resolve({
-            name: record?.Name || record?.name || null,
-            panNumber: record?.PAN || record?.pan || null,
-            dob: record?.DOB || record?.dob || null,
-            gender: record?.Gender || record?.gender || null,
-          });
+          // Deep search: walk all keys looking for PAN, Name, DOB, Gender
+          const flatSearch = (obj: any): any => {
+            const found: any = { name: null, panNumber: null, dob: null, gender: null };
+            if (!obj || typeof obj !== 'object') return found;
+
+            for (const [key, val] of Object.entries(obj)) {
+              const k = key.toLowerCase();
+              if (k === 'pan' || k === 'pannumber' || k === 'pan_number') {
+                found.panNumber = extractValue(val, 'num', 'value', 'pan') || found.panNumber;
+              } else if (k === 'name' || k === 'fullname' || k === 'full_name') {
+                found.name = extractValue(val, 'value', 'name') || found.name;
+              } else if (k === 'dob' || k === 'dateofbirth' || k === 'date_of_birth') {
+                found.dob = extractValue(val, 'value', 'dob', 'date') || found.dob;
+              } else if (k === 'gender' || k === 'sex') {
+                found.gender = extractValue(val, 'value', 'gender') || found.gender;
+              } else if (val && typeof val === 'object' && !Array.isArray(val) && key !== '$') {
+                // Recurse deeper
+                const deeper = flatSearch(val);
+                found.panNumber = found.panNumber || deeper.panNumber;
+                found.name = found.name || deeper.name;
+                found.dob = found.dob || deeper.dob;
+                found.gender = found.gender || deeper.gender;
+              }
+            }
+            return found;
+          };
+
+          const extracted = flatSearch(result);
+          if (!extracted.panNumber && !extracted.name && !extracted.dob && !extracted.gender) {
+            return resolve(null);
+          }
+          resolve(extracted);
         } catch {
           resolve(null);
         }
