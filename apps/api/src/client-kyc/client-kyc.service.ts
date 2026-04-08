@@ -806,6 +806,7 @@ export class ClientKycService {
     kycSessionId: string;
     documentsFetched: string[];
     documentUrls: {
+      panDocumentUrl?: string;
       aadhaarFrontUrl?: string;
     };
     processingStatus: string;
@@ -842,6 +843,7 @@ export class ClientKycService {
       kycSessionId: submissionId,
       documentsFetched: result.fetchedDocuments,
       documentUrls: {
+        panDocumentUrl: (updatedSubmission as any)?.panDocumentUrl || undefined,
         aadhaarFrontUrl: updatedSubmission?.aadhaarFrontUrl || undefined,
       },
       processingStatus: 'OCR and face verification processing initiated',

@@ -1343,7 +1343,7 @@ export class KycService {
     }
 
     // Validate submission has documents
-    if (!submission.panNumber && !submission.aadhaarFrontUrl) {
+    if (!submission.panNumber && !(submission as any).panDocumentUrl && !submission.aadhaarFrontUrl) {
       throw new BadRequestException('Submission has no documents to process');
     }
 
