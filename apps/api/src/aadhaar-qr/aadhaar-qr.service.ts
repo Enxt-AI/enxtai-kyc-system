@@ -9,6 +9,9 @@ export interface AadhaarQrData {
   dateOfBirth?: Date;
   address?: Record<string, any>;
   photoBytes?: Buffer; // JP2 image bytes
+  mobileHash?: string;
+  emailHash?: string;
+  digitalSignature?: string; // 2048-bit signature as hex
 }
 
 @Injectable()
@@ -119,13 +122,25 @@ export class AadhaarQrService {
       
       const address = { fullAddress: addressParts.join(', ') };
 
-      // Extract Photo Bytes (minus the signature at the end)
+      // V2 format has Email Hash and Mobile Hash after address if present
+      // They are usually 64 chars long (SHA-256 hex/b64, or 32 bytes)
+      let emailHash: string | undefined = parts[17] && parts[17].length > 0 ? parts[17].trim() : undefined;
+      let mobileHash: string | undefined = parts[18] && parts[18].length > 0 ? parts[18].trim() : undefined;
+
+      // Extract Photo Bytes and Digital Signature
       let photoBytes: Buffer | undefined;
-      if (jp2Index !== -1 && decompressed.length > 256) {
+      let digitalSignature: string | undefined;
+      
+      if (decompressed.length > 256) {
         const signatureIndex = decompressed.length - 256; // last 256 bytes = 2048-bit signature
-        // The image bytes are between jp2Index and signatureIndex
-        const imageSlice = decompressed.slice(jp2Index, signatureIndex);
-        photoBytes = Buffer.from(imageSlice);
+        const sigSlice = decompressed.slice(signatureIndex);
+        digitalSignature = Buffer.from(sigSlice).toString('hex');
+        
+        if (jp2Index !== -1) {
+          // The image bytes are between jp2Index and signatureIndex
+          const imageSlice = decompressed.slice(jp2Index, signatureIndex);
+          photoBytes = Buffer.from(imageSlice);
+        }
       }
 
       return {
@@ -135,6 +150,9 @@ export class AadhaarQrService {
         dateOfBirth,
         address,
         photoBytes,
+        emailHash,
+        mobileHash,
+        digitalSignature,
       };
 
     } catch (e) {

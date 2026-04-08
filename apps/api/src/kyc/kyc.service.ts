@@ -360,7 +360,7 @@ export class KycService {
           this.logger.log(
             `Starting PAN OCR extraction for submission ${submission.id}`,
           );
-          
+
           this.logger.log(
             `PAN OCR extraction completed for submission ${submission.id}`,
           );
@@ -712,11 +712,25 @@ export class KycService {
       where: { id: submission.id },
       data: {
         ...(objectPath && { aadhaarFrontUrl: objectPath }),
-        aadhaarNumber: extractedData.uid,
-        fullName: extractedData.fullName,
-        gender: extractedData.gender,
-        dateOfBirth: extractedData.dateOfBirth,
-        address: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull,
+
+        // Populate standard demographic fields ONLY if they are completely empty (so we don't overwrite)
+        ...( !submission.aadhaarNumber && { aadhaarNumber: extractedData.uid }),
+        ...( !submission.fullName && { fullName: extractedData.fullName }),
+        ...( !submission.gender && { gender: extractedData.gender }),
+        ...( !submission.dateOfBirth && extractedData.dateOfBirth && { dateOfBirth: extractedData.dateOfBirth }),
+        ...( !submission.address && { address: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull }),
+
+        // Store exactly the raw QR extracted fields strictly separated as requested
+        qrAadhaarRefId: extractedData.uid || null,
+        qrAadhaarName: extractedData.fullName || null,
+        qrAadhaarGender: extractedData.gender || null,
+        qrAadhaarDob: extractedData.dateOfBirth ? extractedData.dateOfBirth.toISOString() : null,
+        qrAadhaarMobileHash: extractedData.mobileHash || null,
+        qrAadhaarEmailHash: extractedData.emailHash || null,
+        qrAadhaarAddress: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull,
+        qrAadhaarDigitalSignature: extractedData.digitalSignature || null,
+        qrAadhaarPhotographBase64: extractedData.photoBytes ? extractedData.photoBytes.toString('base64') : null,
+
         internalStatus: allDocsPresent
           ? InternalStatus.DOCUMENTS_UPLOADED
           : submission.internalStatus,
@@ -1227,7 +1241,7 @@ export class KycService {
           if (doc.type === 'PAN') {
             // Attempt to grab XML metadata
             const xmlData = await this.digiLockerDocumentService.fetchXmlDocument(userId, doc.uri).catch(() => null);
-            
+
             let dobValue: Date | undefined;
             try {
               if (xmlData?.dob) dobValue = new Date(xmlData.dob.split(/[/-]/).reverse().join('-'));
@@ -1242,7 +1256,7 @@ export class KycService {
 
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
-              data: { 
+              data: {
                 panDocumentUrl: objectPath,
                 ...(panNumber ? { panNumber } : {}),
                 ...(fullName ? { fullName } : {}),
@@ -1261,7 +1275,7 @@ export class KycService {
 
             await this.prisma.kYCSubmission.update({
               where: { id: submission.id },
-              data: { 
+              data: {
                 aadhaarFrontUrl: objectPath,
                 ...(aadhaarXml?.uid ? { aadhaarNumber: aadhaarXml.uid } : {}),
                 ...(aadhaarXml?.name ? { fullName: aadhaarXml.name } : {}),
@@ -1387,7 +1401,7 @@ export class KycService {
     try {
       // Extract PAN data if PAN document exists
       if (submission.panNumber) {
-        
+
       }
     } catch (error) {
       this.logger.error(`PAN OCR failed for submission ${submissionId}`, error);
@@ -1396,7 +1410,7 @@ export class KycService {
     try {
       // Extract Aadhaar data if Aadhaar document exists
       if (submission.aadhaarFrontUrl) {
-        
+
       }
     } catch (error) {
       this.logger.error(`Aadhaar OCR failed for submission ${submissionId}`, error);

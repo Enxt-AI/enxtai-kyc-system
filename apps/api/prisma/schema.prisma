@@ -88,6 +88,17 @@ model KYCSubmission {
   gender        String?
   address       Json?
 
+  // Aadhaar Secure QR Data (Stored entirely separate from main demographic fields)
+  qrAadhaarRefId                 String?
+  qrAadhaarName                  String?
+  qrAadhaarGender                String?
+  qrAadhaarDob                   String?
+  qrAadhaarMobileHash            String?
+  qrAadhaarEmailHash             String?
+  qrAadhaarAddress               Json?
+  qrAadhaarPhotographBase64      String?  @db.Text
+  qrAadhaarDigitalSignature      String?  @db.Text
+
   // Extraction results (DigiLocker parsed data / OCR)
   extractionResults Json? @map("extractionResults")
 
