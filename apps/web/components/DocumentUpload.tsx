@@ -126,22 +126,38 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             if (documentType === "AADHAAR_BACK") {
                // Client-side execution of Dynamsoft for robust Secure QR fallback
                try {
-                  const { BrowserQRCodeReader } = await import('@zxing/browser');
-                  const codeReader = new BrowserQRCodeReader();
+                  const loadDynamsoftScript = (): Promise<void> => {
+                    return new Promise((resolve, reject) => {
+                      if ((window as any).Dynamsoft) return resolve();
+                      const script = document.createElement("script");
+                      // Use the exact version from the prototype
+                      script.src = "https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/dbr.js";
+                      script.async = true;
+                      script.onload = () => resolve();
+                      script.onerror = reject;
+                      document.body.appendChild(script);
+                    });
+                  };
                   
-                  const objectUrl = URL.createObjectURL(file);
-                  console.log(`ZXing instance created. Scanning ObjectURL natively in browser.`);
+                  await loadDynamsoftScript();
+                  const Dynamsoft = (window as any).Dynamsoft;
                   
-                  // Run decoder on the object URL
+                  // Setup core configuration exactly mapping to prototype
+                  Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
+                  
+                  const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
+                  
+                  console.log(`Dynamsoft instance created. Scanning physical dropping file object directly.`);
+                  
+                  // Decode raw file directly (no absolute ObjectURL proxies, matching pure DropZone physical maps)
                   let qrText = null;
                   try {
-                      const result = await codeReader.decodeFromImageUrl(objectUrl);
-                      qrText = result.getText();
-                      console.log("ZXing Scan Results SUCCESS:", qrText ? qrText.substring(0, 50) + "..." : "Empty string");
+                      // Attempt to decode identically to user's "files[0]"
+                      const results = await reader.decode(file);
+                      console.log("Dynamsoft Scan Results Raw API:", results);
+                      qrText = results?.[0]?.barcodeText;
                   } catch (e: any) {
-                      console.warn("ZXing Scan Error (No QR found or malformed):", e?.message);
-                  } finally {
-                      URL.revokeObjectURL(objectUrl);
+                      console.warn("Dynamsoft Wasm Engine Error:", e?.message);
                   }
                   
                   if (qrText) {

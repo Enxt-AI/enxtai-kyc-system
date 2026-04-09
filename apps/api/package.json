@@ -33,6 +33,7 @@
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "@types/pako": "^2.0.4",
     "@vladmandic/face-api": "^1.7.15",
+    "@zxing/library": "^0.21.3",
     "axios": "^1.6.0",
     "bcrypt": "^5.1.0",
     "bcryptjs": "^3.0.3",

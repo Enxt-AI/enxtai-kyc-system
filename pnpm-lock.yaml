@@ -71,6 +71,9 @@ importers:
       '@vladmandic/face-api':
         specifier: ^1.7.15
         version: 1.7.15
+      '@zxing/library':
+        specifier: ^0.21.3
+        version: 0.21.3
       axios:
         specifier: ^1.6.0
         version: 1.13.2
