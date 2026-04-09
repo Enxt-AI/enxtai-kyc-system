@@ -872,69 +872,44 @@ export class KycService {
 
         // Helper: sharp output -> raw RGBA pixels for jsQR
         const sharpToRGBA = async (pipeline: sharp.Sharp) => {
-          const raw = pipeline.ensureAlpha().raw();
+          const raw = pipeline.toColorspace('srgb').ensureAlpha().raw();
           const { data, info } = await raw.toBuffer({ resolveWithObject: true });
           return { data, width: info.width, height: info.height };
         };
 
+        const executeStrategy = async (name: string, pipeline: sharp.Sharp) => {
+           if (qrText) return;
+           this.logger.debug(`QR Strategy: ${name}`);
+           try {
+               const s = await sharpToRGBA(pipeline);
+               qrText = tryJsQR(s.data, s.width, s.height);
+           } catch (e: any) {
+               this.logger.debug(`Strategy ${name} failed: ${e.message}`);
+           }
+        };
+
         // Strategy 1: Original image converted to RGBA
-        this.logger.debug('QR Strategy 1: Original image');
-        const s1 = await sharpToRGBA(sharp(buffer));
-        qrText = tryJsQR(s1.data, s1.width, s1.height);
+        await executeStrategy('Original image', sharp(buffer));
 
         // Strategy 2: Grayscale + sharpen + normalize
-        if (!qrText) {
-          this.logger.debug('QR Strategy 2: Grayscale + sharpen');
-          const s2 = await sharpToRGBA(
-            sharp(buffer).grayscale().normalize().sharpen({ sigma: 2 })
-          );
-          qrText = tryJsQR(s2.data, s2.width, s2.height);
-        }
+        await executeStrategy('Grayscale + sharpen', sharp(buffer).grayscale().normalize().sharpen({ sigma: 2 }));
 
         // Strategy 3: High-contrast binary threshold
-        if (!qrText) {
-          this.logger.debug('QR Strategy 3: Binary threshold');
-          const s3 = await sharpToRGBA(
-            sharp(buffer).grayscale().threshold(128)
-          );
-          qrText = tryJsQR(s3.data, s3.width, s3.height);
-        }
+        await executeStrategy('Binary threshold', sharp(buffer).grayscale().threshold(128));
 
         // Strategy 4: Upscale 2x + sharpen (helps with small/low-res QR codes)
-        if (!qrText) {
-          this.logger.debug('QR Strategy 4: Upscale 2x + sharpen');
-          const metadata = await sharp(buffer).metadata();
-          const w = (metadata.width || 800) * 2;
-          const h = (metadata.height || 600) * 2;
-          const s4 = await sharpToRGBA(
-            sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).grayscale().sharpen({ sigma: 2 })
-          );
-          qrText = tryJsQR(s4.data, s4.width, s4.height);
-        }
+        const metadata = await sharp(buffer).metadata();
+        const w2 = (metadata.width || 800) * 2;
+        const h2 = (metadata.height || 600) * 2;
+        await executeStrategy('Upscale 2x + sharpen', sharp(buffer).resize(w2, h2, { kernel: sharp.kernel.lanczos3 }).grayscale().sharpen({ sigma: 2 }));
 
         // Strategy 5: Upscale 2x + lower threshold (more aggressive)
-        if (!qrText) {
-          this.logger.debug('QR Strategy 5: Upscale 2x + low threshold');
-          const metadata = await sharp(buffer).metadata();
-          const w = (metadata.width || 800) * 2;
-          const h = (metadata.height || 600) * 2;
-          const s5 = await sharpToRGBA(
-            sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).grayscale().threshold(100)
-          );
-          qrText = tryJsQR(s5.data, s5.width, s5.height);
-        }
+        await executeStrategy('Upscale 2x + low threshold', sharp(buffer).resize(w2, h2, { kernel: sharp.kernel.lanczos3 }).grayscale().threshold(100));
 
         // Strategy 6: Upscale 3x + median filter (for noisy camera captures)
-        if (!qrText) {
-          this.logger.debug('QR Strategy 6: Upscale 3x + median filter');
-          const metadata = await sharp(buffer).metadata();
-          const w = (metadata.width || 800) * 3;
-          const h = (metadata.height || 600) * 3;
-          const s6 = await sharpToRGBA(
-            sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).median(3).grayscale().threshold(140)
-          );
-          qrText = tryJsQR(s6.data, s6.width, s6.height);
-        }
+        const w3 = (metadata.width || 800) * 3;
+        const h3 = (metadata.height || 600) * 3;
+        await executeStrategy('Upscale 3x + median filter', sharp(buffer).resize(w3, h3, { kernel: sharp.kernel.lanczos3 }).median(3).grayscale().threshold(140));
 
         if (qrText) {
           this.logger.log(`Aadhaar Secure QR decoded automatically on backend during upload for user ${userId}. Saving to DB.`);
