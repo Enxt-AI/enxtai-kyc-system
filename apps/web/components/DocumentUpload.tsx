@@ -142,8 +142,13 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   const Dynamsoft = (window as any).Dynamsoft;
                   Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
                   const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
-                  console.log("Dynamsoft instance created. Scanning file:", file.name);
-                  const results = await reader.decode(file);
+                  // Strip React-Dropzone injected properties (like .path) by slicing into a pure Blob.
+                  // Dynamsoft occasionally fails silently if it detects non-standard File object properties.
+                  const pureBlob = file.slice(0, file.size, file.type);
+                  console.log("Dynamsoft instance created. Scanning pure Blob derived from:", file.name, "Size:", pureBlob.size);
+                  
+                  // Run decoder on the pure blob
+                  const results = await reader.decode(pureBlob);
                   console.log("Dynamsoft Scan Results:", results);
                   
                   const qrText = results?.[0]?.barcodeText;
