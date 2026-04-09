@@ -463,6 +463,14 @@ export function clearKycReturnUrl(): void {
     return res.data as UploadDocumentResponse;
   }
 
+  export async function uploadAadhaarQr(
+    userId: string,
+    rawQrText: string
+  ): Promise<any> {
+    const res = await api.post('/api/v1/kyc/upload/aadhaar-qr', { userId, rawQrText });
+    return res.data;
+  }
+
   export async function uploadLivePhoto(
     userId: string,
     file: File,

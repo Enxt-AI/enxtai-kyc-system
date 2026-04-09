@@ -26,6 +26,7 @@ import {
   uploadAadhaarDocument,
   uploadAadhaarFront,
   uploadPanDocument,
+  uploadAadhaarQr,
 } from "@/lib/api-client";
 
 const MAX_SIZE = 5 * 1024 * 1024;
@@ -145,8 +146,7 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   const qrText = results?.[0]?.barcodeText;
                   if (qrText && qrText.length > 500 && /^\d+$/.test(qrText)) {
                      // Successfully extracted raw Secure QR bytes. Transmit directly to backend orchestration.
-                     const { api: apiClient } = await import("@/lib/api-client");
-                     await apiClient.post('/api/v1/kyc/upload/aadhaar-qr', { userId, rawQrText: qrText });
+                     await uploadAadhaarQr(userId, qrText);
                   }
                } catch (e: any) {
                   console.warn("Client-side QR fallback failed (falling back to backend 6-pass enhancement):", e?.message);
