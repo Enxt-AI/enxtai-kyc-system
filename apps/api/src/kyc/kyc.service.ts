@@ -859,26 +859,82 @@ export class KycService {
       // --- Eagerly try to read Secure QR barcode from the uploaded image payload ---
       if (file.mimetype.startsWith('image/')) {
         try {
-          const image = await Jimp.read(buffer);
-          
           let qrText: string | null = null;
-          
-          // Strategy 1: jsQR (Fast but sometimes fails on dense QRs)
-          const code = jsQR(new Uint8ClampedArray(image.bitmap.data), image.bitmap.width, image.bitmap.height, {
-             inversionAttempts: "attemptBoth"
-          });
-          
-          if (code && code.data && code.data.length > 200) {
-              qrText = code.data;
-          } else {
-              // Strategy 2: ZXing Library (Good for dense QRs if jsQR fails)
-              try {
-                  const zxingReader = new BrowserQRCodeReader();
-                  // We need to pass HTMLImageElement or video. But for node we can try to pass an offscreen canvas or just rely on jsQR.
-                  // Since ZXing in node requires more dependencies we'll just fail gracefully for now if jsQR doesn't work.
-              } catch (ex) {}
+
+          // Helper: attempt jsQR on a raw RGBA pixel buffer
+          const tryJsQR = (rgbaBuffer: Buffer, width: number, height: number): string | null => {
+            const code = jsQR(new Uint8ClampedArray(rgbaBuffer), width, height, {
+              inversionAttempts: 'attemptBoth',
+            });
+            return code && code.data && code.data.length > 200 ? code.data : null;
+          };
+
+          // Helper: sharp output -> raw RGBA pixels for jsQR
+          const sharpToRGBA = async (pipeline: sharp.Sharp) => {
+            const raw = pipeline.ensureAlpha().raw();
+            const { data, info } = await raw.toBuffer({ resolveWithObject: true });
+            return { data, width: info.width, height: info.height };
+          };
+
+          // Strategy 1: Original image converted to RGBA
+          this.logger.debug('QR Strategy 1: Original image');
+          const s1 = await sharpToRGBA(sharp(buffer));
+          qrText = tryJsQR(s1.data, s1.width, s1.height);
+
+          // Strategy 2: Grayscale + sharpen + normalize
+          if (!qrText) {
+            this.logger.debug('QR Strategy 2: Grayscale + sharpen');
+            const s2 = await sharpToRGBA(
+              sharp(buffer).grayscale().normalize().sharpen({ sigma: 2 })
+            );
+            qrText = tryJsQR(s2.data, s2.width, s2.height);
           }
-          
+
+          // Strategy 3: High-contrast binary threshold
+          if (!qrText) {
+            this.logger.debug('QR Strategy 3: Binary threshold');
+            const s3 = await sharpToRGBA(
+              sharp(buffer).grayscale().threshold(128)
+            );
+            qrText = tryJsQR(s3.data, s3.width, s3.height);
+          }
+
+          // Strategy 4: Upscale 2x + sharpen (helps with small/low-res QR codes)
+          if (!qrText) {
+            this.logger.debug('QR Strategy 4: Upscale 2x + sharpen');
+            const metadata = await sharp(buffer).metadata();
+            const w = (metadata.width || 800) * 2;
+            const h = (metadata.height || 600) * 2;
+            const s4 = await sharpToRGBA(
+              sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).grayscale().sharpen({ sigma: 2 })
+            );
+            qrText = tryJsQR(s4.data, s4.width, s4.height);
+          }
+
+          // Strategy 5: Upscale 2x + lower threshold (more aggressive)
+          if (!qrText) {
+            this.logger.debug('QR Strategy 5: Upscale 2x + low threshold');
+            const metadata = await sharp(buffer).metadata();
+            const w = (metadata.width || 800) * 2;
+            const h = (metadata.height || 600) * 2;
+            const s5 = await sharpToRGBA(
+              sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).grayscale().threshold(100)
+            );
+            qrText = tryJsQR(s5.data, s5.width, s5.height);
+          }
+
+          // Strategy 6: Upscale 3x + median filter (for noisy camera captures)
+          if (!qrText) {
+            this.logger.debug('QR Strategy 6: Upscale 3x + median filter');
+            const metadata = await sharp(buffer).metadata();
+            const w = (metadata.width || 800) * 3;
+            const h = (metadata.height || 600) * 3;
+            const s6 = await sharpToRGBA(
+              sharp(buffer).resize(w, h, { kernel: sharp.kernel.lanczos3 }).median(3).grayscale().threshold(140)
+            );
+            qrText = tryJsQR(s6.data, s6.width, s6.height);
+          }
+
           if (qrText) {
             this.logger.log(`Aadhaar Secure QR decoded automatically on backend during upload for user ${userId}. Saving to DB.`);
             // Run background fallback-style update decoupled from upload speed
@@ -886,7 +942,7 @@ export class KycService {
                 this.logger.error("Auto-process backend Aadhaar QR Failed: " + e.message);
             });
           } else {
-            this.logger.warn(`Could not automatically read Aadhaar QR from back image: No QR code found.`);
+            this.logger.warn(`Could not automatically read Aadhaar QR from back image: No QR code found after 6 strategies.`);
           }
         } catch (e: any) {
           this.logger.warn(`Could not automatically read Aadhaar QR from back image: ${e?.message}`);
