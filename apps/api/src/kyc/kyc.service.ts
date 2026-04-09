@@ -21,9 +21,7 @@ import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
 import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
-import { Jimp } from 'jimp';
 import jsQR from 'jsqr';
-import { BrowserQRCodeReader } from '@zxing/library';
 
 /** Allowed MIME types for document uploads (JPEG/PNG only) */
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
@@ -655,8 +653,11 @@ export class KycService {
 
 
     // processed silently and decoupled from the upload latency.
-    this.aadhaarOcrService.triggerAadhaarExtraction(updated.id).catch(err => {
-        this.logger.error(`Background Aadhaar OCR failed for ${updated.id}`, err);
+    this.aadhaarOcrService.triggerAadhaarExtraction(updated.id).then(() => {
+        // After OCR finishes, trigger cross-validation with QR data
+        return this.validateAadhaarData(updated.id);
+    }).catch(err => {
+        this.logger.error(`Background Aadhaar OCR/validation failed for ${updated.id}`, err);
     });
 
     return updated;

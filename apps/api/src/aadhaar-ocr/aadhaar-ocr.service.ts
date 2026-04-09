@@ -1,7 +1,6 @@
-import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { KycService } from '../kyc/kyc.service';
 import * as Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 
@@ -46,8 +45,6 @@ export class AadhaarOcrService {
   constructor(
     private readonly storageService: StorageService,
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => KycService))
-    private readonly kycService: KycService,
   ) {}
 
   /**
@@ -112,10 +109,7 @@ export class AadhaarOcrService {
           ` (aadhaarNumber=${extractedAadhaar ? 'found' : 'not found'}, name=${name ? 'found' : 'not found'}, dob=${dob ? 'found' : 'not found'})`,
         );
 
-        // Trigger Orchestrator Validation
-        this.kycService.validateAadhaarData(submissionId).catch(vErr => 
-           this.logger.error(`Validation trigger failed for ${submissionId}`, vErr)
-        );
+        // Validation will be triggered by KycService after this method resolves
 
       } else {
         this.logger.warn(`Could not extract any data from Aadhaar OCR text for submission ${submissionId}`);
