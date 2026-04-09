@@ -142,11 +142,26 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   const Dynamsoft = (window as any).Dynamsoft;
                   Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
                   const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
+                  console.log("Dynamsoft instance created. Scanning file:", file.name);
                   const results = await reader.decode(file);
+                  console.log("Dynamsoft Scan Results:", results);
+                  
                   const qrText = results?.[0]?.barcodeText;
-                  if (qrText && qrText.length > 50) {
-                     // Successfully extracted raw QR string (either Secure QR or legacy XML). Transmit directly to backend.
-                     await uploadAadhaarQr(userId, qrText);
+                  
+                  if (qrText) {
+                     console.log("Extracted QR String length:", qrText.length);
+                     console.log("Extracted QR Preview:", qrText.substring(0, 100) + "...");
+                     
+                     if (qrText.length > 50) {
+                        console.log("QR String is valid. Transmitting to backend `/api/v1/kyc/upload/aadhaar-qr`...");
+                        // Successfully extracted raw QR string. Transmit directly to backend.
+                        await uploadAadhaarQr(userId, qrText);
+                        console.log("Successfully securely transmitted QR data to database.");
+                     } else {
+                        console.log("QR String is too short to be valid Aadhaar data. Attempting backend visual fallback.");
+                     }
+                  } else {
+                     console.warn("Dynamsoft failed to extract any barcode text from this image.");
                   }
                } catch (e: any) {
                   console.warn("Client-side QR fallback failed (falling back to backend 6-pass enhancement):", e?.message);
