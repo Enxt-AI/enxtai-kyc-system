@@ -122,30 +122,60 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             uploader = uploadAadhaarDocument; // Legacy fallback
           }
 
-          const res = await uploader(userId, file, (p) => setProgress(p));
-          setProgress(100);
-          const url = res.documentUrl;
-          if (!url) {
-            throw new Error("Upload succeeded but URL was not returned");
+          try {
+            if (documentType === "AADHAAR_BACK") {
+               // Client-side execution of Dynamsoft for robust Secure QR fallback
+               try {
+                  const loadDynamsoftScript = (): Promise<void> => {
+                    return new Promise((resolve, reject) => {
+                      if ((window as any).Dynamsoft) return resolve();
+                      const script = document.createElement("script");
+                      script.src = "https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/dbr.js";
+                      script.async = true;
+                      script.onload = () => resolve();
+                      script.onerror = reject;
+                      document.body.appendChild(script);
+                    });
+                  };
+                  setProgress(5);
+                  await loadDynamsoftScript();
+                  const Dynamsoft = (window as any).Dynamsoft;
+                  Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
+                  const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
+                  const results = await reader.decode(file);
+                  const qrText = results?.[0]?.barcodeText;
+                  if (qrText && qrText.length > 500 && /^\d+$/.test(qrText)) {
+                     // Successfully extracted raw Secure QR bytes. Transmit directly to backend orchestration.
+                     const { api: apiClient } = await import("@/lib/api-client");
+                     await apiClient.post('/api/v1/kyc/upload/aadhaar-qr', { userId, rawQrText: qrText });
+                  }
+               } catch (e: any) {
+                  console.warn("Client-side QR fallback failed (falling back to backend 6-pass enhancement):", e?.message);
+               }
+            }
+
+            setProgress(15);
+            const res = await uploader(userId, file, (p) => setProgress(15 + p * 0.85));
+            setProgress(100);
+            const url = res.documentUrl;
+            if (!url) {
+              throw new Error("Upload succeeded but URL was not returned");
+            }
+            const responseSubmissionId = res.submissionId ?? submissionId;
+            if (responseSubmissionId && onSubmissionCreated) {
+              onSubmissionCreated(responseSubmissionId);
+            }
+            setIsUploaded(true);
+            setUploadedUrl(url);
+            onUploadSuccess(url);
+          } catch (err: any) {
+            const message = err?.response?.data?.message || err?.message || "Upload failed. Please try again";
+            setError(message);
+            onUploadError(message);
+            throw new Error(message);
+          } finally {
+            setUploading(false);
           }
-          const responseSubmissionId = res.submissionId ?? submissionId;
-          if (responseSubmissionId && onSubmissionCreated) {
-            onSubmissionCreated(responseSubmissionId);
-          }
-          setIsUploaded(true);
-          setUploadedUrl(url);
-          onUploadSuccess(url);
-        } catch (err: any) {
-          const message =
-            err?.response?.data?.message ||
-            err?.message ||
-            "Upload failed. Please try again";
-          setError(message);
-          onUploadError(message);
-          throw new Error(message);
-        } finally {
-          setUploading(false);
-        }
       },
       [
         documentType,
