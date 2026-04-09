@@ -145,10 +145,21 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   // Strip React-Dropzone injected properties (like .path) by slicing into a pure Blob.
                   // Dynamsoft occasionally fails silently if it detects non-standard File object properties.
                   const pureBlob = file.slice(0, file.size, file.type);
-                  console.log("Dynamsoft instance created. Scanning pure Blob derived from:", file.name, "Size:", pureBlob.size);
                   
-                  // Run decoder on the pure blob
-                  const results = await reader.decode(pureBlob);
+                  // Render the image natively to guarantee a perfect pixel bitmap for Dynamsoft
+                  const img = new Image();
+                  img.src = URL.createObjectURL(pureBlob);
+                  await new Promise((resolve, reject) => {
+                     img.onload = resolve;
+                     img.onerror = reject;
+                  });
+                  
+                  console.log(`Dynamsoft instance created. Scanning HTMLImageElement: ${img.width}x${img.height}`);
+                  
+                  // Run decoder on the rendered image element instead of file stream
+                  const results = await reader.decode(img);
+                  URL.revokeObjectURL(img.src);
+                  
                   console.log("Dynamsoft Scan Results:", results);
                   
                   const qrText = results?.[0]?.barcodeText;
