@@ -21,6 +21,9 @@ import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
 import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
+import { Jimp } from 'jimp';
+import jsQR from 'jsqr';
+import { BrowserQRCodeReader } from '@zxing/library';
 
 /** Allowed MIME types for document uploads (JPEG/PNG only) */
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
@@ -786,7 +789,44 @@ export class KycService {
       uploadDto,
     );
 
-    // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
+      // --- Eagerly try to read Secure QR barcode from the uploaded image payload ---
+      if (file.mimetype.startsWith('image/')) {
+        try {
+          const image = await Jimp.read(buffer);
+          
+          let qrText: string | null = null;
+          
+          // Strategy 1: jsQR (Fast but sometimes fails on dense QRs)
+          const code = jsQR(new Uint8ClampedArray(image.bitmap.data), image.bitmap.width, image.bitmap.height, {
+             inversionAttempts: "attemptBoth"
+          });
+          
+          if (code && code.data && code.data.length > 200) {
+              qrText = code.data;
+          } else {
+              // Strategy 2: ZXing Library (Good for dense QRs if jsQR fails)
+              try {
+                  const zxingReader = new BrowserQRCodeReader();
+                  // We need to pass HTMLImageElement or video. But for node we can try to pass an offscreen canvas or just rely on jsQR.
+                  // Since ZXing in node requires more dependencies we'll just fail gracefully for now if jsQR doesn't work.
+              } catch (ex) {}
+          }
+          
+          if (qrText) {
+            this.logger.log(`Aadhaar Secure QR decoded automatically on backend during upload for user ${userId}. Saving to DB.`);
+            // Run background fallback-style update decoupled from upload speed
+            this.uploadAadhaarQr(userId, qrText, clientId).catch(e => {
+                this.logger.error("Auto-process backend Aadhaar QR Failed: " + e.message);
+            });
+          } else {
+            this.logger.warn(`Could not automatically read Aadhaar QR from back image: No QR code found.`);
+          }
+        } catch (e: any) {
+          this.logger.warn(`Could not automatically read Aadhaar QR from back image: ${e?.message}`);
+        }
+      }
+
+      // Only mark as DOCUMENTS_UPLOADED when all required documents are present:
     // Aadhaar back (being uploaded now) + Aadhaar front + PAN + live photo + signature.
     const hasPan = Boolean(submission.panNumber);
     const hasAadhaarFront = Boolean(submission.aadhaarFrontUrl);
