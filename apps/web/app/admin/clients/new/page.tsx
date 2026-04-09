@@ -192,7 +192,7 @@ export default function CreateClientPage() {
               onClick={() => router.push('/admin/clients')}
               className="w-full px-4 py-2 border border-slate-300 text-slate-700 bg-white rounded-lg hover:bg-slate-50"
             >
-              I've Saved the Credentials, Continue
+              I&apos;ve Saved the Credentials, Continue
             </button>
           </div>
         </div>

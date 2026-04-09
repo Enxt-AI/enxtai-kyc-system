@@ -283,7 +283,7 @@ export default function EditClientPage() {
               onClick={() => setNewApiKey(null)}
               className="w-full px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
             >
-              I've Copied the Key
+              I&apos;ve Copied the Key
             </button>
           </div>
         </div>

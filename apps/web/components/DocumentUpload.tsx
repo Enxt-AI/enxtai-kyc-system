@@ -122,7 +122,6 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             uploader = uploadAadhaarDocument; // Legacy fallback
           }
 
-          try {
             if (documentType === "AADHAAR_BACK") {
                // Client-side execution of Dynamsoft for robust Secure QR fallback
                try {

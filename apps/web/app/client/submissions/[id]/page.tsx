@@ -391,7 +391,7 @@ export default function SubmissionDetailPage() {
                 <dd className="text-base font-mono text-gray-900 mt-1">{submission.aadhaarNumber || 'N/A'}</dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500">Father's Name</dt>
+                <dt className="text-sm font-medium text-gray-500">Father&apos;s Name</dt>
                 <dd className="text-base text-gray-900 mt-1">{submission.fathersName || 'N/A'}</dd>
               </div>
               <div>
