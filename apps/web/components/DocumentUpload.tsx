@@ -126,40 +126,23 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
             if (documentType === "AADHAAR_BACK") {
                // Client-side execution of Dynamsoft for robust Secure QR fallback
                try {
-                  const loadDynamsoftScript = (): Promise<void> => {
-                    return new Promise((resolve, reject) => {
-                      if ((window as any).Dynamsoft) return resolve();
-                      const script = document.createElement("script");
-                      script.src = "https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/dbr.js";
-                      script.async = true;
-                      script.onload = () => resolve();
-                      script.onerror = reject;
-                      document.body.appendChild(script);
-                    });
-                  };
-                  await loadDynamsoftScript();
-                  const Dynamsoft = (window as any).Dynamsoft;
-                  Dynamsoft.DBR.BarcodeReader.engineResourcePath = "https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/";
-                  Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
-                  const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
-                  
-                  // Force absolute MAXIMUM algorithm coverage on React because Next.js sometimes aggressively clips WASM timeout frames 
-                  // which neuters Dynamsoft's ability to decode dense QRs efficiently.
-                  await reader.updateRuntimeSettings("coverage");
-                  let settings = await reader.getRuntimeSettings();
-                  settings.expectedBarcodesCount = 1;
-                  await reader.updateRuntimeSettings(settings);
+                  const { BrowserQRCodeReader } = await import('@zxing/browser');
+                  const codeReader = new BrowserQRCodeReader();
                   
                   const objectUrl = URL.createObjectURL(file);
-                  console.log(`Dynamsoft instance created. Scanning ObjectURL with Absolute Maximum Coverage profile.`);
+                  console.log(`ZXing instance created. Scanning ObjectURL natively in browser.`);
                   
                   // Run decoder on the object URL
-                  const results = await reader.decode(objectUrl);
-                  URL.revokeObjectURL(objectUrl);
-                  
-                  console.log("Dynamsoft Scan Results:", results);
-                  
-                  const qrText = results?.[0]?.barcodeText;
+                  let qrText = null;
+                  try {
+                      const result = await codeReader.decodeFromImageUrl(objectUrl);
+                      qrText = result.getText();
+                      console.log("ZXing Scan Results SUCCESS:", qrText ? qrText.substring(0, 50) + "..." : "Empty string");
+                  } catch (e: any) {
+                      console.warn("ZXing Scan Error (No QR found or malformed):", e?.message);
+                  } finally {
+                      URL.revokeObjectURL(objectUrl);
+                  }
                   
                   if (qrText) {
                      console.log("Extracted QR String length:", qrText.length);
