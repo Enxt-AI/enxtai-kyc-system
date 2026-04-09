@@ -4,20 +4,18 @@
 # Base image shared by all stages.
 # Includes native build tooling required by API dependencies.
 # ------------------------------
-FROM node:20-alpine AS base
-RUN apk add --no-cache \
-	libc6-compat \
+FROM node:20-bookworm-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
 	python3 \
 	make \
 	g++ \
-	pkgconfig \
-	pixman-dev \
-	cairo-dev \
-	pango-dev \
-	jpeg-dev \
-	giflib-dev \
-	librsvg-dev \
-	openssl \
+	pkg-config \
+	libcairo2-dev \
+	libpango1.0-dev \
+	libjpeg-dev \
+	libgif-dev \
+	librsvg2-dev \
+	&& rm -rf /var/lib/apt/lists/* \
 	&& corepack enable pnpm
 WORKDIR /app
 
@@ -65,20 +63,18 @@ RUN pnpm --filter @enxtai/api exec nest build
 # Runtime stage.
 # Copies only runtime-relevant workspace parts and starts API.
 # ------------------------------
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 
 # Runtime libraries only; curl is used by container health checks.
-RUN apk add --no-cache \
-	libc6-compat \
-	cairo \
-	jpeg \
-	pango \
-	giflib \
-	pixman \
-	librsvg \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	libcairo2 \
+	libjpeg62-turbo \
+	libpango-1.0-0 \
+	libgif7 \
+	librsvg2-2 \
 	curl \
-	openssl
+    && rm -rf /var/lib/apt/lists/*
 
 # Use production mode while preserving prisma CLI access from installed deps.
 ENV NODE_ENV=production
