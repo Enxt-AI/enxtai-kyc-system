@@ -762,18 +762,30 @@ export class KycService {
 
     if (!submission) return;
 
-    // Both need to exist before we validate
-    if (!submission.qrAadhaarRefId) return;
-    
-    // Safety check for extractionResults shape
     const extractionResults = submission.extractionResults as any;
-    if (!extractionResults || !extractionResults.ocrAadhaar) return;
-
-    const ocrData = extractionResults.ocrAadhaar;
-    const qrAadhaarRefId = submission.qrAadhaarRefId;
-    const qrName = submission.qrAadhaarName;
+    const ocrData = extractionResults?.ocrAadhaar;
+    
+    if (!ocrData) return; // Nothing to validate or promote
 
     this.logger.log(`Aadhaar Cross-Validation started for submission ${submissionId}`);
+
+    // If QR data doesn't exist yet (or failed to extract), unconditionally promote OCR to root!
+    if (!submission.qrAadhaarRefId) {
+        this.logger.log(`[Aadhaar Validation] No QR data found yet. Promoting OCR data to root fields for UI display.`);
+        await this.prisma.kYCSubmission.update({
+           where: { id: submissionId },
+           data: {
+              aadhaarNumber: ocrData.aadhaarNumber || submission.aadhaarNumber,
+              fullName: ocrData.fullName || submission.fullName,
+              dateOfBirth: ocrData.dateOfBirth ? new Date(ocrData.dateOfBirth) : submission.dateOfBirth,
+              // don't change internal status to OCR_COMPLETED unless we are sure, but updating fields is fine
+           }
+        });
+        return;
+    }
+
+    const qrAadhaarRefId = submission.qrAadhaarRefId;
+    const qrName = submission.qrAadhaarName;
 
     // Fuzzy Match / Partial Match Logic
     // Aadhaar number OCR might miss characters, verify last 4 digits match
@@ -798,6 +810,7 @@ export class KycService {
         await this.prisma.kYCSubmission.update({
            where: { id: submissionId },
            data: {
+              // the QR data is already in root from uploadAadhaarQr, but we assert it here
               aadhaarNumber: submission.qrAadhaarRefId,
               fullName: submission.qrAadhaarName,
               dateOfBirth: submission.qrAadhaarDob ? new Date(submission.qrAadhaarDob) : undefined,
