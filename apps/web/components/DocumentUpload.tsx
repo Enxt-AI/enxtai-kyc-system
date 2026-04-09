@@ -144,8 +144,8 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
                   const results = await reader.decode(file);
                   const qrText = results?.[0]?.barcodeText;
-                  if (qrText && qrText.length > 500 && /^\d+$/.test(qrText)) {
-                     // Successfully extracted raw Secure QR bytes. Transmit directly to backend orchestration.
+                  if (qrText && qrText.length > 50) {
+                     // Successfully extracted raw QR string (either Secure QR or legacy XML). Transmit directly to backend.
                      await uploadAadhaarQr(userId, qrText);
                   }
                } catch (e: any) {
