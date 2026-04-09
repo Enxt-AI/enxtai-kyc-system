@@ -727,6 +727,13 @@ export class KycService {
         qrAadhaarEmailHash: extractedData.emailHash || null,
         qrAadhaarAddress: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull,
         qrAadhaarDigitalSignature: extractedData.digitalSignature || null,
+        
+        // POPULATE ROOT UI FIELDS IMMEDIATELY SO FRONTEND SEES DATA
+        aadhaarNumber: extractedData.uid || submission.aadhaarNumber,
+        fullName: extractedData.fullName || submission.fullName,
+        gender: extractedData.gender || submission.gender,
+        dateOfBirth: extractedData.dateOfBirth ? extractedData.dateOfBirth : submission.dateOfBirth,
+        address: extractedData.address ? (extractedData.address as any) : submission.address,
         qrAadhaarPhotographBase64: extractedData.photoBytes ? extractedData.photoBytes.toString('base64') : null,
 
         internalStatus: allDocsPresent
