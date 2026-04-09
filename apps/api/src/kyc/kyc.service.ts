@@ -21,7 +21,6 @@ import type { MultipartFile } from '@fastify/multipart';
 import sharp from 'sharp';
 
 import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
-import jsQR from 'jsqr';
 
 /** Allowed MIME types for document uploads (JPEG/PNG only) */
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
