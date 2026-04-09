@@ -147,13 +147,34 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   
                   const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
                   
-                  console.log(`Dynamsoft instance created. Scanning physical dropping file object directly.`);
-                  
-                  // Decode raw file directly (no absolute ObjectURL proxies, matching pure DropZone physical maps)
+                  // Decode raw file indirectly via Canvas Rasterization (Nullifies React-Dropzone Proxy File Corruption)
                   let qrText = null;
                   try {
-                      // Attempt to decode identically to user's "files[0]"
-                      const results = await reader.decode(file);
+                      // 1. Force the file into a native Image HTML Element
+                      const img = new Image();
+                      const url = URL.createObjectURL(file);
+                      
+                      await new Promise((resolve, reject) => {
+                          img.onload = resolve;
+                          img.onerror = reject;
+                          img.src = url;
+                      });
+                      
+                      // 2. Rasterize to a hidden Canvas (Strips away all React JS Blob wrappers)
+                      const canvas = document.createElement("canvas");
+                      canvas.width = img.width;
+                      canvas.height = img.height;
+                      const ctx = canvas.getContext("2d");
+                      if (ctx) {
+                          ctx.drawImage(img, 0, 0);
+                      }
+                      
+                      URL.revokeObjectURL(url);
+                      
+                      console.log(`Canvas rasterization complete: ${canvas.width}x${canvas.height}. Feeding raw pixels to Wasm Engine.`);
+
+                      // 3. Decode Pixel Canvas directly
+                      const results = await reader.decode(canvas);
                       console.log("Dynamsoft Scan Results Raw API:", results);
                       qrText = results?.[0]?.barcodeText;
                   } catch (e: any) {
