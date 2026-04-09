@@ -675,15 +675,22 @@ export class KycService {
    * @param clientId - Optional client UUID
    */
   async uploadAadhaarQr(userId: string, rawQrText: string, clientId: string = '00000000-0000-0000-0000-000000000000') {
+    this.logger.log(`Received QR Text payload. Length: ${rawQrText?.length || 0}`);
+    this.logger.log(`QR Preview: ${rawQrText ? rawQrText.substring(0, 100) : 'N/A'}...`);
+    
     if (!rawQrText) {
       throw new BadRequestException('QR text is required');
     }
 
     const clientUser = await this.getOrCreateUser(userId, clientId);
     const submission = await this.getOrCreateSubmission(clientUser.id, clientId);
+    
+    this.logger.log(`Initiating secure QR decoding via AadhaarQrService for submission: ${submission.id}`);
 
     // Decode QR securely using the injected service
     const extractedData = await this.aadhaarQrService.decodeQrString(rawQrText);
+    
+    this.logger.log(`Successfully parsed QR. Extracted UID: ${extractedData.uid}, Name: ${extractedData.fullName}`);
 
     let objectPath: string | undefined;
 
