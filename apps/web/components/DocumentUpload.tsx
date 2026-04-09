@@ -142,23 +142,20 @@ export const DocumentUpload = forwardRef<DocumentUploadRef, Props>(
                   Dynamsoft.DBR.BarcodeReader.engineResourcePath = "https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.0.0/dist/";
                   Dynamsoft.DBR.BarcodeReader.license = "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ==";
                   const reader = await Dynamsoft.DBR.BarcodeReader.createInstance();
-                  // Strip React-Dropzone injected properties (like .path) by slicing into a pure Blob.
-                  // Dynamsoft occasionally fails silently if it detects non-standard File object properties.
-                  const pureBlob = file.slice(0, file.size, file.type);
                   
-                  // Render the image natively to guarantee a perfect pixel bitmap for Dynamsoft
-                  const img = new Image();
-                  img.src = URL.createObjectURL(pureBlob);
-                  await new Promise((resolve, reject) => {
-                     img.onload = resolve;
-                     img.onerror = reject;
-                  });
+                  // Force absolute MAXIMUM algorithm coverage on React because Next.js sometimes aggressively clips WASM timeout frames 
+                  // which neuters Dynamsoft's ability to decode dense QRs efficiently.
+                  await reader.updateRuntimeSettings("coverage");
+                  let settings = await reader.getRuntimeSettings();
+                  settings.expectedBarcodesCount = 1;
+                  await reader.updateRuntimeSettings(settings);
                   
-                  console.log(`Dynamsoft instance created. Scanning HTMLImageElement: ${img.width}x${img.height}`);
+                  const objectUrl = URL.createObjectURL(file);
+                  console.log(`Dynamsoft instance created. Scanning ObjectURL with Absolute Maximum Coverage profile.`);
                   
-                  // Run decoder on the rendered image element instead of file stream
-                  const results = await reader.decode(img);
-                  URL.revokeObjectURL(img.src);
+                  // Run decoder on the object URL
+                  const results = await reader.decode(objectUrl);
+                  URL.revokeObjectURL(objectUrl);
                   
                   console.log("Dynamsoft Scan Results:", results);
                   
