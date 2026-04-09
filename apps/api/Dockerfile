@@ -85,11 +85,11 @@ RUN addgroup --system --gid 1001 nodejs \
 	&& adduser --system --uid 1001 nestjs
 
 # Copy only the files required to run the API in the monorepo runtime layout.
-COPY --from=builder /app/node_modules /app/node_modules
-COPY --from=builder /app/package.json /app/package.json
-COPY --from=builder /app/pnpm-workspace.yaml /app/pnpm-workspace.yaml
-COPY --from=builder /app/apps/api /app/apps/api
-COPY --from=builder /app/packages/shared-types /app/packages/shared-types
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules /app/node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/package.json /app/package.json
+COPY --from=builder --chown=nestjs:nodejs /app/pnpm-workspace.yaml /app/pnpm-workspace.yaml
+COPY --from=builder --chown=nestjs:nodejs /app/apps/api /app/apps/api
+COPY --from=builder --chown=nestjs:nodejs /app/packages/shared-types /app/packages/shared-types
 
 # Ensure runtime uses Compose-injected environment values.
 # Local development env files should not be baked into the deployment image.
@@ -103,10 +103,8 @@ RUN printf '%s\n' \
 	'if [ "${SKIP_PRISMA_MIGRATE:-false}" = "true" ]; then echo "Skipping prisma migrate deploy (SKIP_PRISMA_MIGRATE=true)"; else npx prisma migrate deploy; fi' \
 	'node dist/main.js' \
 	> /app/start.sh \
-	&& chmod +x /app/start.sh
-
-# Grant runtime file ownership to the application user.
-RUN chown -R nestjs:nodejs /app
+	&& chmod +x /app/start.sh \
+    && chown nestjs:nodejs /app/start.sh
 
 USER nestjs
 EXPOSE 3001
