@@ -716,13 +716,7 @@ export class KycService {
       data: {
         ...(objectPath && { aadhaarFrontUrl: objectPath }),
 
-        // Populate standard demographic fields ONLY if they are completely empty (so we don't overwrite)
-        ...( !submission.aadhaarNumber && { aadhaarNumber: extractedData.uid }),
-        ...( !submission.fullName && { fullName: extractedData.fullName }),
-        ...( !submission.gender && { gender: extractedData.gender }),
-        ...( !submission.dateOfBirth && extractedData.dateOfBirth && { dateOfBirth: extractedData.dateOfBirth }),
-        ...( !submission.address && { address: extractedData.address ? (extractedData.address as any) : Prisma.JsonNull }),
-
+        // Populate standard demographic fields ON VERIFICATION SUCCESS ONLY (handled by orchestrator)
         // Store exactly the raw QR extracted fields strictly separated as requested
         qrAadhaarRefId: extractedData.uid || null,
         qrAadhaarName: extractedData.fullName || null,
@@ -748,10 +742,83 @@ export class KycService {
       },
     });
 
+    // Trigger Orchestrator Validation
+    this.validateAadhaarData(submission.id).catch(err => {
+      this.logger.error(`Failed to trigger Aadhaar Data Validation for ${submission.id}`, err);
+    });
+
     return updated;
   }
 
   /**
+   * Cross-Validates OCR front extraction vs QR back extraction.
+   * If they match, promotes the data to the verified root schema fields.
+   */
+  async validateAadhaarData(submissionId: string) {
+    const submission = await this.prisma.kYCSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) return;
+
+    // Both need to exist before we validate
+    if (!submission.qrAadhaarRefId) return;
+    
+    // Safety check for extractionResults shape
+    const extractionResults = submission.extractionResults as any;
+    if (!extractionResults || !extractionResults.ocrAadhaar) return;
+
+    const ocrData = extractionResults.ocrAadhaar;
+    const qrAadhaarRefId = submission.qrAadhaarRefId;
+    const qrName = submission.qrAadhaarName;
+
+    this.logger.log(`Aadhaar Cross-Validation started for submission ${submissionId}`);
+
+    // Fuzzy Match / Partial Match Logic
+    // Aadhaar number OCR might miss characters, verify last 4 digits match
+    const qrLast4 = qrAadhaarRefId.slice(-4);
+    const ocrMatchesUID = ocrData.aadhaarNumber ? ocrData.aadhaarNumber.endsWith(qrLast4) : false;
+
+    // Name Match
+    let nameMatch = false;
+    if (qrName && ocrData.fullName) {
+       // simple fuzzing: remove spaces, lowercase
+       const qNameFuzzy = qrName.replace(/\s+/g, '').toLowerCase();
+       const ocrNameFuzzy = ocrData.fullName.replace(/\s+/g, '').toLowerCase();
+       
+       // Allow for some minor error margin or substring match
+       if (qNameFuzzy.includes(ocrNameFuzzy) || ocrNameFuzzy.includes(qNameFuzzy)) {
+           nameMatch = true;
+       }
+    }
+
+    if (ocrMatchesUID || nameMatch) {
+        this.logger.log(`[Aadhaar Validation] MATCH SUCCESS: Committing verified data to DB for ${submissionId}`);
+        await this.prisma.kYCSubmission.update({
+           where: { id: submissionId },
+           data: {
+              aadhaarNumber: submission.qrAadhaarRefId,
+              fullName: submission.qrAadhaarName,
+              dateOfBirth: submission.qrAadhaarDob ? new Date(submission.qrAadhaarDob) : undefined,
+              gender: submission.qrAadhaarGender,
+              address: submission.qrAadhaarAddress ? (submission.qrAadhaarAddress as any) : undefined,
+              internalStatus: InternalStatus.OCR_COMPLETED
+           }
+        });
+    } else {
+        this.logger.warn(`[Aadhaar Validation] MISMATCH Detected for ${submissionId}: Requires manual review.`);
+        await this.prisma.kYCSubmission.update({
+           where: { id: submissionId },
+           data: {
+              internalStatus: InternalStatus.PENDING_REVIEW,
+              rejectionReason: "Aadhaar OCR front and QR back do not match."
+           }
+        });
+    }
+  }
+
+  /**
+   * Initiate Background PAN Extraction
    * Upload Aadhaar Back Document
    *
    * Uploads Aadhaar back side (contains address information).

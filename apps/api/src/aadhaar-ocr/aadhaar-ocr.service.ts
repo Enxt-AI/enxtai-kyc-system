@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { KycService } from '../kyc/kyc.service';
 import * as Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 
@@ -45,6 +46,8 @@ export class AadhaarOcrService {
   constructor(
     private readonly storageService: StorageService,
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => KycService))
+    private readonly kycService: KycService,
   ) {}
 
   /**
@@ -83,27 +86,37 @@ export class AadhaarOcrService {
       let name = this.extractName(text);
       let dob = this.extractDOB(text);
 
-      // Build update payload: save whatever we extracted, even if some fields are null
+      // Instead of overwriting final DB fields, we write to extractionResults
       const updateData: any = {};
-      if (extractedAadhaar) {
-        updateData.aadhaarNumber = extractedAadhaar;
-      }
-      if (name) {
-        updateData.fullName = name;
-      }
-      if (dob) {
-        updateData.dateOfBirth = dob;
-      }
+      if (extractedAadhaar) updateData.aadhaarNumber = extractedAadhaar;
+      if (name) updateData.fullName = name;
+      if (dob) updateData.dateOfBirth = dob;
 
       if (Object.keys(updateData).length > 0) {
+        
+        // Merge with existing extractionResults safely
+        const existingResults = (submission.extractionResults as any) || {};
+
         await this.prisma.kYCSubmission.update({
           where: { id: submissionId },
-          data: updateData,
+          data: {
+             extractionResults: {
+                 ...existingResults,
+                 ocrAadhaar: updateData
+             }
+          },
         });
+        
         this.logger.log(
           `Aadhaar OCR Extraction SUCCESS for submission ${submissionId}` +
           ` (aadhaarNumber=${extractedAadhaar ? 'found' : 'not found'}, name=${name ? 'found' : 'not found'}, dob=${dob ? 'found' : 'not found'})`,
         );
+
+        // Trigger Orchestrator Validation
+        this.kycService.validateAadhaarData(submissionId).catch(vErr => 
+           this.logger.error(`Validation trigger failed for ${submissionId}`, vErr)
+        );
+
       } else {
         this.logger.warn(`Could not extract any data from Aadhaar OCR text for submission ${submissionId}`);
       }
